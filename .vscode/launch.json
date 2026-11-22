@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "ECLIPSE : lancer et ouvrir le navigateur",
+      "program": "${workspaceFolder}/scripts/start.mjs",
+      "args": ["--port", "${input:port}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "serverReadyAction": { "pattern": "prêt sur (http://localhost:[0-9]+)", "uriFormat": "%s", "action": "openExternally" }
+    }
+  ],
+  "inputs": [
+    { "id": "port", "type": "promptString", "description": "Port du jeu", "default": "3000" }
+  ]
+}

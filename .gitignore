@@ -1,0 +1,22 @@
+# données de serveur : comptes, sessions, administration (ne jamais versionner)
+data/
+*.json.bak*
+accounts.json
+admin.json
+admin-setup-code.txt
+# dépendances et builds
+node_modules/
+launcher/node_modules/
+launcher/dist/
+launcher/out/
+# secrets et identifiants
+.env
+.env.*
+*.pem
+*.key
+.cloudflared/
+credentials*.json
+# fichiers temporaires
+*.log
+*.tmp
+.DS_Store

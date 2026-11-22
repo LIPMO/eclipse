@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECLIPSE — Shooter tactique</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="bg-fx"></div>
+
+<!-- ============ MENUS ============ -->
+<div id="menu" class="screen active">
+  <header class="topbar">
+    <div class="logo"><span class="logo-dot"></span>ECLIPSE</div>
+    <nav class="nav">
+      <button data-tab="play" class="active">JOUER</button>
+      <button data-tab="agents">AGENTS</button>
+      <button data-tab="collection">COLLECTION</button>
+      <button data-tab="profile">PROFIL</button>
+      <button data-tab="leaderboard">CLASSEMENT</button>
+      <button data-tab="friends">AMIS<b class="nav-badge" id="friends-badge"></b></button>
+      <button data-tab="settings">PARAMÈTRES</button>
+    </nav>
+    <div class="profile">
+      <div class="lvl-badge hidden" id="lvl-badge" title="Niveau et expérience"><b id="lvl-n">1</b><div><i id="lvl-fill"></i></div></div>
+      <div class="currency" title="Éclats : gagnés en jouant, utilisés pour acheter des skins"><span class="gem"></span><span id="eclats">0</span></div>
+      <div class="pname" id="profile-name">—</div>
+      <span id="conn-status" class="conn">hors ligne</span>
+      <button id="logout-btn" class="btn ghost small" title="Se déconnecter">DÉCONNEXION</button>
+    </div>
+  </header>
+
+  <!-- Écran d'accueil / nom -->
+  <section id="tab-login" class="tab">
+    <div class="hero">
+      <h1>ECLIPSE</h1>
+      <p class="tag">Shooter tactique 5v5 · Agents · Capacités · 7 cartes</p>
+      <div class="auth-card">
+        <div class="seg auth-tabs" id="auth-tabs">
+          <button data-v="login" class="active">CONNEXION</button>
+          <button data-v="register">INSCRIPTION</button>
+          <button data-v="guest">INVITÉ</button>
+        </div>
+        <form id="auth-form" autocomplete="on">
+          <input id="auth-name" name="username" maxlength="16" placeholder="Pseudo" autocomplete="username">
+          <input id="auth-pass" name="password" type="password" maxlength="72" placeholder="Mot de passe" autocomplete="current-password">
+          <input id="auth-pass2" type="password" maxlength="72" placeholder="Confirmer le mot de passe" autocomplete="new-password">
+          <div id="auth-error" class="auth-error"></div>
+          <button id="auth-submit" type="submit" class="btn primary wide">SE CONNECTER</button>
+        </form>
+        <p id="auth-help" class="hint">Un compte sauvegarde tes Éclats, tes skins et tes statistiques sur le serveur.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- JOUER : liste des salons -->
+  <section id="tab-play" class="tab">
+    <div id="motd" class="motd hidden"></div>
+    <div id="event-banner" class="event-banner hidden"></div>
+    <div class="play-grid">
+      <div class="panel">
+        <div class="quick-row">
+          <div class="me-card" id="me-card"></div>
+          <button id="quick-duel" class="btn primary">⚔ DUEL RAPIDE 1v1</button>
+        </div>
+        <div class="quick-actions">
+          <button id="quick-ffa" class="btn">✸ MÊLÉE RAPIDE</button>
+          <div class="qa-group"><button id="quick-bots" class="btn">🤖 ENTRAÎNEMENT</button>
+            <select id="qb-mode" title="Mode d'entraînement"><option value="assault">Assaut</option><option value="duel">Duel</option><option value="ffa">Mêlée</option></select>
+            <select id="qb-diff" title="Difficulté des bots"><option value="easy">Facile</option><option value="normal" selected>Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option></select></div>
+          <form id="code-form" class="qa-group"><input id="code-input" maxlength="6" placeholder="CODE" autocomplete="off"><button class="btn ghost" type="submit">REJOINDRE</button></form>
+          <button id="open-guide" class="btn ghost" title="Commandes, modes et progression">? COMMENT JOUER</button>
+        </div>
+        <div id="quests" class="quests"></div>
+        <div class="panel-head"><h2>SALONS</h2><button id="refresh-rooms" class="btn ghost small">↻</button></div>
+        <div id="room-list" class="room-list"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>CRÉER UN SALON</h2></div>
+        <label>Nom<input id="cr-name" maxlength="28" placeholder="Mon salon"></label>
+        <label>Mode
+          <div class="seg" id="cr-mode">
+            <button data-v="assault" class="active">ASSAUT 5v5</button>
+            <button data-v="duel">DUEL 1v1</button>
+            <button data-v="ffa">MÊLÉE</button>
+          </div>
+        </label>
+        <label>Carte</label>
+        <div id="cr-maps" class="map-pick"></div>
+        <label>Difficulté des bots
+          <div class="seg" id="cr-diff">
+            <button data-v="easy">FACILE</button>
+            <button data-v="normal" class="active">NORMAL</button>
+            <button data-v="hard">DIFFICILE</button>
+            <button data-v="expert">EXPERT</button>
+          </div>
+        </label>
+        <label class="check"><input type="checkbox" id="cr-bots" checked> Remplir avec des bots</label>
+        <label class="check"><input type="checkbox" id="cr-private"> Salon privé (accessible par code ou invitation)</label>
+        <button id="create-room" class="btn primary wide">CRÉER</button>
+        <p class="hint">Astuce : partage l'adresse du serveur à tes amis pour qu'ils rejoignent ton salon.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SALON -->
+  <section id="tab-room" class="tab">
+    <div class="room-head">
+      <div>
+        <h2 id="room-title">Salon</h2>
+        <div id="room-sub" class="muted"></div>
+      </div>
+      <div id="room-code" class="room-code hidden"></div>
+      <div class="room-actions">
+        <button id="room-invite" class="btn ghost">＋ INVITER UN AMI</button>
+        <button id="room-leave" class="btn ghost">QUITTER</button>
+        <button id="room-ready" class="btn">PRÊT</button>
+        <button id="room-start" class="btn primary">LANCER LA PARTIE</button>
+      </div>
+    </div>
+    <div class="room-grid">
+      <div class="panel team-panel" id="team-alpha">
+        <div class="panel-head"><h3 class="t-alpha">ÉQUIPE ALPHA</h3><div class="team-btns"><button class="btn ghost small" data-join="alpha">REJOINDRE</button><button class="btn ghost small host-only" data-bot="alpha">+ BOT</button></div></div>
+        <div class="members"></div>
+      </div>
+      <div class="panel room-settings">
+        <div class="panel-head"><h3>PARAMÈTRES</h3></div>
+        <div id="room-map-preview" class="map-preview"><canvas width="260" height="200"></canvas><div class="map-name"></div></div>
+        <div class="host-only">
+          <label>Carte <select id="rs-map"></select></label>
+          <label>Mode <select id="rs-mode"><option value="assault">Assaut 5v5 (pose du Noyau)</option><option value="duel">Duel 1v1 (petites cartes)</option><option value="ffa">Mêlée (chacun pour soi)</option></select></label>
+          <label>Objectif <select id="rs-target"></select></label>
+          <label>Difficulté bots <select id="rs-diff"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option></select></label>
+          <label class="check"><input type="checkbox" id="rs-private"> Salon privé (code d'accès)</label>
+          <button id="rs-fill" class="btn ghost small wide">REMPLIR DE BOTS</button>
+        </div>
+        <div class="chat">
+          <div id="chat-log" class="chat-log"></div>
+          <input id="chat-input" maxlength="140" placeholder="Message…">
+        </div>
+      </div>
+      <div class="panel team-panel" id="team-beta">
+        <div class="panel-head"><h3 class="t-beta">ÉQUIPE OMÉGA</h3><div class="team-btns"><button class="btn ghost small" data-join="beta">REJOINDRE</button><button class="btn ghost small host-only" data-bot="beta">+ BOT</button></div></div>
+        <div class="members"></div>
+      </div>
+    </div>
+    <div class="agent-select">
+      <h3>CHOISIS TON AGENT</h3>
+      <div id="agent-pick" class="agent-pick"></div>
+      <div id="agent-pick-info" class="agent-pick-info"></div>
+    </div>
+  </section>
+
+  <!-- AGENTS -->
+  <section id="tab-agents" class="tab">
+    <div class="agents-layout">
+      <div id="agents-list" class="agents-list"></div>
+      <div id="agent-detail" class="agent-detail"></div>
+    </div>
+  </section>
+
+  <!-- COLLECTION -->
+  <section id="tab-collection" class="tab">
+    <div class="coll-layout">
+      <div id="coll-weapons" class="coll-weapons"></div>
+      <div class="coll-main">
+        <div class="coll-preview"><canvas id="coll-canvas"></canvas><div id="coll-title" class="coll-title"></div></div>
+        <div id="coll-skins" class="coll-skins"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROFIL -->
+  <section id="tab-profile" class="tab"><div id="profile-root" class="profile-wrap"></div></section>
+
+  <!-- CLASSEMENT -->
+  <section id="tab-leaderboard" class="tab">
+    <div class="lb-wrap">
+      <div class="lb-head">
+        <div><h2>CLASSEMENT</h2><div class="muted" id="lb-season"></div></div>
+        <div class="seg" id="lb-kind"><button data-v="level" class="active">NIVEAU</button><button data-v="week">SEMAINE</button><button data-v="elo">ELO DUEL</button><button data-v="kills">ÉLIMINATIONS</button><button data-v="wins">VICTOIRES</button></div>
+        <div class="seg" id="lb-scope"><button data-v="all" class="active">TOUS</button><button data-v="friends">AMIS</button></div>
+      </div>
+      <div id="lb-list" class="panel"></div>
+    </div>
+  </section>
+
+  <!-- AMIS -->
+  <section id="tab-friends" class="tab"><div id="friends-root" class="friends-wrap"></div></section>
+
+  <!-- PARAMÈTRES -->
+  <section id="tab-settings" class="tab">
+    <div id="settings-root" class="settings-wrap"></div>
+  </section>
+</div>
+
+<!-- ============ JEU ============ -->
+<div id="game" class="screen">
+  <canvas id="game-canvas"></canvas>
+  <div id="hud">
+    <div id="flash-overlay"></div>
+    <div id="damage-overlay"></div>
+    <div id="smoke-overlay"></div>
+    <div id="scope-overlay"><div class="scope-ring"></div></div>
+    <div id="top-hud">
+      <div class="team-icons" id="icons-left"></div>
+      <div class="score-box">
+        <div class="sc sc-left" id="score-left">0</div>
+        <div class="mid"><div id="timer">1:40</div><div id="round-label">MANCHE 1</div></div>
+        <div class="sc sc-right" id="score-right">0</div>
+      </div>
+      <div class="team-icons" id="icons-right"></div>
+    </div>
+    <canvas id="minimap" width="220" height="220"></canvas>
+    <div id="killfeed"></div>
+    <div id="crosshair"><i class="c-t"></i><i class="c-b"></i><i class="c-l"></i><i class="c-r"></i><i class="c-d"></i></div>
+    <div id="hitmarker"></div>
+    <div id="dmg-dir"></div>
+    <div id="center-msg"></div>
+    <div id="banner"><div class="b-title"></div><div class="b-sub"></div></div>
+    <div id="progress"><div class="p-label"></div><div class="p-bar"><i></i></div></div>
+    <div id="core-hint"></div>
+    <div id="bottom-hud">
+      <div class="credits" id="credits"><span class="gem small"></span><span id="money">800</span></div>
+      <div class="vitals">
+        <div class="armor-val" id="armor-val">0</div>
+        <div class="hp-val" id="hp-val">100</div>
+        <div class="hp-bar"><i id="hp-fill"></i><b id="armor-fill"></b></div>
+      </div>
+      <div class="abilities" id="abilities"></div>
+      <div class="ammo">
+        <div class="weapon-name" id="weapon-name">Spark</div>
+        <div><span id="mag">12</span><span class="res" id="reserve">/ 36</span></div>
+        <div class="slots" id="slots"></div>
+      </div>
+    </div>
+    <div id="death-info"></div>
+    <div id="fps"></div>
+    <div id="ping"></div>
+    <div id="game-chat"><div class="log"></div><input maxlength="140" placeholder="Message (Entrée pour envoyer, Échap pour annuler)"></div>
+
+    <div id="buy-menu" class="overlay">
+      <div class="buy-inner">
+        <div class="buy-head"><h2>ARSENAL</h2><div class="buy-money"><span class="gem small"></span><span id="buy-money">0</span></div><span class="muted">B pour fermer</span></div>
+        <div class="buy-cols" id="buy-cols"></div>
+      </div>
+    </div>
+    <div id="scoreboard" class="overlay"><div class="sb-inner" id="sb-inner"></div></div>
+    <div id="pause-menu" class="overlay">
+      <div class="pause-inner">
+        <h2>PAUSE</h2>
+        <button id="p-resume" class="btn primary wide">REPRENDRE</button>
+        <button id="p-settings" class="btn wide">PARAMÈTRES</button>
+        <button id="p-report" class="btn wide">⚑ SIGNALER UN JOUEUR</button>
+        <button id="p-leave" class="btn ghost wide">QUITTER LA PARTIE</button>
+      </div>
+    </div>
+    <div id="report-overlay" class="overlay"><div class="pause-inner" id="report-inner"></div></div>
+    <div id="radio-menu"></div>
+    <div id="settings-overlay" class="overlay">
+      <div class="settings-float">
+        <div class="sf-head"><h2>PARAMÈTRES</h2><button id="sf-close" class="btn small">RETOUR (Échap)</button></div>
+        <div id="settings-slot"></div>
+      </div>
+    </div>
+    <div id="end-screen" class="overlay">
+      <div class="end-inner">
+        <div class="end-title" id="end-title">VICTOIRE</div>
+        <div class="end-score" id="end-score"></div>
+        <div class="end-reward" id="end-reward"></div>
+        <div class="end-mvp" id="end-mvp"></div>
+        <div class="end-progress" id="end-progress"></div>
+        <div class="end-stats" id="end-stats"></div>
+        <div class="muted">Retour au salon dans quelques secondes…</div>
+      </div>
+    </div>
+    <div id="click-to-play">CLIQUE POUR JOUER</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="notifs"></div>
+<div id="mmodal" class="mmodal"><div class="mmodal-in" id="mmodal-in"></div></div>
+<div id="sys-notice"><div class="sn-kind"></div><div class="sn-text"></div><button class="sn-x" title="Fermer">✕</button></div>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

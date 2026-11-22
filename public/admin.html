@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'">
+<title>ECLIPSE — Administration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+<!-- Connexion -->
+<div id="login" class="login hidden">
+  <form class="login-card" id="login-form">
+    <div class="brand"><span class="logo"></span>ECLIPSE <small>ADMIN</small></div>
+    <input id="l-name" placeholder="Pseudo" autocomplete="username" maxlength="16">
+    <input id="l-pass" type="password" placeholder="Mot de passe" autocomplete="current-password" maxlength="72">
+    <div class="err" id="l-err"></div>
+    <button class="btn primary wide" type="submit">SE CONNECTER</button>
+    <p class="muted small">Utilise ton compte de joueur. Seuls les modérateurs, administrateurs et le propriétaire ont accès au panneau.</p>
+  </form>
+  <form class="login-card hidden" id="claim-form">
+    <div class="brand"><span class="logo"></span>PREMIÈRE CONFIGURATION</div>
+    <p>Aucun propriétaire n'est encore défini. Saisis le <b>code d'installation</b> affiché dans les logs du serveur pour devenir propriétaire.</p>
+    <pre class="code">journalctl -u eclipse | grep "Code d'installation"</pre>
+    <input id="c-code" placeholder="1234-5678" maxlength="9" autocomplete="off">
+    <div class="err" id="c-err"></div>
+    <button class="btn primary wide" type="submit">DEVENIR PROPRIÉTAIRE</button>
+  </form>
+</div>
+
+<!-- Application -->
+<div id="app" class="app hidden">
+  <aside class="side">
+    <div class="brand"><span class="logo"></span>ECLIPSE <small>ADMIN</small></div>
+    <nav id="nav">
+      <a data-view="dashboard"><i>◉</i>Tableau de bord</a>
+      <a data-view="players"><i>☺</i>Joueurs connectés <b class="pill" id="n-players"></b></a>
+      <a data-view="accounts"><i>☰</i>Comptes</a>
+      <a data-view="rooms"><i>▣</i>Salons &amp; parties <b class="pill" id="n-rooms"></b></a>
+      <a data-view="moderation"><i>⚑</i>Modération <b class="pill warn" id="n-reports"></b></a>
+      <a data-view="anticheat"><i>⛨</i>Anti-triche <b class="pill warn" id="n-suspects"></b></a>
+      <a data-view="chat"><i>✉</i>Chat en direct</a>
+      <a data-view="matches"><i>⚔</i>Historique des parties</a>
+      <a data-view="progression"><i>★</i>Progression &amp; saisons</a>
+      <a data-view="economy" data-min="2"><i>◆</i>Économie</a>
+      <a data-view="announce" data-min="2"><i>📣</i>Annonces</a>
+      <a data-view="news" data-min="2"><i>✎</i>Notes de mise à jour</a>
+      <a data-view="config" data-min="2"><i>⚙</i>Configuration</a>
+      <a data-view="logs"><i>≡</i>Journaux</a>
+      <a data-view="system"><i>⛭</i>Système &amp; métriques</a>
+    </nav>
+    <div class="side-foot">
+      <div id="me"></div>
+      <a href="/" target="_blank" rel="noopener">Ouvrir le jeu ↗</a>
+    </div>
+  </aside>
+  <main>
+    <header class="top">
+      <h1 id="title">Tableau de bord</h1>
+      <div class="top-right">
+        <span class="badge danger hidden" id="maint-badge">MAINTENANCE ACTIVE</span>
+        <label class="switch-l" title="Actualisation automatique toutes les 3 secondes"><input type="checkbox" id="auto" checked><i></i> Direct</label>
+        <button class="btn small" data-act="refresh">↻ Actualiser</button>
+        <button class="btn small ghost" data-act="logout">Déconnexion</button>
+      </div>
+    </header>
+    <section id="view" class="view"></section>
+  </main>
+</div>
+
+<div id="drawer" class="drawer hidden"><div class="drawer-in"><button class="x" data-act="closeDrawer">✕</button><div id="drawer-body"></div></div></div>
+<div id="modal" class="modal hidden"><form class="modal-in" id="modal-form"></form></div>
+<div id="toasts"></div>
+<script type="module" src="/js/admin.js"></script>
+</body>
+</html>

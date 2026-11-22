@@ -1,0 +1,24 @@
+{
+ "generated": "2026-11-22T15:06:50.910Z",
+ "files": {
+  "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
+  "node_modules/three/examples/jsm/utils/BufferGeometryUtils.js": "c25b7930e570e9ec56173cd3b866ec8d2e10016630db3937efb439daf1cedbf6",
+  "public/admin.html": "163786507ed920d30603fe9830bb60e6debfadb703e91dac1963cda4b8c9167d",
+  "public/css/admin.css": "c0397225fa4fa00b68ded47ad6be849323e2ba867f37e2580f07c50cecc4d4fd",
+  "public/css/style.css": "22e5a82072de5909b0cec0c6832c3b19762cd1c224e170084f1d78d736f8171d",
+  "public/index.html": "172ae82c7542e0b98f276538f965ed51adfd420b8d3eeeaecdb7d488ad537bef",
+  "public/js/admin.js": "7acabde74a29b5d8eb05aceb07f64a0a07d0685c8695d2404300857092651137",
+  "public/js/audio.js": "795ab92c4a690eaf30435d95471082287d70773b7c25375c5ab0a8c78d54fbb2",
+  "public/js/game.js": "d25b147dd4e4ddf6543748e5d337742cfa3c6b9097e1a30436c2e75df000a0fd",
+  "public/js/hub.js": "73cde14c6674304fc1c8df211e8367f5835c7361d8acd63ec7b6eedb758f9972",
+  "public/js/main.js": "c423248f36701e1538a2b0f8eebb1a0904bf11147e95efe8dff1a08d4135f57e",
+  "public/js/models.js": "74f3099b28500ad8f0d8c82d889956a1f01d6b7ec4c600928932533de5abbd9d",
+  "public/js/net.js": "c15e62ff164f84e8f7e792a2598ad61a5a003b78eb1e5873de2861e259375c49",
+  "public/js/settings.js": "710190080e33dd3379f6b80cd1bfc460c6ad6e95b3aac12e8ada8c422b91f16d",
+  "public/js/store.js": "743d0a4edd4cee0a4998e345e14729d8f00db21a24ab4513dca2b89a02abdfcf",
+  "shared/data.js": "dc06d27c06a2dd0569bf5e83821241cf9e76b26b98b32b5be0246fee3e3fadcf",
+  "shared/maps.js": "e8a60b38a52dac51354105a559d46d2adbe57fb0e18b037c207783995f6fe2f2",
+  "shared/physics.js": "4d74759f49e4abe6a9214440a5056e5391362030d32287f211ded744ef0050bd",
+  "shared/progress.js": "5ae6eaae99d81e925882e130cc8b6f10441a4acf0da7ea08f83417aa7c3bc6d1"
+ }
+}

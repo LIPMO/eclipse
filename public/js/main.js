@@ -1,0 +1,455 @@
+// Interface hors-jeu : connexion, salons, agents, collection, paramètres.
+import * as THREE from 'three';
+import { Net } from './net.js';
+import { Game } from './game.js';
+import { profile, save, session, setToken, applyServerProfile } from './store.js';
+import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS } from '/shared/data.js';
+import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
+import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins } from './models.js';
+import * as SFX from './audio.js';
+import { mountSettings, keyName } from './settings.js';
+import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub } from './hub.js';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const MODE_LABEL = { assault: 'ASSAUT 5v5', duel: 'DUEL 1v1', ffa: 'MÊLÉE' };
+const TARGETS = { assault: [3, 5, 7, 9, 13], duel: [3, 5, 7, 9], ffa: [10, 15, 25, 40] };
+const DIFF_LABEL = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert' };
+
+const net = new Net();
+const state = { myId: null, guest: true, room: null, rooms: [], game: null, tab: 'login', create: { mode: 'assault', map: 'dune', diff: 'normal' }, authMode: 'login', collWeapon: 'lancer', collSkin: null, agentView: 'ignis' };
+
+// ======================= UTILITAIRES =======================
+function toast(text, ms = 3000) {
+  const t = $('toast');
+  t.textContent = text; t.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+function showTab(name) {
+  state.tab = name;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name || (name === 'room' && b.dataset.tab === 'play')));
+  if (name === 'agents') renderAgents();
+  if (name === 'collection') renderCollection();
+  if (name === 'settings') mountSettings($('settings-root'));
+  if (name === 'play') { net.send('listRooms'); renderMeCard(); renderQuests(); renderEvent(); }
+  if (name === 'profile') { net.send('myProfile'); renderProfile(); }
+  if (name === 'leaderboard') { renderLeaderboard(); loadLeaderboard(); }
+  if (name === 'friends') { net.send('friends'); renderFriends(); }
+  previews.active = name === 'agents' ? 'agent' : name === 'collection' ? 'coll' : null;
+}
+
+function refreshProfileUI() {
+  $('eclats').textContent = profile.eclats;
+  $('profile-name').innerHTML = esc(profile.name || '—') + (state.myId ? (state.guest ? '<span class="badge guest">INVITÉ</span>' : '<span class="badge">COMPTE</span>') : '');
+  renderMeCard();
+  renderLevel();
+  if (state.tab === 'collection') renderCollection();
+  if (state.tab === 'play') renderQuests();
+  if (state.tab === 'profile') renderProfile();
+}
+document.addEventListener('eclats-changed', refreshProfileUI);
+
+// ======================= AUTHENTIFICATION =======================
+function setAuthMode(mode) {
+  state.authMode = mode;
+  document.querySelectorAll('#auth-tabs button').forEach(b => b.classList.toggle('active', b.dataset.v === mode));
+  $('auth-pass').style.display = mode === 'guest' ? 'none' : 'block';
+  $('auth-pass2').style.display = mode === 'register' ? 'block' : 'none';
+  $('auth-pass').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
+  $('auth-submit').textContent = { login: 'SE CONNECTER', register: 'CRÉER MON COMPTE', guest: 'JOUER EN INVITÉ' }[mode];
+  $('auth-help').textContent = mode === 'guest'
+    ? 'En invité, ta progression est gardée uniquement dans ce navigateur.'
+    : 'Un compte sauvegarde tes Éclats, tes skins et tes statistiques sur le serveur.';
+  $('auth-error').textContent = '';
+}
+document.querySelectorAll('#auth-tabs button').forEach(b => b.onclick = () => setAuthMode(b.dataset.v));
+$('auth-form').onsubmit = e => {
+  e.preventDefault();
+  SFX.initAudio();
+  const name = $('auth-name').value.trim(), pass = $('auth-pass').value;
+  if (!name) { $('auth-error').textContent = 'Entre un pseudo.'; return; }
+  if (state.authMode === 'guest') {
+    profile.name = name; save();
+    net.send('hello', { name, skins: profile.equipped, agent: profile.agent });
+  } else {
+    if (state.authMode === 'register' && pass !== $('auth-pass2').value) { $('auth-error').textContent = 'Les mots de passe ne correspondent pas.'; return; }
+    net.send(state.authMode, { name, password: pass });
+  }
+  $('auth-submit').disabled = true;
+  setTimeout(() => { $('auth-submit').disabled = false; }, 1500);
+};
+$('logout-btn').onclick = () => {
+  if (!session.account) { location.reload(); return; }
+  net.send('logout');
+  setToken(null);
+  setTimeout(() => location.reload(), 200);
+};
+
+net.on('welcome', m => {
+  state.myId = m.id;
+  state.guest = !!m.guest;
+  session.account = !m.guest;
+  if (m.token) setToken(m.token);
+  setMotd(m.motd);
+  state.event = m.event || null;
+  if (m.profile) applyServerProfile(m.profile);
+  else { profile.name = m.name; save(); }
+  profile.name = m.name;
+  $('nav').classList.remove('locked');
+  $('logout-btn').style.display = '';
+  refreshProfileUI();
+  showTab('play');
+  maybeShowGuide();
+});
+net.on('authError', m => {
+  $('auth-submit').disabled = false;
+  if (m.expired) { setToken(null); showTab('login'); }
+  $('auth-error').textContent = m.text;
+});
+net.on('profile', m => { applyServerProfile(m.profile); refreshProfileUI(); });
+net.on('kicked', m => { toast(m.text, 6000); setToken(null); });
+net.on('error', m => toast(m.text));
+
+// ---------- messages du staff (annonces, messages privés, expulsions, message du jour) ----------
+let sysTimer = null;
+state.kicked = false;
+function sysNotice(kind, text, ms = 9000) {
+  const el = $('sys-notice');
+  el.querySelector('.sn-kind').textContent = kind;
+  el.querySelector('.sn-text').textContent = text;
+  el.classList.add('show');
+  el.classList.toggle('kick', kind.startsWith('EXPULS') || kind.startsWith('DÉCONNECT'));
+  clearTimeout(sysTimer);
+  if (ms) sysTimer = setTimeout(() => el.classList.remove('show'), ms);
+}
+$('sys-notice').querySelector('.sn-x').onclick = () => $('sys-notice').classList.remove('show');
+function setMotd(text) { $('motd').textContent = text || ''; $('motd').classList.toggle('hidden', !text); }
+net.on('system', m => {
+  if (m.kind === 'motd') return setMotd(m.text);
+  if (m.kind === 'kick') { state.kicked = true; return sysNotice('EXPULSÉ DU SERVEUR', m.text, 0); }
+  if (m.kind === 'broadcast') return sysNotice(`ANNONCE · ${m.from || 'ÉQUIPE'}`, m.text, 12000);
+  if (m.kind === 'pm') return sysNotice(`MESSAGE DE ${m.from || 'L\'ÉQUIPE'}`, m.text, 15000);
+  if (m.kind === 'warn') return sysNotice(`AVERTISSEMENT DE ${m.from || 'L\'ÉQUIPE'}`, m.text + '\nAu bout de plusieurs avertissements, ton compte est suspendu automatiquement.', 0);
+  if (m.kind === 'gift') return sysNotice('CADEAU', m.text, 12000);
+  if (m.kind === 'staff') return notify({ kind: 'STAFF', text: m.text, ms: 10000 });
+  sysNotice('INFORMATION', m.text, 8000);
+});
+
+// ======================= JOUER : SALONS =======================
+function renderMeCard() {
+  const st = profile.stats;
+  const kd = st && st.deaths ? (st.kills / st.deaths).toFixed(2) : (st?.kills || 0);
+  const pr = profile.progress;
+  $('me-card').innerHTML = `${agentIconHTML(profile.agent, 'lg')}<div><div class="nm">${esc(profile.name || '')}${state.guest ? '<span class="badge guest">INVITÉ</span>' : pr ? `<span class="badge lvl">NIV. ${pr.level}</span>${pr.ranked ? `<span class="badge" style="color:${pr.rankColor}">${esc(pr.rank)}</span>` : ''}` : ''}</div>
+    <div class="st">${st && !state.guest ? `${st.matches} parties · ${st.wins} victoires · ${st.duelWins}/${st.duels} duels gagnés · K/D ${kd}` : 'Crée un compte pour suivre tes statistiques'}</div></div>`;
+}
+
+function renderRooms() {
+  const list = $('room-list');
+  if (!state.rooms.length) { list.innerHTML = '<div class="empty">Aucun salon pour le moment. Crée le tien ou lance un duel rapide !</div>'; return; }
+  list.innerHTML = state.rooms.map(r => `<div class="room-item" data-id="${r.id}">
+    <div><div class="rn">${esc(r.name)}</div><div class="muted">${esc(MAP_INFO[r.mapId]?.name || r.mapId)} · ${r.humans} joueur(s)</div></div>
+    <span class="pill ${r.mode === 'duel' ? 'duel' : ''}">${MODE_LABEL[r.mode]}</span>
+    <span class="pill ${r.state === 'playing' ? 'playing' : ''}">${r.state === 'playing' ? 'EN JEU' : 'LOBBY'}</span>
+    <span>${r.players}/${r.max}</span></div>`).join('');
+}
+$('room-list').onclick = e => { const it = e.target.closest('.room-item'); if (it) net.send('joinRoom', { id: it.dataset.id }); };
+$('refresh-rooms').onclick = () => net.send('listRooms');
+net.on('rooms', m => { state.rooms = m.rooms; renderRooms(); });
+$('quick-duel').onclick = () => { SFX.initAudio(); net.send('quickDuel'); };
+$('quick-ffa').onclick = () => { SFX.initAudio(); net.send('quickFfa'); };
+$('open-guide').onclick = openGuide;
+$('quick-bots').onclick = () => { SFX.initAudio(); net.send('quickBots', { mode: $('qb-mode').value, difficulty: $('qb-diff').value }); };
+$('code-form').onsubmit = e => { e.preventDefault(); const code = $('code-input').value.trim(); if (code) net.send('joinCode', { code }); $('code-input').value = ''; };
+
+function renderCreateMaps() {
+  const ids = mapsForMode(state.create.mode);
+  if (!ids.includes(state.create.map)) state.create.map = ids[0];
+  $('cr-maps').style.gridTemplateColumns = `repeat(${Math.min(4, ids.length)}, 1fr)`;
+  $('cr-maps').innerHTML = ids.map(id => `<div class="map-card ${id === state.create.map ? 'active' : ''}" data-id="${id}"><canvas width="140" height="100"></canvas><span>${MAP_INFO[id].name}</span></div>`).join('');
+  $('cr-maps').querySelectorAll('.map-card').forEach(el => drawMapPreview(el.querySelector('canvas'), parseMap(el.dataset.id), { labels: false }));
+}
+$('cr-maps').onclick = e => { const c = e.target.closest('.map-card'); if (c) { state.create.map = c.dataset.id; renderCreateMaps(); } };
+function bindSeg(id, key, after) {
+  $(id).onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.create[key] = b.dataset.v;
+    $(id).querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    after && after();
+  };
+}
+bindSeg('cr-mode', 'mode', renderCreateMaps);
+bindSeg('cr-diff', 'diff');
+$('create-room').onclick = () => {
+  SFX.initAudio();
+  net.send('createRoom', { name: $('cr-name').value, mode: state.create.mode, mapId: state.create.map, difficulty: state.create.diff, fillBots: $('cr-bots').checked, private: $('cr-private').checked });
+};
+
+// ======================= SALON =======================
+net.on('room', m => { state.room = m.room; renderRoom(); if (state.tab !== 'room' && !state.game) showTab('room'); });
+net.on('left', () => { state.room = null; if (!state.game) showTab('play'); });
+net.on('chat', m => {
+  if (state.game) return;
+  const log = $('chat-log');
+  const d = document.createElement('div');
+  if (m.from === 'SYSTÈME') d.className = 'sys';
+  d.innerHTML = `${m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : ''}<b>${esc(m.from)}</b>${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''} : ${esc(m.text)}`;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+});
+$('chat-input').onkeydown = e => {
+  if (e.key !== 'Enter') return;
+  const t = e.target.value.trim();
+  if (t) net.send('chat', { text: t });
+  e.target.value = '';
+};
+
+function renderRoom() {
+  const r = state.room;
+  if (!r) return;
+  const host = r.hostId === state.myId;
+  const me = r.members.find(m => m.id === state.myId);
+  $('room-title').textContent = r.name;
+  $('room-code').classList.toggle('hidden', !r.code);
+  if (r.code) $('room-code').innerHTML = `SALON PRIVÉ · CODE <b>${esc(r.code)}</b> <button class="btn ghost small" id="copy-code">COPIER</button>`;
+  if ($('copy-code')) $('copy-code').onclick = () => { navigator.clipboard?.writeText(r.code).then(() => toast('Code copié !'), () => toast(`Code : ${r.code}`)); };
+  $('room-invite').style.display = state.guest ? 'none' : '';
+  $('room-sub').textContent = `${MODE_LABEL[r.mode]} · ${MAP_INFO[r.mapId].name} · ${r.mode === 'ffa' ? `${r.target} éliminations` : `premier à ${r.target} manches`} · bots ${DIFF_LABEL[r.difficulty]}${r.state === 'playing' ? ' · EN JEU' : ''}`;
+  document.querySelector('.room-grid').classList.toggle('ffa', r.mode === 'ffa');
+  $('team-alpha').querySelector('h3').textContent = r.mode === 'ffa' ? 'JOUEURS' : r.mode === 'duel' ? 'DUELLISTE 1' : 'ÉQUIPE ALPHA';
+  $('team-beta').querySelector('h3').textContent = r.mode === 'duel' ? 'DUELLISTE 2' : 'ÉQUIPE OMÉGA';
+  const member = m => {
+    const a = AGENTS[m.agent];
+    const other = !m.isBot && m.id !== state.myId;
+    return `<div class="member ${m.id === state.myId ? 'me' : ''}" style="--c:${a?.color}">${agentIconHTML(m.agent)}
+      <div class="mn">${m.level ? `<span class="mlvl">${m.level}</span>` : ''}<span class="${m.account ? 'link' : ''}" ${m.account ? `data-prof="${esc(m.name)}"` : ''}>${esc(m.name)}</span> ${m.id === r.hostId ? '<span class="host">★ HÔTE</span>' : ''}${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''}<div class="ma">${a?.name || ''} · ${a?.role || ''}</div></div>
+      ${other ? `<button class="x rep" data-report="${esc(m.name)}" title="Signaler ce joueur">⚑</button>` : ''}
+      ${m.isBot ? (host ? `<button class="x" data-rm="${m.id}" title="Retirer">✕</button>` : '<span class="muted">BOT</span>') : (m.ready ? '<span class="rdy">PRÊT</span>' : '')}</div>`;
+  };
+  const alpha = r.members.filter(m => m.team === 'alpha' || m.team === 'ffa');
+  const beta = r.members.filter(m => m.team === 'beta');
+  $('team-alpha').querySelector('.members').innerHTML = alpha.map(member).join('') || '<div class="empty">En attente…</div>';
+  $('team-beta').querySelector('.members').innerHTML = beta.map(member).join('') || '<div class="empty">En attente…</div>';
+  const cap = r.mode === 'ffa' ? r.max : r.max / 2;
+  document.querySelectorAll('[data-join]').forEach(b => {
+    const n = (b.dataset.join === 'alpha' ? alpha : beta).length;
+    b.style.display = r.mode === 'ffa' || me?.team === b.dataset.join || r.state !== 'lobby' ? 'none' : '';
+    b.disabled = n >= cap;
+  });
+  document.querySelectorAll('[data-bot]').forEach(b => {
+    const n = r.mode === 'ffa' ? r.members.length : (b.dataset.bot === 'alpha' ? alpha : beta).length;
+    b.disabled = n >= cap || r.members.length >= r.max;
+  });
+  document.querySelectorAll('#tab-room .host-only').forEach(el => { el.style.display = host ? '' : 'none'; });
+  // paramètres hôte
+  const maps = mapsForMode(r.mode);
+  $('rs-map').innerHTML = maps.map(id => `<option value="${id}">${MAP_INFO[id].name} — ${MAP_INFO[id].subtitle}</option>`).join('');
+  $('rs-map').value = r.mapId;
+  $('rs-mode').value = r.mode;
+  $('rs-target').innerHTML = TARGETS[r.mode].map(t => `<option value="${t}">${r.mode === 'ffa' ? t + ' éliminations' : 'Premier à ' + t + ' manches'}</option>`).join('');
+  if (!TARGETS[r.mode].includes(r.target)) $('rs-target').insertAdjacentHTML('beforeend', `<option value="${r.target}">${r.target}</option>`);
+  $('rs-target').value = r.target;
+  $('rs-diff').value = r.difficulty;
+  $('rs-private').checked = !!r.private;
+  const cv = $('room-map-preview').querySelector('canvas');
+  drawMapPreview(cv, parseMap(r.mapId));
+  $('room-map-preview').querySelector('.map-name').textContent = MAP_INFO[r.mapId].name;
+  $('room-start').style.display = host && r.state === 'lobby' ? '' : 'none';
+  $('room-ready').style.display = r.state === 'lobby' ? '' : 'none';
+  $('room-ready').classList.toggle('on', !!me?.ready);
+  $('room-ready').textContent = me?.ready ? 'PRÊT ✓' : 'PRÊT';
+  // choix d'agent
+  const takenBy = new Map(r.members.filter(m => m.id !== state.myId && !m.isBot && r.mode !== 'ffa' && m.team === me?.team).map(m => [m.agent, m.name]));
+  $('agent-pick').innerHTML = AGENT_ORDER.map(id => {
+    const a = AGENTS[id];
+    return `<div class="agent-card ${me?.agent === id ? 'active' : ''} ${takenBy.has(id) ? 'taken' : ''}" data-id="${id}" style="--c:${a.color}">${agentIconHTML(id)}<div class="an">${a.name}</div><div class="ar">${takenBy.has(id) ? 'pris' : a.role}</div></div>`;
+  }).join('');
+  const a = AGENTS[me?.agent];
+  $('agent-pick-info').innerHTML = a ? ['q', 'e', 'x'].map(k => `<span><b>${k === 'x' ? 'ULTIME' : k.toUpperCase()}</b> · ${a.abilities[k].name}</span>`).join('') : '';
+}
+$('agent-pick').onclick = e => {
+  const c = e.target.closest('.agent-card'); if (!c) return;
+  profile.agent = c.dataset.id; save();
+  net.send('setAgent', { agent: c.dataset.id });
+  SFX.initAudio(); SFX.playUI('click');
+};
+document.querySelectorAll('[data-join]').forEach(b => b.onclick = () => net.send('setTeam', { team: b.dataset.join }));
+document.querySelectorAll('[data-bot]').forEach(b => b.onclick = () => net.send('addBot', { team: b.dataset.bot }));
+document.querySelectorAll('.team-panel .members').forEach(el => el.onclick = e => {
+  const x = e.target.closest('[data-rm]'); if (x) net.send('removeBot', { id: x.dataset.rm });
+  const rp = e.target.closest('[data-report]'); if (rp) openReport(rp.dataset.report);
+  const pf = e.target.closest('[data-prof]'); if (pf) viewProfile(pf.dataset.prof);
+});
+$('room-invite').onclick = () => { net.send('friends'); setTimeout(openInvitePicker, 150); };
+$('rs-private').onchange = e => net.send('roomSettings', { private: e.target.checked });
+$('room-leave').onclick = () => net.send('leaveRoom');
+$('room-ready').onclick = () => { const me = state.room?.members.find(m => m.id === state.myId); net.send('setReady', { ready: !me?.ready }); };
+$('room-start').onclick = () => { SFX.initAudio(); net.send('start'); };
+$('rs-fill').onclick = () => net.send('fillBots');
+for (const [id, key] of [['rs-map', 'mapId'], ['rs-mode', 'mode'], ['rs-target', 'target'], ['rs-diff', 'difficulty']]) $(id).onchange = e => net.send('roomSettings', { [key]: e.target.value });
+
+// ======================= PARTIE =======================
+net.on('matchStart', m => {
+  document.getElementById('mmodal').classList.remove('show');
+  if (state.game) state.game.destroy();
+  $('menu').classList.remove('active');
+  state.game = new Game(net, { ...m, guest: state.guest }, () => exitGame());
+  state.game.lock();
+});
+function exitGame() {
+  state.game = null;
+  $('menu').classList.add('active');
+  refreshProfileUI();
+  showTab(state.room ? 'room' : 'play');
+}
+net.on('backToRoom', () => { if (state.game) { state.game.destroy(); exitGame(); } });
+
+// ======================= APERÇUS 3D =======================
+class Preview {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(35, 1, 0.01, 50);
+    this.scene.add(new THREE.HemisphereLight('#ffffff', '#3a3550', 1.6));
+    const d = new THREE.DirectionalLight('#ffffff', 2.4); d.position.set(2, 3, 2); this.scene.add(d);
+    const r = new THREE.DirectionalLight('#8b5cff', 2); r.position.set(-3, 1, -2); this.scene.add(r);
+    this.pivot = new THREE.Group(); this.scene.add(this.pivot);
+    this.drag = null; this.rotY = 0.6;
+    canvas.addEventListener('pointerdown', e => { this.drag = e.clientX; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', e => { if (this.drag !== null) { this.rotY += (e.clientX - this.drag) * 0.01; this.drag = e.clientX; } });
+    canvas.addEventListener('pointerup', () => { this.drag = null; });
+  }
+  set(obj, camPos, look) {
+    while (this.pivot.children.length) this.pivot.remove(this.pivot.children[0]);
+    this.pivot.add(obj);
+    this.camera.position.set(...camPos); this.camera.lookAt(...look);
+  }
+  render(dt) {
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+    if (!w || !h) return;
+    if (this.canvas.width !== Math.floor(w * this.renderer.getPixelRatio())) { this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); }
+    if (this.drag === null) this.rotY += dt * 0.5;
+    this.pivot.rotation.y = this.rotY;
+    this.renderer.render(this.scene, this.camera);
+  }
+}
+const previews = { active: null, agent: null, coll: null };
+let lastT = performance.now();
+function previewLoop(t) {
+  requestAnimationFrame(previewLoop);
+  const dt = Math.min(0.05, (t - lastT) / 1000); lastT = t;
+  if (state.game || !previews.active) return;
+  animateSkins(t / 1000);
+  const p = previews[previews.active];
+  if (p) p.render(dt);
+}
+requestAnimationFrame(previewLoop);
+
+// ======================= AGENTS =======================
+function renderAgents() {
+  $('agents-list').innerHTML = AGENT_ORDER.map(id => { const a = AGENTS[id]; return `<div class="agent-row ${id === state.agentView ? 'active' : ''}" data-id="${id}" style="--c:${a.color}">${agentIconHTML(id)}<div><div class="an">${a.name}</div><div class="ar">${a.role}</div></div></div>`; }).join('');
+  const a = AGENTS[state.agentView];
+  const det = $('agent-detail');
+  det.style.setProperty('--c', a.color);
+  if (!det.querySelector('canvas')) det.innerHTML = '<canvas></canvas><div class="agent-text"></div>';
+  det.querySelector('.agent-text').innerHTML = `<div class="role">${a.role.toUpperCase()}</div><div class="big">${a.name}</div><div class="bio">${esc(a.bio)}</div>
+    <div class="ab-list">${['q', 'e', 'x'].map(k => `<div class="ab"><div class="key">${esc(keyName(profile.settings.keys[k === 'x' ? 'ult' : k === 'q' ? 'abilityQ' : 'abilityE']))}</div><div><div class="nm">${esc(a.abilities[k].name)}${k === 'x' ? ` <span class="muted">(ultime · ${a.abilities.x.cost} points)</span>` : ` <span class="muted">(${a.abilities[k].charges} charge${a.abilities[k].charges > 1 ? 's' : ''})</span>`}</div><div class="ds">${esc(a.abilities[k].desc)}</div></div></div>`).join('')}</div>`;
+  if (!previews.agent) previews.agent = new Preview(det.querySelector('canvas'));
+  const ch = buildCharacter(a.id, '#19e3c4');
+  const w = buildWeapon('rifle', profile.equipped.lancer || 'default'); w.scale.setScalar(1.1); ch.hand.add(w);
+  previews.agent.set(ch.root, [0, 1.3, 4.2], [0, 1, 0]);
+}
+$('agents-list').onclick = e => { const r = e.target.closest('.agent-row'); if (r) { state.agentView = r.dataset.id; renderAgents(); } };
+
+// ======================= COLLECTION =======================
+function renderCollection() {
+  $('coll-weapons').innerHTML = SKINNABLE.map(w => `<button class="${w === state.collWeapon ? 'active' : ''}" data-w="${w}">${WEAPONS[w].name.toUpperCase()}<small>${SKINS.find(s => s.id === profile.equipped[w])?.name || 'Standard'}</small></button>`).join('');
+  const sel = state.collSkin || profile.equipped[state.collWeapon] || 'default';
+  $('coll-skins').innerHTML = SKINS.map(s => {
+    const owned = profile.owned.includes(s.id);
+    const eq = profile.equipped[state.collWeapon] === s.id;
+    const sw = `background:linear-gradient(135deg, ${s.body} 0 55%, ${s.accent} 55%)${s.glow ? `;box-shadow:0 0 14px -2px ${s.accent}` : ''}`;
+    const label = eq ? '<div class="sp eq">ÉQUIPÉ</div>' : owned ? '<div class="sp owned">Possédé — cliquer pour équiper</div>' : s.level ? `<div class="sp lock">🔒 Niveau ${s.level}</div>` : `<div class="sp"><span class="gem small"></span>${s.price}</div>`;
+    return `<div class="skin-card ${s.id === sel ? 'selected' : ''}" data-s="${s.id}"><div class="sw" style="${sw}"></div><div class="sn">${s.name}</div>${label}</div>`;
+  }).join('');
+  $('coll-title').textContent = `${WEAPONS[state.collWeapon].name.toUpperCase()} · ${SKINS.find(s => s.id === sel).name}`;
+  if (!previews.coll) previews.coll = new Preview($('coll-canvas'));
+  const w = buildWeapon(WEAPONS[state.collWeapon].model, sel);
+  const box = new THREE.Box3().setFromObject(w);
+  const c = box.getCenter(new THREE.Vector3());
+  w.position.sub(c);
+  w.rotation.y = Math.PI / 2;
+  const holder = new THREE.Group(); holder.add(w);
+  const size = box.getSize(new THREE.Vector3()).length();
+  previews.coll.set(holder, [0, size * 0.28, size * 1.05], [0, 0, 0]);
+}
+$('coll-weapons').onclick = e => { const b = e.target.closest('button'); if (b) { state.collWeapon = b.dataset.w; state.collSkin = null; renderCollection(); } };
+$('coll-skins').onclick = e => {
+  const c = e.target.closest('.skin-card'); if (!c) return;
+  const id = c.dataset.s, skin = SKINS.find(s => s.id === id);
+  const owned = profile.owned.includes(id);
+  if (state.collSkin !== id && !owned) { state.collSkin = id; renderCollection(); return; } // 1er clic : aperçu
+  if (!owned && skin.level) { toast(state.guest ? `Skin exclusif : crée un compte et atteins le niveau ${skin.level}.` : `Skin exclusif : atteins le niveau ${skin.level} pour le débloquer.`); return; }
+  if (!owned) {
+    if (profile.eclats < skin.price) { toast(`Il te manque ${skin.price - profile.eclats} Éclats. Joue des parties pour en gagner !`); return; }
+    if (!confirm(`Acheter le skin « ${skin.name} » pour ${skin.price} Éclats ? (débloqué pour toutes les armes)`)) return;
+    if (session.account) { net.send('buySkin', { skin: id }); net.send('equipSkin', { weapon: state.collWeapon, skin: id }); }
+    else { profile.eclats -= skin.price; profile.owned.push(id); equipLocal(id); }
+    SFX.initAudio(); SFX.playUI('win');
+  } else {
+    if (session.account) net.send('equipSkin', { weapon: state.collWeapon, skin: id });
+    else equipLocal(id);
+  }
+  profile.equipped[state.collWeapon] = id;
+  state.collSkin = id;
+  refreshProfileUI();
+};
+function equipLocal(id) {
+  profile.equipped[state.collWeapon] = id;
+  save();
+  net.send('setSkins', { skins: profile.equipped });
+}
+
+// ======================= PARAMÈTRES =======================
+document.addEventListener('settings-changed', e => {
+  const k = e.detail?.key;
+  if (k === 'vol' || k === '*') SFX.setVolume(profile.settings.vol);
+  if ((k === 'keys' || k === '*') && state.tab === 'agents') renderAgents();
+});
+
+// ======================= NAVIGATION & CONNEXION =======================
+// ======================= CLASSEMENT =======================
+for (const [id, key] of [['lb-kind', 'kind'], ['lb-scope', 'scope']]) $(id).onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  hub.lb[key] = b.dataset.v;
+  $(id).querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+  loadLeaderboard();
+};
+initHub({ net, state, toast, showTab });
+
+document.querySelector('.nav').id = 'nav';
+$('nav').classList.add('locked');
+$('logout-btn').style.display = 'none';
+document.querySelectorAll('.nav button').forEach(b => b.onclick = () => { if (b.dataset.tab === 'play' && state.room) showTab('room'); else showTab(b.dataset.tab); });
+setAuthMode(session.token ? 'login' : 'register');
+$('auth-name').value = profile.name || '';
+SFX.setVolume(profile.settings.vol);
+renderCreateMaps();
+showTab('login');
+
+net.on('open', () => { $('conn-status').textContent = 'en ligne'; $('conn-status').classList.add('on'); });
+net.on('close', () => {
+  $('conn-status').textContent = 'hors ligne'; $('conn-status').classList.remove('on');
+  toast('Connexion au serveur perdue… reconnexion', 4000);
+  if (state.game) { state.game.destroy(); state.game = null; }
+  setTimeout(() => location.reload(), state.kicked ? 8000 : 2500);
+});
+net.connect().then(() => {
+  net.startPing();
+  if (session.token) net.send('resume', { token: session.token });
+}).catch(() => toast('Impossible de joindre le serveur.'));

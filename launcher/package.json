@@ -1,0 +1,42 @@
+{
+  "name": "eclipse-launcher",
+  "productName": "ECLIPSE Launcher",
+  "version": "1.2.0",
+  "description": "Launcher du jeu ECLIPSE",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.1"
+  },
+  "build": {
+    "appId": "xyz.charlesvibe.eclipse.launcher",
+    "productName": "ECLIPSE Launcher",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "renderer/**", "build/icon.png"],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ECLIPSE",
+      "artifactName": "ECLIPSE-Launcher-Setup-${version}.${ext}"
+    },
+    "portable": { "artifactName": "ECLIPSE-Launcher-${version}-portable.${ext}" },
+    "mac": { "icon": "build/icon.png", "target": "dmg" },
+    "linux": { "icon": "build/icon.png", "target": "AppImage", "category": "Game" }
+  }
+}

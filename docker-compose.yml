@@ -1,0 +1,16 @@
+services:
+  eclipse:
+    build: .
+    image: eclipse-tactics:latest
+    container_name: eclipse
+    restart: unless-stopped
+    ports:
+      - "${ECLIPSE_PORT:-3000}:3000"
+    environment:
+      - PORT=3000
+      - DATA_DIR=/data
+    volumes:
+      - eclipse-data:/data
+
+volumes:
+  eclipse-data:
