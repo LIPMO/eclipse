@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.6.0",
+    "date": "2026-11-22",
+    "title": "Gun Game, killcam, clans, tournois et version téléphone",
+    "items": [
+      "Nouveau mode Gun Game : chacun pour soi, chaque élimination donne l'arme suivante, le couteau pour finir. Bouton GUN GAME sur l'écran Jouer.",
+      "Killcam : après ta mort, revois les 3 dernières secondes du point de vue de ton adversaire (désactivable dans les paramètres).",
+      "Marqueur de position au clic molette : ton équipe voit le point visé et sa distance ; vise un ennemi pour une alerte rouge.",
+      "7 nouveaux agents : Kairo, Boréa, Vesper, Aegis, Sol, Nyx et Hélia, avec trois nouvelles capacités (Élan, Gel, Blizzard).",
+      "Clans : crée ton clan (niveau 3), invite tes amis, tag devant le pseudo, chat de clan (/c message) et classement des clans.",
+      "Tournois : duels à élimination directe organisés par l'équipe, avec Éclats et titre Champion pour le vainqueur.",
+      "Version téléphone : joystick, visée au doigt, boutons d'action réglables (Paramètres → Tactile), mode paysage.",
+      "Nouveaux effets sonores : séries d'éliminations, battements de cœur, saut et atterrissage, changement d'arme, chargeur vide, notifications.",
+      "Corrigé : les bots savent maintenant frapper au couteau."
+    ]
+  },
+  {
     "version": "1.5.1",
     "date": "2026-11-22",
     "title": "Progression, amis et classements",

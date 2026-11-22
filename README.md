@@ -4,13 +4,17 @@ Jeu de tir tactique original, jouable dans le navigateur : agents à capacités,
 
 ## Contenu
 
-- **3 modes**
+- **4 modes**
   - **Assaut 5v5** : les attaquants posent le Noyau sur le site A ou B, les défenseurs le désamorcent. Économie, changement de côté à la mi-temps.
   - **Duel 1v1** : sur 3 petites cartes (FOSSE, CUBE, IGLOO). Victoire à l'élimination, 9000 crédits à chaque manche. Si le temps est écoulé, la manche revient au joueur qui a le plus de PV.
   - **Mêlée** : chacun pour soi, réapparition au bout de 3 s, toutes les armes gratuites.
+  - **Gun Game** : chacun pour soi, une arme par niveau (8 armes), chaque élimination donne la suivante ; le premier qui élimine au couteau gagne.
 - **Duel rapide** : un bouton apparie automatiquement deux joueurs et lance la partie.
 - **7 cartes** : DUNE, NÉON, GLACIER, TEMPLE (5v5) et FOSSE, CUBE, IGLOO (duel).
-- **6 agents** avec 2 capacités et un ultime chacun : fumées, flash, incendiaire, ruée, téléportation, mur de glace, invisibilité, révélation…
+- **13 agents** avec 2 capacités et un ultime chacun : fumées, flash, incendiaire, ruée, téléportation, mur de glace, invisibilité, révélation, élan, givre, blizzard…
+- **Killcam** des 3 dernières secondes avant la mort, **marqueur de position** au clic molette.
+- **Clans** (tag, rôles, chat de clan, classement) et **tournois** à élimination directe créés depuis l'administration.
+- **Version téléphone** : joystick, visée au doigt, boutons d'action réglables.
 - **8 armes** (pistolets, PM, pompe, fusils, sniper avec lunette) et **10 skins**.
 - **Lobby** : liste des salons, équipes, choix de l'agent, chat, bots (3 difficultés).
 - **Comptes** : inscription et connexion. Mots de passe hachés (scrypt), session mémorisée 30 jours. Éclats, skins et statistiques sont sauvegardés sur le serveur. Un mode invité est aussi disponible.
@@ -257,6 +261,11 @@ Commandes par défaut, modifiables dans PARAMÈTRES > TOUCHES :
 | A (Q en QWERTY) · E · X | Capacités et ultime |
 | F (maintenir) | Poser ou désamorcer le Noyau |
 | B · Tab · Entrée · Échap | Achat · scores · chat · pause |
+| Y · T | Chat d'équipe · messages radio |
+| Clic molette | Marquer une position pour l'équipe |
+| Espace (après la mort) | Passer la killcam |
+
+Sur téléphone : joystick à gauche, glisser à droite pour viser, boutons d'action à l'écran (Paramètres → Tactile pour la taille, l'opacité et la sensibilité).
 
 ## Structure
 

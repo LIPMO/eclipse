@@ -3,17 +3,19 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Game } from './game.js';
 import { profile, save, session, setToken, applyServerProfile } from './store.js';
-import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS } from '/shared/data.js';
+import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins } from './models.js';
 import * as SFX from './audio.js';
 import { mountSettings, keyName } from './settings.js';
+import { initClans, openClanTab } from './clans.js';
+import { initTournaments, openTournamentsTab } from './tournaments.js';
 import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub } from './hub.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const MODE_LABEL = { assault: 'ASSAUT 5v5', duel: 'DUEL 1v1', ffa: 'MÊLÉE' };
-const TARGETS = { assault: [3, 5, 7, 9, 13], duel: [3, 5, 7, 9], ffa: [10, 15, 25, 40] };
+const MODE_LABEL = { assault: 'ASSAUT 5v5', duel: 'DUEL 1v1', ffa: 'MÊLÉE', gungame: 'GUN GAME' };
+const TARGETS = { assault: [3, 5, 7, 9, 13], duel: [3, 5, 7, 9], ffa: [10, 15, 25, 40], gungame: [8] };
 const DIFF_LABEL = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert' };
 
 const net = new Net();
@@ -37,6 +39,8 @@ function showTab(name) {
   if (name === 'profile') { net.send('myProfile'); renderProfile(); }
   if (name === 'leaderboard') { renderLeaderboard(); loadLeaderboard(); }
   if (name === 'friends') { net.send('friends'); renderFriends(); }
+  if (name === 'clan') openClanTab();
+  if (name === 'tournaments') openTournamentsTab();
   previews.active = name === 'agents' ? 'agent' : name === 'collection' ? 'coll' : null;
 }
 
@@ -160,6 +164,7 @@ $('refresh-rooms').onclick = () => net.send('listRooms');
 net.on('rooms', m => { state.rooms = m.rooms; renderRooms(); });
 $('quick-duel').onclick = () => { SFX.initAudio(); net.send('quickDuel'); };
 $('quick-ffa').onclick = () => { SFX.initAudio(); net.send('quickFfa'); };
+$('quick-gun').onclick = () => { SFX.initAudio(); net.send('quickGun'); };
 $('open-guide').onclick = openGuide;
 $('quick-bots').onclick = () => { SFX.initAudio(); net.send('quickBots', { mode: $('qb-mode').value, difficulty: $('qb-diff').value }); };
 $('code-form').onsubmit = e => { e.preventDefault(); const code = $('code-input').value.trim(); if (code) net.send('joinCode', { code }); $('code-input').value = ''; };
@@ -215,15 +220,15 @@ function renderRoom() {
   if (r.code) $('room-code').innerHTML = `SALON PRIVÉ · CODE <b>${esc(r.code)}</b> <button class="btn ghost small" id="copy-code">COPIER</button>`;
   if ($('copy-code')) $('copy-code').onclick = () => { navigator.clipboard?.writeText(r.code).then(() => toast('Code copié !'), () => toast(`Code : ${r.code}`)); };
   $('room-invite').style.display = state.guest ? 'none' : '';
-  $('room-sub').textContent = `${MODE_LABEL[r.mode]} · ${MAP_INFO[r.mapId].name} · ${r.mode === 'ffa' ? `${r.target} éliminations` : `premier à ${r.target} manches`} · bots ${DIFF_LABEL[r.difficulty]}${r.state === 'playing' ? ' · EN JEU' : ''}`;
-  document.querySelector('.room-grid').classList.toggle('ffa', r.mode === 'ffa');
-  $('team-alpha').querySelector('h3').textContent = r.mode === 'ffa' ? 'JOUEURS' : r.mode === 'duel' ? 'DUELLISTE 1' : 'ÉQUIPE ALPHA';
+  $('room-sub').textContent = `${MODE_LABEL[r.mode]} · ${MAP_INFO[r.mapId].name} · ${r.mode === 'gungame' ? `${r.target} armes` : isFfa(r.mode) ? `${r.target} éliminations` : `premier à ${r.target} manches`} · bots ${DIFF_LABEL[r.difficulty]}${r.state === 'playing' ? ' · EN JEU' : ''}`;
+  document.querySelector('.room-grid').classList.toggle('ffa', isFfa(r.mode));
+  $('team-alpha').querySelector('h3').textContent = isFfa(r.mode) ? 'JOUEURS' : r.mode === 'duel' ? 'DUELLISTE 1' : 'ÉQUIPE ALPHA';
   $('team-beta').querySelector('h3').textContent = r.mode === 'duel' ? 'DUELLISTE 2' : 'ÉQUIPE OMÉGA';
   const member = m => {
     const a = AGENTS[m.agent];
     const other = !m.isBot && m.id !== state.myId;
     return `<div class="member ${m.id === state.myId ? 'me' : ''}" style="--c:${a?.color}">${agentIconHTML(m.agent)}
-      <div class="mn">${m.level ? `<span class="mlvl">${m.level}</span>` : ''}<span class="${m.account ? 'link' : ''}" ${m.account ? `data-prof="${esc(m.name)}"` : ''}>${esc(m.name)}</span> ${m.id === r.hostId ? '<span class="host">★ HÔTE</span>' : ''}${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''}<div class="ma">${a?.name || ''} · ${a?.role || ''}</div></div>
+      <div class="mn">${m.level ? `<span class="mlvl">${m.level}</span>` : ''}${m.clan ? `<span class="clan-tag">[${esc(m.clan)}]</span> ` : ''}<span class="${m.account ? 'link' : ''}" ${m.account ? `data-prof="${esc(m.name)}"` : ''}>${esc(m.name)}</span> ${m.id === r.hostId ? '<span class="host">★ HÔTE</span>' : ''}${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''}<div class="ma">${a?.name || ''} · ${a?.role || ''}</div></div>
       ${other ? `<button class="x rep" data-report="${esc(m.name)}" title="Signaler ce joueur">⚑</button>` : ''}
       ${m.isBot ? (host ? `<button class="x" data-rm="${m.id}" title="Retirer">✕</button>` : '<span class="muted">BOT</span>') : (m.ready ? '<span class="rdy">PRÊT</span>' : '')}</div>`;
   };
@@ -231,14 +236,14 @@ function renderRoom() {
   const beta = r.members.filter(m => m.team === 'beta');
   $('team-alpha').querySelector('.members').innerHTML = alpha.map(member).join('') || '<div class="empty">En attente…</div>';
   $('team-beta').querySelector('.members').innerHTML = beta.map(member).join('') || '<div class="empty">En attente…</div>';
-  const cap = r.mode === 'ffa' ? r.max : r.max / 2;
+  const cap = isFfa(r.mode) ? r.max : r.max / 2;
   document.querySelectorAll('[data-join]').forEach(b => {
     const n = (b.dataset.join === 'alpha' ? alpha : beta).length;
-    b.style.display = r.mode === 'ffa' || me?.team === b.dataset.join || r.state !== 'lobby' ? 'none' : '';
+    b.style.display = isFfa(r.mode) || me?.team === b.dataset.join || r.state !== 'lobby' ? 'none' : '';
     b.disabled = n >= cap;
   });
   document.querySelectorAll('[data-bot]').forEach(b => {
-    const n = r.mode === 'ffa' ? r.members.length : (b.dataset.bot === 'alpha' ? alpha : beta).length;
+    const n = isFfa(r.mode) ? r.members.length : (b.dataset.bot === 'alpha' ? alpha : beta).length;
     b.disabled = n >= cap || r.members.length >= r.max;
   });
   document.querySelectorAll('#tab-room .host-only').forEach(el => { el.style.display = host ? '' : 'none'; });
@@ -247,7 +252,7 @@ function renderRoom() {
   $('rs-map').innerHTML = maps.map(id => `<option value="${id}">${MAP_INFO[id].name} — ${MAP_INFO[id].subtitle}</option>`).join('');
   $('rs-map').value = r.mapId;
   $('rs-mode').value = r.mode;
-  $('rs-target').innerHTML = TARGETS[r.mode].map(t => `<option value="${t}">${r.mode === 'ffa' ? t + ' éliminations' : 'Premier à ' + t + ' manches'}</option>`).join('');
+  $('rs-target').innerHTML = TARGETS[r.mode].map(t => `<option value="${t}">${r.mode === 'gungame' ? t + ' armes (fixe)' : isFfa(r.mode) ? t + ' éliminations' : 'Premier à ' + t + ' manches'}</option>`).join('');
   if (!TARGETS[r.mode].includes(r.target)) $('rs-target').insertAdjacentHTML('beforeend', `<option value="${r.target}">${r.target}</option>`);
   $('rs-target').value = r.target;
   $('rs-diff').value = r.difficulty;
@@ -260,7 +265,7 @@ function renderRoom() {
   $('room-ready').classList.toggle('on', !!me?.ready);
   $('room-ready').textContent = me?.ready ? 'PRÊT ✓' : 'PRÊT';
   // choix d'agent
-  const takenBy = new Map(r.members.filter(m => m.id !== state.myId && !m.isBot && r.mode !== 'ffa' && m.team === me?.team).map(m => [m.agent, m.name]));
+  const takenBy = new Map(r.members.filter(m => m.id !== state.myId && !m.isBot && !isFfa(r.mode) && m.team === me?.team).map(m => [m.agent, m.name]));
   $('agent-pick').innerHTML = AGENT_ORDER.map(id => {
     const a = AGENTS[id];
     return `<div class="agent-card ${me?.agent === id ? 'active' : ''} ${takenBy.has(id) ? 'taken' : ''}" data-id="${id}" style="--c:${a.color}">${agentIconHTML(id)}<div class="an">${a.name}</div><div class="ar">${takenBy.has(id) ? 'pris' : a.role}</div></div>`;
@@ -431,6 +436,8 @@ for (const [id, key] of [['lb-kind', 'kind'], ['lb-scope', 'scope']]) $(id).oncl
   loadLeaderboard();
 };
 initHub({ net, state, toast, showTab });
+initClans({ net, state, toast });
+initTournaments({ net, state, toast, showTab });
 
 document.querySelector('.nav').id = 'nav';
 $('nav').classList.add('locked');

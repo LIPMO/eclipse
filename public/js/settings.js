@@ -27,7 +27,7 @@ export const ACTIONS = [
   ['slot1', 'Arme principale'], ['slot2', 'Arme secondaire'], ['slot3', 'Couteau'],
   ['abilityQ', 'Capacité 1'], ['abilityE', 'Capacité 2'], ['ult', 'Ultime'],
   ['interact', 'Poser / désamorcer'], ['buy', 'Menu d\'achat'], ['scoreboard', 'Tableau des scores'], ['chat', 'Chat (tous)'],
-  ['teamChat', 'Chat d\'équipe'], ['radio', 'Messages radio'],
+  ['teamChat', 'Chat d\'équipe'], ['radio', 'Messages radio'], ['mark', 'Marquer une position (ping)'],
 ];
 
 // ---------- viseur ----------
@@ -106,6 +106,7 @@ const SECTIONS = [
   { id: 'hud', title: 'Interface', items: [
     { k: 'minimap', t: 'toggle', label: 'Afficher la mini-carte' },
     { k: 'hitmarker', t: 'toggle', label: 'Marqueur de touche' },
+    { k: 'killcam', t: 'toggle', label: 'Killcam (revoir les 3 dernières secondes avant ta mort)' },
     { k: 'fps', t: 'toggle', label: 'Afficher les FPS' },
     { k: 'bob', t: 'toggle', label: 'Balancement de l\'arme en marchant' },
     { k: 'leftHand', t: 'toggle', label: 'Arme à gauche' },
@@ -114,6 +115,11 @@ const SECTIONS = [
   { id: 'audio', title: 'Audio', items: [
     { k: 'vol', t: 'range', label: 'Volume général', min: 0, max: 1, step: 0.05, pct: true },
     { k: 'hitSound', t: 'toggle', label: 'Son de touche' },
+  ] },
+  { id: 'touch', title: 'Tactile', items: [
+    { k: 'touchSens', t: 'range', label: 'Sensibilité de la visée au doigt', min: 0.2, max: 3, step: 0.05, num: true, hint: 'Téléphone et tablette' },
+    { k: 'touchSize', t: 'range', label: 'Taille des boutons', min: 0.7, max: 1.4, step: 0.05, pct: true },
+    { k: 'touchOpacity', t: 'range', label: 'Opacité des boutons', min: 0.2, max: 1, step: 0.05, pct: true },
   ] },
 ];
 

@@ -1,5 +1,5 @@
 // Logique de partie autoritaire côté serveur
-import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER } from '../shared/data.js';
+import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER } from '../shared/data.js';
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
@@ -15,7 +15,7 @@ export class Match {
     this.room = room;
     this.io = io; // { send(id,obj), sendRaw(id,str), onEnd() }
     this.map = parseMap(room.mapId);
-    this.mode = room.mode; // 'assault' | 'duel' | 'ffa'
+    this.mode = room.mode; // 'assault' | 'duel' | 'ffa' | 'gungame'
     this.target = room.target;
     this.difficulty = room.difficulty;
     this.time = 0;
@@ -47,10 +47,10 @@ export class Match {
       weapons: { 1: null, 2: this.newWeapon('spark'), 3: { id: 'knife' } }, slot: 2,
       lastShot: -10, reloadEnd: 0, charges: {}, recharge: {}, ult: 0,
       kills: 0, deaths: 0, assists: 0, score: 0, damagedBy: new Map(),
-      healEnd: 0, healRate: 0, buffEnd: 0, speedMul: 1, rateMul: 1, invisEnd: 0, revealEnd: 0, blindEnd: 0,
+      healEnd: 0, healRate: 0, buffEnd: 0, buffSpeed: 1, hasteEnd: 0, slowEnd: 0, speedPeak: 1, speedPeakEnd: 0, speedMul: 1, rateMul: 1, invisEnd: 0, revealEnd: 0, blindEnd: 0,
       interact: false, prog: 0, progKind: null, interactPos: null,
       respawnAt: 0, diedAt: 0, roundsWon: 0, account: m.account || null, lastDamagedBy: null, lastDamagedAt: -10, joinedMidRound: false,
-      level: m.isBot ? 999 : (m.level || 1), title: m.title || null,
+      level: m.isBot ? 999 : (m.level || 1), title: m.title || null, clan: m.clan || null, gun: 0,
       // statistiques détaillées (progression, quêtes, anti-triche)
       dmg: 0, hsKills: 0, knifeKills: 0, shots: 0, hits: 0, plants: 0, defuses: 0, aces: 0, multi3: 0, abilities: 0, ults: 0, roundKills: 0,
     };
@@ -73,14 +73,14 @@ export class Match {
   rosterMsg() {
     return {
       type: 'roster',
-      players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, bot: p.isBot, skins: p.skins, title: p.title, level: p.isBot ? null : p.level })),
+      players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, bot: p.isBot, skins: p.skins, title: p.title, clan: p.clan || null, level: p.isBot ? null : p.level })),
     };
   }
 
   addPlayer(m) {
     const p = this.makePlayer(m);
     this.players.set(p.id, p);
-    if (this.mode === 'ffa') this.spawnFFA(p);
+    if (isFfa(this.mode)) this.spawnFFA(p);
     else { p.alive = false; p.joinedMidRound = true; }
     this.broadcast(this.rosterMsg());
     if (!p.isBot) this.io.send(p.id, this.startMsg(p.id));
@@ -99,6 +99,7 @@ export class Match {
     const p = this.players.get(m.id);
     if (!p) return;
     if (m.skins) p.skins = m.skins;
+    if ('clan' in m) p.clan = m.clan || null;
     this.broadcast(this.rosterMsg());
   }
 
@@ -109,7 +110,7 @@ export class Match {
 
   // déblocage des armes par niveau (désactivable dans l'administration)
   // en Mêlée, tout le monde a l'équipement complet ; les bots suivent le niveau du joueur humain le plus bas (combat équitable)
-  unlocksOn() { return this.mode !== 'ffa' && (this.io.weaponUnlocks ? !!this.io.weaponUnlocks() : false); }
+  unlocksOn() { return !isFfa(this.mode) && (this.io.weaponUnlocks ? !!this.io.weaponUnlocks() : false); }
   humanMinLevel() { let l = Infinity; for (const q of this.players.values()) if (!q.isBot) l = Math.min(l, q.level || 1); return l === Infinity ? 999 : l; }
   weaponLocked(p, id) { return this.unlocksOn() && (WEAPON_UNLOCK[id] || 1) > (p.isBot ? this.humanMinLevel() : p.level); }
 
@@ -117,10 +118,10 @@ export class Match {
     for (const m of members) this.players.set(m.id, this.makePlayer(m));
     this.io.onEvent?.('start', { players: [...this.players.values()].map(p => ({ agent: p.agent, isBot: p.isBot })) });
     for (const p of this.players.values()) if (!p.isBot) this.io.send(p.id, this.startMsg(p.id));
-    if (this.mode === 'ffa') {
+    if (isFfa(this.mode)) {
       for (const p of this.players.values()) this.spawnFFA(p);
       this.phase = 'live';
-      this.phaseEnd = this.time + FFA.timeLimit;
+      this.phaseEnd = this.time + (this.mode === 'gungame' ? FFA.gunTimeLimit : FFA.timeLimit);
     } else {
       this.phase = 'warmup';
       this.phaseEnd = this.time + 2;
@@ -128,7 +129,7 @@ export class Match {
   }
 
   side(p) { return sideOf(p.team, this.half); }
-  isEnemy(a, b) { return a.id !== b.id && (this.mode === 'ffa' || a.team !== b.team); }
+  isEnemy(a, b) { return a.id !== b.id && (isFfa(this.mode) || a.team !== b.team); }
   eye(p) { return [p.pos[0], p.pos[1] + (p.crouch ? PLAYER.eyeCrouch : PLAYER.eye), p.pos[2]]; }
 
   allBoxes() {
@@ -174,7 +175,7 @@ export class Match {
         for (const s of [1, 2]) if (p.weapons[s]) { const d = WEAPONS[p.weapons[s].id]; p.weapons[s].mag = d.mag; p.weapons[s].reserve = d.reserve; }
       }
       p.alive = true; p.hp = 100; p.slot = p.weapons[1] ? 1 : 2; p.reloadEnd = 0;
-      p.healEnd = 0; p.buffEnd = 0; p.speedMul = 1; p.rateMul = 1; p.invisEnd = 0; p.revealEnd = 0; p.blindEnd = 0;
+      p.healEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.invisEnd = 0; p.revealEnd = 0; p.blindEnd = 0;
       p.interact = false; p.prog = 0; p.damagedBy = new Map(); p.joinedMidRound = false; p.roundKills = 0;
       this.refillCharges(p);
       const list = spawnSets[side];
@@ -228,10 +229,10 @@ export class Match {
     for (const p of this.players.values()) if (!mvp || p.score > mvp.score) mvp = p;
     const stats = [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score, bot: p.isBot, dmg: Math.round(p.dmg), hs: p.hsKills, title: p.title }));
     const rewards = {}, results = [];
-    const scoreLine = this.mode === 'ffa' ? '' : `${this.score.alpha}-${this.score.beta}`;
+    const scoreLine = isFfa(this.mode) ? '' : `${this.score.alpha}-${this.score.beta}`;
     for (const p of this.players.values()) {
       if (p.isBot) continue;
-      const won = this.mode === 'ffa' ? winner === p.id : winner === p.team;
+      const won = isFfa(this.mode) ? winner === p.id : winner === p.team;
       rewards[p.id] = Math.round((REWARDS.matchPlayed + p.kills * REWARDS.kill + p.roundsWon * REWARDS.roundWin + (won ? REWARDS.matchWin : 0)) * (this.io.rewardMul ? this.io.rewardMul() : 1));
       results.push({
         id: p.id, account: p.account, name: p.name, team: p.team, reward: rewards[p.id], won, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score,
@@ -267,12 +268,38 @@ export class Match {
       if (d > bestD) { bestD = d; best = [x, 0, z]; }
     }
     p.alive = true; p.hp = 100; p.armor = 50; p.money = 9000; p.reloadEnd = 0;
-    const prim = p.weapons?.[1]?.id || 'lancer';
-    p.weapons = { 1: prim ? this.newWeapon(prim) : null, 2: this.newWeapon(p.weapons?.[2]?.id || 'spark'), 3: { id: 'knife' } };
-    p.slot = p.weapons[1] ? 1 : 2; p.damagedBy = new Map(); p.invisEnd = 0; p.buffEnd = 0; p.speedMul = 1; p.rateMul = 1; p.blindEnd = 0;
+    if (this.mode === 'gungame') { this.gunLoadout(p); p.armor = 0; } // pas d'armure : le couteau final reste jouable
+    else {
+      const prim = p.weapons?.[1]?.id || 'lancer';
+      p.weapons = { 1: prim ? this.newWeapon(prim) : null, 2: this.newWeapon(p.weapons?.[2]?.id || 'spark'), 3: { id: 'knife' } };
+      p.slot = p.weapons[1] ? 1 : 2;
+    }
+    p.reloadEnd = 0; p.damagedBy = new Map(); p.invisEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.blindEnd = 0;
     const [mw, mh] = this.map.size;
     this.teleport(p, best, Math.atan2(-(mw / 2 - best[0]), -(mh / 2 - best[2])));
     if (p.brain) p.brain.onRoundStart();
+  }
+
+  // ---------- Gun Game ----------
+  // une seule arme (celle du niveau) + le couteau ; au dernier niveau, le couteau seul
+  gunLoadout(p) {
+    const id = GUN_LADDER[Math.min(p.gun, GUN_LADDER.length - 1)];
+    const slot = WEAPONS[id].slot;
+    p.weapons = { 1: null, 2: null, 3: { id: 'knife' } };
+    if (slot !== 3) p.weapons[slot] = this.newWeapon(id);
+    p.slot = slot; p.reloadEnd = 0;
+  }
+  gunKill(v, a, wpn) {
+    const last = GUN_LADDER.length - 1;
+    // une élimination au couteau fait reculer la victime d'une arme
+    if (wpn === 'knife' && v.gun > 0 && v !== a) { v.gun--; this.send(v, { type: 'gun', lvl: v.gun, down: 1, by: a.name }); }
+    if (!a || a === v) return;
+    if (a.gun >= last) { if (wpn === 'knife' && this.phase !== 'over') { a.gun = GUN_LADDER.length; this.matchOver(a.id); } return; }
+    a.gun++;
+    a.score += 100;
+    if (a.alive) this.gunLoadout(a);
+    this.send(a, { type: 'gun', lvl: a.gun });
+    if (a.gun === last) this.broadcast({ type: 'notice', text: `${a.name.toUpperCase()} EST AU COUTEAU !` });
   }
 
   // ---------- Messages ----------
@@ -286,7 +313,37 @@ export class Match {
       case 'buy': return this.handleBuy(p, msg.item);
       case 'ability': return this.handleAbility(p, msg);
       case 'interact': p.interact = !!msg.on; if (p.interact) p.interactPos = p.pos.slice(); return;
+      case 'mark': return this.handleMark(p, msg);
     }
+  }
+
+  // marqueur de position (clic molette) : le point est calculé par le serveur à partir du regard,
+  // il n'est envoyé qu'aux coéquipiers (au joueur seul en Mêlée) et limité à 3 toutes les 4 secondes
+  handleMark(p, m) {
+    if (!p.alive || this.phase === 'over') return;
+    const T = this.time;
+    p.markT = (p.markT || []).filter(t => T - t < 4);
+    if (p.markT.length >= 3) return;
+    if (!Array.isArray(m.d) || m.d.length !== 3 || !m.d.every(finite)) return;
+    const dir = norm(m.d);
+    if (!dir.every(finite) || Math.hypot(...dir) < 0.5) return;
+    p.markT.push(T);
+    const eye = this.eye(p);
+    const r = raycastBoxes(eye, dir, 150, this.allBoxes());
+    const t = Math.min(150, r.t);
+    const pt = [eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t];
+    // un ennemi visible près du rayon ? → marqueur « danger »
+    let danger = false;
+    for (const q of this.players.values()) {
+      if (!q.alive || !this.isEnemy(p, q) || q.invisEnd > T) continue;
+      const c = [q.pos[0] - eye[0], q.pos[1] + 1 - eye[1], q.pos[2] - eye[2]];
+      const along = c[0] * dir[0] + c[1] * dir[1] + c[2] * dir[2];
+      if (along < 0 || along > t + 1) continue;
+      const off = Math.hypot(c[0] - dir[0] * along, c[1] - dir[1] * along, c[2] - dir[2] * along);
+      if (off < 1.4 + along * 0.02) { danger = true; pt[0] = q.pos[0]; pt[1] = q.pos[1] + 1; pt[2] = q.pos[2]; break; }
+    }
+    const msg = { type: 'mark', i: p.id, n: p.name, p: pt.map(r2), d: danger ? 1 : 0 };
+    for (const q of this.players.values()) if (q === p || (!isFfa(this.mode) && q.team === p.team)) this.send(q, msg);
   }
 
   handleInput(p, m) {
@@ -300,7 +357,7 @@ export class Match {
     if (p.moveBonusEnd && T > p.moveBonusEnd) { p.moveBonus = 0; p.moveBonusEnd = 0; }
     const last = p.lastValid || { pos: p.pos, t: T };
     const elapsed = Math.min(2, T - last.t) + 0.35; // marge pour la gigue réseau
-    const maxSpeed = MOVE.run * 1.3 * Math.max(1, p.speedMul) + 0.5;
+    const maxSpeed = MOVE.run * 1.3 * Math.max(1, p.speedMul, p.speedPeakEnd > T ? p.speedPeak : 1) + 0.5;
     const base = maxSpeed * elapsed + 1;
     const d = Math.hypot(np[0] - last.pos[0], np[2] - last.pos[2]);
     const flying = np[1] > 4.8; // plus haut que caisse haute + saut
@@ -334,8 +391,8 @@ export class Match {
   }
 
   handleBuy(p, item) {
-    if (!p.alive) return;
-    const ffa = this.mode === 'ffa';
+    if (!p.alive || this.mode === 'gungame') return;
+    const ffa = isFfa(this.mode);
     if (!ffa && this.phase !== 'buy') return;
     if (WEAPONS[item] && item !== 'knife') {
       const d = WEAPONS[item];
@@ -408,6 +465,9 @@ export class Match {
     if (dmgAcc.size && d.type !== 'melee') p.hits++;
     for (const [q, acc] of dmgAcc) this.damage(q, acc.dmg, p, w.id, acc.head);
     this.broadcast({ type: 'shot', i: p.id, w: w.id, o: origin.map(r2), e: ends.slice(0, 4) });
+    (p.shotLog ||= []).push([r2(this.time), w.id, ends[0]]);
+    while (p.shotLog.length && this.time - p.shotLog[0][0] > 3.5) p.shotLog.shift();
+    if (p.shotLog.length > 40) p.shotLog.shift();
   }
 
   damage(q, amount, attacker, wpn, head, silent = false) {
@@ -433,7 +493,7 @@ export class Match {
       a.kills++; a.score += 200 + (head ? 50 : 0);
       if (head) a.hsKills++;
       if (wpn === 'knife') a.knifeKills++;
-      if (this.mode !== 'ffa') {
+      if (!isFfa(this.mode)) {
         a.roundKills++;
         if (a.roundKills === 3) a.multi3++;
         if (a.roundKills === 5 && this.mode === 'assault') { a.aces++; this.broadcast({ type: 'notice', text: `AS ! ${a.name.toUpperCase()} A ÉLIMINÉ TOUTE L'ÉQUIPE` }); }
@@ -447,11 +507,25 @@ export class Match {
       if (ass) { ass.assists++; ass.score += 50; }
     }
     this.broadcast({ type: 'kill', k: a ? a.id : null, v: v.id, w: wpn, h: head ? 1 : 0 });
+    if (a && a !== v && !v.isBot) this.sendKillcam(v, a, wpn, head);
     this.io.onEvent?.('kill', { weapon: wpn, head: !!head, killer: a && a !== v ? a.name : null, victim: v.name });
-    if (this.mode === 'ffa') {
+    if (isFfa(this.mode)) {
       v.respawnAt = this.time + FFA.respawn;
-      if (a && a !== v && a.kills >= this.target && this.phase !== 'over') this.matchOver(a.id);
+      if (this.mode === 'gungame') this.gunKill(v, a, wpn);
+      else if (a && a !== v && a.kills >= this.target && this.phase !== 'over') this.matchOver(a.id);
     }
+  }
+
+  // killcam : les 3 dernières secondes vues par le tueur, envoyées seulement à la victime (qui est déjà morte)
+  sendKillcam(v, a, wpn, head) {
+    const T = this.time;
+    const kh = (a.hist || []).filter(f => T - f[0] <= 3.2);
+    if (kh.length < 3) return;
+    const vh = new Map((v.hist || []).map(f => [f[0], f]));
+    const frames = kh.map(f => { const g = vh.get(f[0]); return { t: f[0], k: f.slice(1, 7), v: g ? g.slice(1, 8) : null }; });
+    frames.push({ t: r2(T), k: [r2(a.pos[0]), r2(a.pos[1]), r2(a.pos[2]), r3(a.yaw), r3(a.pitch), a.crouch ? 1 : 0], v: [r2(v.pos[0]), r2(v.pos[1]), r2(v.pos[2]), r3(v.yaw), r3(v.pitch), v.crouch ? 1 : 0, 0] });
+    const shots = (a.shotLog || []).filter(s => T - s[0] <= 3.2);
+    this.send(v, { type: 'killcam', k: a.id, kn: a.name, ka: a.agent, w: wpn, h: head ? 1 : 0, hp: Math.max(0, Math.ceil(a.hp)), frames, shots });
   }
 
   dropCore(p) {
@@ -472,7 +546,7 @@ export class Match {
     } else {
       if ((p.charges[key] || 0) <= 0) return;
       p.charges[key]--; p.abilities++;
-      if (this.mode === 'ffa' && !p.recharge[key]) p.recharge[key] = this.time + FFA.abilityRecharge;
+      if (isFfa(this.mode) && !p.recharge[key]) p.recharge[key] = this.time + FFA.abilityRecharge;
     }
     const dir = Array.isArray(m.d) && m.d.length === 3 && m.d.every(finite) ? norm(m.d) : [0, 0, -1];
     const eye = this.eye(p);
@@ -517,8 +591,15 @@ export class Match {
         for (const q of this.players.values()) if (q.isBot && q.alive) depenetrate(q.pos, [box]);
         break;
       }
-      case 'overdrive': p.buffEnd = T + 10; p.speedMul = 1.25; p.rateMul = 1.3; p.hp = 100; break;
-      case 'phantom': p.buffEnd = T + 10; p.speedMul = 1.15; p.rateMul = 1; p.invisEnd = T + 10; break;
+      case 'overdrive': p.buffEnd = T + 10; p.buffSpeed = 1.25; p.rateMul = 1.3; p.hp = 100; break;
+      case 'phantom': p.buffEnd = T + 10; p.buffSpeed = 1.15; p.rateMul = 1; p.invisEnd = T + 10; break;
+      case 'haste': p.hasteEnd = T + 4; break;
+      case 'cryo': throwProj('cryo', 17, 3, 2.2); break;
+      case 'blizzard': {
+        const pt = aimPoint(45);
+        this.fires.push({ id: this.nextId++, pos: pt, r: 8, end: T + 8, dps: 12, slow: true, owner: p.id, kind: 'frost' });
+        break;
+      }
       case 'fortress':
         for (const q of this.players.values()) if (q.alive && !this.isEnemy(p, q) && Math.hypot(q.pos[0] - p.pos[0], q.pos[2] - p.pos[2]) < 18) { q.hp = 100; q.armor = Math.max(q.armor, 50); }
         break;
@@ -546,6 +627,7 @@ export class Match {
     const T = this.time;
     const g = groundHeight(pr.pos[0], pr.pos[2], pr.pos[1] + 0.3, this.map.boxes);
     if (pr.kind === 'smoke') this.smokes.push({ id: this.nextId++, pos: [pr.pos[0], g + 1.8, pr.pos[2]], r: 4.5, end: T + 14 });
+    else if (pr.kind === 'cryo') this.fires.push({ id: this.nextId++, pos: [pr.pos[0], g, pr.pos[2]], r: 4.2, end: T + 6, dps: 0, slow: true, owner: pr.owner, kind: 'frost' });
     else if (pr.kind === 'molotov') this.fires.push({ id: this.nextId++, pos: [pr.pos[0], g, pr.pos[2]], r: 3.6, end: T + 6, dps: 38, owner: pr.owner, kind: pr.shock ? 'shock' : 'fire' });
     else if (pr.kind === 'flash') {
       for (const q of this.players.values()) {
@@ -571,9 +653,14 @@ export class Match {
     this.time += dt;
     this.tickCount++;
     const T = this.time;
-    const assault = this.mode !== 'ffa'; // modes à manches (assaut, duel)
+    const assault = !isFfa(this.mode); // modes à manches (assaut, duel)
 
     for (const p of this.players.values()) if (p.brain) p.brain.update(dt);
+    // historique des 3,5 dernières secondes (10 images/s) pour la killcam
+    if (this.tickCount % 3 === 0) for (const p of this.players.values()) {
+      (p.hist ||= []).push([r2(T), r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r3(p.yaw), r3(p.pitch), p.crouch ? 1 : 0, p.alive ? 1 : 0]);
+      if (p.hist.length > 36) p.hist.shift();
+    }
 
     // effets
     for (const p of this.players.values()) {
@@ -587,7 +674,11 @@ export class Match {
         continue;
       }
       if (p.healEnd > T) p.hp = Math.min(100, p.hp + p.healRate * dt);
-      if (p.buffEnd && T >= p.buffEnd) { p.buffEnd = 0; p.speedMul = 1; p.rateMul = 1; }
+      if (p.buffEnd && T >= p.buffEnd) { p.buffEnd = 0; p.buffSpeed = 1; p.rateMul = 1; }
+      // vitesse effective : bonus (ultime) × élan × ralentissement (givre)
+      const sm = Math.round((p.buffEnd ? p.buffSpeed : 1) * (p.hasteEnd > T ? 1.35 : 1) * (p.slowEnd > T ? 0.6 : 1) * 100) / 100;
+      if (sm < p.speedMul) { p.speedPeak = p.speedMul; p.speedPeakEnd = T + 0.8; } // le client met un instant à ralentir
+      p.speedMul = sm;
       if (!assault) for (const k of ['q', 'e']) {
         if (p.recharge[k] && T >= p.recharge[k]) {
           const max = AGENTS[p.agent].abilities[k].charges;
@@ -630,15 +721,17 @@ export class Match {
       for (const q of this.players.values()) {
         if (!q.alive) continue;
         if (owner && !this.isEnemy(owner, q)) continue;
-        if (Math.hypot(q.pos[0] - f.pos[0], q.pos[2] - f.pos[2]) < f.r && Math.abs(q.pos[1] - f.pos[1]) < 2.5)
-          this.damage(q, f.dps * dt, owner || null, f.kind === 'shock' ? 'shock' : 'fire', false, true);
+        if (Math.hypot(q.pos[0] - f.pos[0], q.pos[2] - f.pos[2]) < f.r && Math.abs(q.pos[1] - f.pos[1]) < 2.5) {
+          if (f.slow) q.slowEnd = T + 0.4;
+          if (f.dps > 0) this.damage(q, f.dps * dt, owner || null, f.kind === 'shock' ? 'shock' : f.kind === 'frost' ? 'frost' : 'fire', false, true);
+        }
       }
     }
 
     if (assault) this.tickAssault(dt);
     else if (this.phase === 'live' && T >= this.phaseEnd) {
       let best = null;
-      for (const p of this.players.values()) if (!best || p.kills > best.kills) best = p;
+      for (const p of this.players.values()) if (!best || p.gun > best.gun || (p.gun === best.gun && p.kills > best.kills)) best = p;
       this.matchOver(best ? best.id : null);
     }
 
@@ -781,7 +874,7 @@ export class Match {
       const base = {
         i: p.id, p: p.pos.map(r2), y: r3(p.yaw), pt: r3(p.pitch), c: p.crouch ? 1 : 0, al: p.alive ? 1 : 0,
         w: w ? w.id : 'knife', iv: p.invisEnd > T ? 1 : 0, rv: p.revealEnd > T ? 1 : 0,
-        pl: p.prog > 0 ? 1 : 0, k: p.kills, d: p.deaths, a: p.assists, sc: p.score, pg: p.ping || 0, dm: Math.round(p.dmg),
+        pl: p.prog > 0 ? 1 : 0, gl: p.gun, k: p.kills, d: p.deaths, a: p.assists, sc: p.score, pg: p.ping || 0, dm: Math.round(p.dmg),
       };
       pub.set(p.id, JSON.stringify(base));
       // santé, argent et porteur du Noyau : réservés aux alliés
@@ -803,13 +896,13 @@ export class Match {
         if (!q.alive) { list.push(pub.get(q.id)); continue; }
         const vis = this.visibility(p, q, T);
         if (vis === 'full') list.push(pub.get(q.id));
-        else if (vis === 'audio') list.push(JSON.stringify({ i: q.id, p: q.pos.map(r2), au: 1, al: 1, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg) }));
-        else list.push(JSON.stringify({ i: q.id, h: 1, al: 1, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg) }));
+        else if (vis === 'audio') list.push(JSON.stringify({ i: q.id, p: q.pos.map(r2), au: 1, al: 1, gl: q.gun, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg) }));
+        else list.push(JSON.stringify({ i: q.id, h: 1, al: 1, gl: q.gun, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg) }));
       }
       // le Noyau porté n'est montré qu'aux attaquants ; posé ou au sol, il est visible par tous
       const side = this.side(p);
       const c = this.core;
-      const core = { s: c.status, p: c.pos ? c.pos.map(r2) : null, c: side === 'atk' || this.mode === 'ffa' ? c.carrier : null, site: c.site, f: c.status === 'planted' ? r2(this.phaseEnd - T) : 0 };
+      const core = { s: c.status, p: c.pos ? c.pos.map(r2) : null, c: side === 'atk' || isFfa(this.mode) ? c.carrier : null, site: c.site, f: c.status === 'planted' ? r2(this.phaseEnd - T) : 0 };
       const wp = {};
       for (const s of [1, 2, 3]) { const w = p.weapons[s]; wp[s] = w ? [w.id, w.mag, w.reserve] : null; }
       const me = {

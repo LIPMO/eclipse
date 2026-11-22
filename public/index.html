@@ -51,6 +51,8 @@
       <button data-tab="profile">PROFIL</button>
       <button data-tab="leaderboard">CLASSEMENT</button>
       <button data-tab="friends">AMIS<b class="nav-badge" id="friends-badge"></b></button>
+      <button data-tab="clan">CLAN<b class="nav-badge" id="clan-badge"></b></button>
+      <button data-tab="tournaments">TOURNOIS<b class="nav-badge" id="tour-badge"></b></button>
       <button data-tab="settings">PARAMÈTRES</button>
     </nav>
     <div class="profile">
@@ -97,8 +99,9 @@
         </div>
         <div class="quick-actions">
           <button id="quick-ffa" class="btn">✸ MÊLÉE RAPIDE</button>
+          <button id="quick-gun" class="btn" title="Chaque élimination te donne l'arme suivante. Le premier à éliminer au couteau gagne.">⟫ GUN GAME</button>
           <div class="qa-group"><button id="quick-bots" class="btn">🤖 ENTRAÎNEMENT</button>
-            <select id="qb-mode" title="Mode d'entraînement"><option value="assault">Assaut</option><option value="duel">Duel</option><option value="ffa">Mêlée</option></select>
+            <select id="qb-mode" title="Mode d'entraînement"><option value="assault">Assaut</option><option value="duel">Duel</option><option value="ffa">Mêlée</option><option value="gungame">Gun Game</option></select>
             <select id="qb-diff" title="Difficulté des bots"><option value="easy">Facile</option><option value="normal" selected>Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option></select></div>
           <form id="code-form" class="qa-group"><input id="code-input" maxlength="6" placeholder="CODE" autocomplete="off"><button class="btn ghost" type="submit">REJOINDRE</button></form>
           <button id="open-guide" class="btn ghost" title="Commandes, modes et progression">? COMMENT JOUER</button>
@@ -115,6 +118,7 @@
             <button data-v="assault" class="active">ASSAUT 5v5</button>
             <button data-v="duel">DUEL 1v1</button>
             <button data-v="ffa">MÊLÉE</button>
+            <button data-v="gungame">GUN GAME</button>
           </div>
         </label>
         <label>Carte</label>
@@ -160,7 +164,7 @@
         <div id="room-map-preview" class="map-preview"><canvas width="260" height="200"></canvas><div class="map-name"></div></div>
         <div class="host-only">
           <label>Carte <select id="rs-map"></select></label>
-          <label>Mode <select id="rs-mode"><option value="assault">Assaut 5v5 (pose du Noyau)</option><option value="duel">Duel 1v1 (petites cartes)</option><option value="ffa">Mêlée (chacun pour soi)</option></select></label>
+          <label>Mode <select id="rs-mode"><option value="assault">Assaut 5v5 (pose du Noyau)</option><option value="duel">Duel 1v1 (petites cartes)</option><option value="ffa">Mêlée (chacun pour soi)</option><option value="gungame">Gun Game (une arme par élimination)</option></select></label>
           <label>Objectif <select id="rs-target"></select></label>
           <label>Difficulté bots <select id="rs-diff"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option></select></label>
           <label class="check"><input type="checkbox" id="rs-private"> Salon privé (code d'accès)</label>
@@ -219,6 +223,8 @@
 
   <!-- AMIS -->
   <section id="tab-friends" class="tab"><div id="friends-root" class="friends-wrap"></div></section>
+  <section id="tab-clan" class="tab"><div id="clan-root" class="friends-wrap"></div></section>
+  <section id="tab-tournaments" class="tab"><div id="tour-root" class="friends-wrap"></div></section>
 
   <!-- PARAMÈTRES -->
   <section id="tab-settings" class="tab">
@@ -234,6 +240,7 @@
   <canvas id="game-canvas"></canvas>
   <div id="hud">
     <div id="flash-overlay"></div>
+    <div id="frost-overlay"></div>
     <div id="damage-overlay"></div>
     <div id="smoke-overlay"></div>
     <div id="scope-overlay"><div class="scope-ring"></div></div>
@@ -270,6 +277,7 @@
       </div>
     </div>
     <div id="death-info"></div>
+    <div id="killcam"><div class="kc-top"><span class="kc-tag">KILLCAM</span><span id="kc-who"></span></div><div class="kc-bar"><i id="kc-prog"></i></div><div class="kc-skip" id="kc-skip"></div></div>
     <div id="fps"></div>
     <div id="ping"></div>
     <div id="game-chat"><div class="log"></div><input maxlength="140" placeholder="Message (Entrée pour envoyer, Échap pour annuler)"></div>

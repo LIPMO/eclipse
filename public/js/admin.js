@@ -1,12 +1,12 @@
 // Panneau d'administration ECLIPSE
-import { AGENTS, SKINS, WEAPONS } from '/shared/data.js';
+import { AGENTS, SKINS, WEAPONS, isFfa } from '/shared/data.js';
 import { MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { TITLES, REPORT_REASONS, RANKS } from '/shared/progress.js';
 
 const $ = id => document.getElementById(id);
 const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ROLE = { owner: 'Propriétaire', admin: 'Admin', mod: 'Modérateur', player: 'Joueur' };
-const MODE = { assault: 'Assaut 5v5', duel: 'Duel 1v1', ffa: 'Mêlée' };
+const MODE = { assault: 'Assaut 5v5', duel: 'Duel 1v1', ffa: 'Mêlée', gungame: 'Gun Game' };
 const PHASE = { warmup: 'Préparation', buy: 'Achat', live: 'En cours', planted: 'Noyau posé', end: 'Fin de manche', over: 'Terminée' };
 const DIFF = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert' };
 const LB_KINDS = [['level', 'Niveau'], ['week', 'Semaine'], ['elo', 'Elo duel'], ['kills', 'Éliminations'], ['wins', 'Victoires']];
@@ -250,8 +250,8 @@ const VIEWS = {
           <td><b>${h(r.name)}</b> ${r.official ? '<span class="badge admin">Officiel</span>' : ''} ${r.quick ? '<span class="badge">Duel rapide</span>' : ''}</td>
           <td>${MODE[r.mode]}</td><td>${h(r.map)}</td>
           <td>${r.match ? `<span class="badge live">${PHASE[r.match.phase] || r.match.phase}</span>${r.match.paused ? ' <span class="badge danger">PAUSE</span>' : ''}` : '<span class="badge lobby">Lobby</span>'}</td>
-          <td>${r.match && r.mode !== 'ffa' ? r.match.round : '—'}</td>
-          <td>${r.match && r.mode !== 'ffa' ? `${r.match.score.alpha} – ${r.match.score.beta}` : '—'}</td>
+          <td>${r.match && !isFfa(r.mode) ? r.match.round : '—'}</td>
+          <td>${r.match && !isFfa(r.mode) ? `${r.match.score.alpha} – ${r.match.score.beta}` : '—'}</td>
           <td>${r.match ? fmtDur(r.match.timer) : '—'}</td>
           <td>${r.humans} <span class="muted">+ ${r.bots} bot(s) / ${r.max}</span></td><td>${h(r.host)}</td>
           <td><button class="btn small">Gérer</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="tbl-wrap"><div class="empty">Aucun salon ouvert.</div></div>';
@@ -474,12 +474,46 @@ const VIEWS = {
     },
   },
 
+  tournaments: {
+    title: 'Tournois', live: true,
+    async load() { S.tours = (await api('tournaments')).list; },
+    render() { return `<div class="toolbar">${lvl() >= 2 ? '<button class="btn" data-act="tourCreate">＋ Nouveau tournoi</button>' : ''}<span class="muted small">Duels 1v1 à élimination directe. Les joueurs s'inscrivent dans l'onglet TOURNOIS du jeu ; chaque match ouvre un salon privé réservé aux deux joueurs. Absent 5 min ou départ en cours de match = forfait.</span></div><div id="list"></div>`; },
+    update() {
+      const ST = { open: 'Inscriptions', running: 'En cours', done: 'Terminé', cancelled: 'Annulé' };
+      $('list').innerHTML = (S.tours || []).map(t => `<div class="card" style="margin-bottom:14px"><div class="toolbar" style="margin:0 0 8px"><h3 style="margin:0">${h(t.name)}</h3><span class="badge">${ST[t.status]}</span>
+          <span class="muted small">${t.count}/${t.size} joueurs · premier à ${t.target} manches · ${t.prize} Éclats${t.minLevel > 1 ? ` · niv. ${t.minLevel}+` : ''} · créé par ${h(t.by || '?')} le ${fmtDate(t.created)}${t.startAt && t.status === 'open' ? ` · départ ${fmtDate(t.startAt)}` : ''}</span><span class="grow"></span>
+          ${lvl() >= 2 && t.status === 'open' ? `<button class="btn small" data-act="tourStart" data-id="${h(t.id)}">Lancer maintenant</button>` : ''}
+          ${lvl() >= 2 && (t.status === 'open' || t.status === 'running') ? `<button class="btn small danger" data-act="tourCancel" data-id="${h(t.id)}">Annuler</button>` : ''}
+          ${lvl() >= 2 && (t.status === 'done' || t.status === 'cancelled') ? `<button class="btn small ghost" data-act="tourDelete" data-id="${h(t.id)}">Supprimer</button>` : ''}</div>
+        ${t.status === 'done' ? `<p>🏆 <b>${h(t.champion)}</b> · finaliste : ${h(t.runnerUp || '—')}</p>` : ''}${t.cancelReason ? `<p class="muted small">Annulé : ${h(t.cancelReason)}</p>` : ''}
+        ${t.status === 'open' ? `<p class="small">Inscrits : ${t.players.map(h).join(', ') || '<span class="muted">aucun</span>'}</p>` : ''}
+        ${t.rounds.length ? `<div class="tr-adm">${t.rounds.map(rd => `<div><div class="muted small"><b>${h(rd.name)}</b></div>${rd.matches.map(m => `<div class="tr-adm-m">${[m.p1, m.p2].map(n => n ? `<span class="${m.winner === n ? 'ok' : m.winner ? 'muted' : ''}">${h(n)}</span>${t.status === 'running' && m.p1 && m.p2 && !m.winner ? ` <a href="#" data-act="tourWinner" data-id="${h(t.id)}" data-match="${h(m.id)}" data-name="${h(n)}" title="Déclarer vainqueur">✓</a>` : ''}` : `<span class="muted">${m.bye ? 'exempté' : '—'}</span>`).join(' <span class="muted">vs</span> ')}${m.forfeit ? ' <span class="muted small">(forfait)</span>' : ''}${m.status === 'playing' ? ' <span class="badge live">en cours</span>' : ''}</div>`).join('')}</div>`).join('')}</div>` : ''}
+      </div>`).join('') || '<div class="empty">Aucun tournoi. Crée le premier avec le bouton ci-dessus.</div>';
+    },
+  },
+
+  clans: {
+    title: 'Clans', live: false,
+    async load() { S.clanData = (await api('clans')).clans; },
+    render() { return `<div class="toolbar"><input class="grow" data-input="clanQ" placeholder="Rechercher un clan ou un membre…" value="${h(S.clanQ || '')}"><span class="muted small">Le chef et les officiers gèrent leur clan en jeu ; ici tu peux renommer un clan au nom inapproprié, retirer un membre ou dissoudre un clan.</span></div><div id="list"></div>`; },
+    update() {
+      const q = (S.clanQ || '').toLowerCase();
+      const rows = (S.clanData || []).filter(c => !q || c.tag.toLowerCase().includes(q) || c.name.toLowerCase().includes(q) || c.members.some(m => m.name.toLowerCase().includes(q)));
+      const role = { owner: '★ ', officer: '◆ ', member: '' };
+      $('list').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Clan</th><th>Chef</th><th>Membres</th><th>XP</th><th>Victoires</th><th>Créé le</th><th></th></tr></thead><tbody>
+        ${rows.map((c, i) => `<tr><td>${i + 1}</td><td><b>[${h(c.tag)}]</b> ${h(c.name)}${c.desc ? `<div class="muted small">${h(c.desc)}</div>` : ''}</td><td>${h(c.owner)}</td>
+          <td class="small">${c.members.map(m => `<span>${role[m.role] || ''}${h(m.name)}${m.role !== 'owner' ? ` <a href="#" data-act="clanKick" data-tag="${h(c.tag)}" data-name="${h(m.name)}" title="Retirer du clan">✕</a>` : ''}</span>`).join(' · ')}</td>
+          <td>${c.xp}</td><td>${c.wins}/${c.matches}</td><td>${fmtDate(c.created)}</td>
+          <td><div class="acts"><button class="btn small ghost" data-act="clanRename" data-tag="${h(c.tag)}" data-name="${h(c.name)}">Renommer</button><button class="btn small danger" data-act="clanDisband" data-tag="${h(c.tag)}">Dissoudre</button></div></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Aucun clan.</td></tr>'}</tbody></table></div>`;
+    },
+  },
+
   matches: {
     title: 'Historique des parties', live: false,
     async load() { S.matchData = await api(`matches?q=${encodeURIComponent(S.matchQ)}&mode=${S.matchMode}`); },
     render() {
       return `<div class="toolbar"><input class="grow" data-input="matchQ" placeholder="Rechercher un salon ou un joueur…" value="${h(S.matchQ)}">
-        <span class="seg">${[['', 'Tous'], ['assault', 'Assaut'], ['duel', 'Duel'], ['ffa', 'Mêlée']].map(([v, l]) => `<button data-act="matchMode" data-v="${v}" class="${S.matchMode === v ? 'active' : ''}">${l}</button>`).join('')}</span>
+        <span class="seg">${[['', 'Tous'], ['assault', 'Assaut'], ['duel', 'Duel'], ['ffa', 'Mêlée'], ['gungame', 'Gun Game']].map(([v, l]) => `<button data-act="matchMode" data-v="${v}" class="${S.matchMode === v ? 'active' : ''}">${l}</button>`).join('')}</span>
         ${lvl() >= 2 ? '<button class="btn small" data-act="exportMatches">⇩ Export CSV</button>' : ''}</div><div id="list"></div>`;
     },
     update() {
@@ -660,14 +694,14 @@ async function openRoom(id, silent) {
       <div class="acts-grid">
         ${!m ? b('roomStart', '▶ Lancer la partie', 'primary') + b('roomSettings', 'Réglages') : ''}
         ${m ? b('roomPause', m.paused ? '▶ Reprendre' : '❚❚ Pause', '', `data-paused="${m.paused ? 1 : 0}"`) : ''}
-        ${m && r.mode !== 'ffa' ? b('roomSkip', 'Annuler la manche') : ''}
+        ${m && !isFfa(r.mode) ? b('roomSkip', 'Annuler la manche') : ''}
         ${m ? b('roomEnd', 'Terminer la partie', 'danger') : ''}
         ${b('roomMsg', 'Message au salon')}${b('roomBotAdd', '＋ Bot')}${r.bots ? b('roomBotDel', '− Bot') : ''}
         ${b('roomClose', 'Fermer le salon', 'danger')}
       </div>
-      <dl class="kv"><dt>Mode</dt><dd>${MODE[r.mode]}</dd><dt>Carte</dt><dd>${h(r.map)}</dd><dt>Objectif</dt><dd>${r.mode === 'ffa' ? r.target + ' éliminations' : 'premier à ' + r.target + ' manches'}</dd>
+      <dl class="kv"><dt>Mode</dt><dd>${MODE[r.mode]}</dd><dt>Carte</dt><dd>${h(r.map)}</dd><dt>Objectif</dt><dd>${r.mode === 'gungame' ? r.target + ' armes' : isFfa(r.mode) ? r.target + ' éliminations' : 'premier à ' + r.target + ' manches'}</dd>
         <dt>Bots</dt><dd>${DIFF[r.difficulty]}</dd><dt>Hôte</dt><dd>${h(r.host)}</dd>
-        ${m ? `<dt>Manche</dt><dd>${r.mode !== 'ffa' ? m.round + (m.half ? ' (2e mi-temps)' : '') : '—'}</dd><dt>Score</dt><dd>${r.mode !== 'ffa' ? `${team('alpha')} ${m.score.alpha} – ${m.score.beta} ${team('beta')}` : '—'}</dd><dt>Chrono</dt><dd>${fmtDur(m.timer)}</dd>` : ''}</dl>
+        ${m ? `<dt>Manche</dt><dd>${!isFfa(r.mode) ? m.round + (m.half ? ' (2e mi-temps)' : '') : '—'}</dd><dt>Score</dt><dd>${!isFfa(r.mode) ? `${team('alpha')} ${m.score.alpha} – ${m.score.beta} ${team('beta')}` : '—'}</dd><dt>Chrono</dt><dd>${fmtDur(m.timer)}</dd>` : ''}</dl>
       <h3>JOUEURS (${r.humans} + ${r.bots} bot(s) / ${r.max})</h3>
       <table><thead><tr><th>Joueur</th><th>Équipe</th><th>Agent</th>${m ? '<th>É/M/A</th><th>PV</th>' : ''}<th></th></tr></thead><tbody>
       ${r.members.map(x => `<tr><td><b>${h(x.name)}</b> ${x.isBot ? '<span class="badge guest">Bot</span>' : ''}</td><td>${team(x.team)}</td><td>${h(AGENTS[x.agent]?.name || '')}</td>
@@ -751,6 +785,25 @@ const ACT = {
   },
   // anti-triche, parties, progression, économie
   suspectClear: d => act('suspect/clear', { key: d.key }, 'Alertes effacées'),
+  async tourCreate() {
+    const v = await modal({ title: 'Nouveau tournoi', fields: [
+      { name: 'name', label: 'Nom', required: true, maxlength: 40, placeholder: 'Coupe du samedi' },
+      { name: 'size', label: 'Places', type: 'select', value: '8', options: [['4', '4 joueurs'], ['8', '8 joueurs'], ['16', '16 joueurs'], ['32', '32 joueurs']] },
+      { name: 'target', label: 'Manches pour gagner un match', type: 'select', value: '3', options: [['2', 'Premier à 2'], ['3', 'Premier à 3'], ['4', 'Premier à 4'], ['5', 'Premier à 5'], ['7', 'Premier à 7']] },
+      { name: 'prize', label: 'Éclats pour le vainqueur (le finaliste reçoit la moitié)', type: 'number', value: 2000, min: 0, max: 100000 },
+      { name: 'minLevel', label: 'Niveau minimum', type: 'number', value: 1, min: 1, max: 100 },
+      { name: 'startAt', label: 'Départ automatique (facultatif)', type: 'datetime-local', help: 'Laisse vide pour lancer toi-même. Il faut au moins 2 inscrits.' },
+    ], ok: 'Créer' });
+    if (!v) return;
+    act('tournament/create', { ...v, startAt: v.startAt ? new Date(v.startAt).getTime() : null }, 'Tournoi créé : les joueurs connectés sont prévenus');
+  },
+  async tourStart(d) { if (await confirmBox('Lancer le tournoi maintenant ? Les inscriptions seront fermées et le tableau tiré au sort.', { danger: false, ok: 'Lancer' })) act('tournament/start', { id: d.id }, 'Tournoi lancé'); },
+  async tourCancel(d) { if (await confirmBox('Annuler ce tournoi ? Les matchs en cours seront interrompus, aucune récompense ne sera versée.', { ok: 'Annuler le tournoi' })) act('tournament/cancel', { id: d.id }, 'Tournoi annulé'); },
+  async tourDelete(d) { if (await confirmBox('Supprimer ce tournoi de l\'historique ?', { ok: 'Supprimer' })) act('tournament/delete', { id: d.id }, 'Tournoi supprimé'); },
+  async tourWinner(d) { if (await confirmBox(`Déclarer ${d.name} vainqueur de ce match ? (litige, déconnexion…)`, { danger: false, ok: 'Confirmer' })) act('tournament/winner', { id: d.id, match: d.match, name: d.name }, 'Match arbitré'); },
+  async clanDisband(d) { if (await confirmBox(`Dissoudre le clan [${d.tag}] ? Tous ses membres seront retirés.`, { ok: 'Dissoudre' })) act('clan/disband', { tag: d.tag }, 'Clan dissous'); },
+  async clanKick(d) { if (await confirmBox(`Retirer ${d.name} du clan [${d.tag}] ?`, { ok: 'Retirer' })) act('clan/kick', { tag: d.tag, name: d.name }, `${d.name} retiré du clan`); },
+  async clanRename(d) { const v = await modal({ title: `Renommer [${d.tag}]`, fields: [{ name: 'name', label: 'Nouveau nom (la description est effacée)', value: d.name, maxlength: 24, required: true }], ok: 'Renommer' }); if (v?.name) act('clan/rename', { tag: d.tag, name: v.name }, 'Clan renommé'); },
   matchMode: d => { S.matchMode = d.v; show('matches'); },
   exportMatches: () => download('export/matches', 'eclipse-parties.csv'),
   lbKind: d => { S.lbKind = d.v; refresh(); },
@@ -793,7 +846,7 @@ const ACT = {
   async roomSkip(d) { if (await confirmBox('Annuler la manche en cours ? Aucune équipe ne marque de point.', { ok: 'Annuler la manche' })) { await act('room/skip', { id: d.id }, 'Manche annulée'); openRoom(d.id); } },
   async roomEnd(d) {
     const r = S.roomCache;
-    const opts = [['', 'Aucun vainqueur'], ...(r.mode === 'ffa' ? r.members.map(m => [m.id, m.name]) : [['alpha', 'Équipe Alpha'], ['beta', 'Équipe Oméga']])];
+    const opts = [['', 'Aucun vainqueur'], ...(isFfa(r.mode) ? r.members.map(m => [m.id, m.name]) : [['alpha', 'Équipe Alpha'], ['beta', 'Équipe Oméga']])];
     const v = await modal({ title: 'Terminer la partie', fields: [{ name: 'winner', label: 'Vainqueur', type: 'select', value: '', options: opts }], ok: 'Terminer', danger: true });
     if (v) { await act('room/end', { id: d.id, winner: v.winner || null }, 'Partie terminée'); openRoom(d.id); }
   },
@@ -801,7 +854,7 @@ const ACT = {
   async roomBotAdd(d) {
     const r = S.roomCache;
     let team = '';
-    if (r.mode !== 'ffa') { const v = await modal({ title: 'Ajouter un bot', fields: [{ name: 'team', label: 'Équipe', type: 'select', value: '', options: [['', 'Équilibrer automatiquement'], ['alpha', 'Alpha'], ['beta', 'Oméga']] }], ok: 'Ajouter' }); if (!v) return; team = v.team; }
+    if (!isFfa(r.mode)) { const v = await modal({ title: 'Ajouter un bot', fields: [{ name: 'team', label: 'Équipe', type: 'select', value: '', options: [['', 'Équilibrer automatiquement'], ['alpha', 'Alpha'], ['beta', 'Oméga']] }], ok: 'Ajouter' }); if (!v) return; team = v.team; }
     await act('room/bot', { id: d.id, action: 'add', team }, 'Bot ajouté'); openRoom(d.id);
   },
   roomBotDel: d => act('room/bot', { id: d.id, action: 'remove', botId: d.bot }, 'Bot retiré').then(() => openRoom(d.id)),
@@ -811,7 +864,7 @@ const ACT = {
       { name: 'name', label: 'Nom', value: r.name, maxlength: 28 },
       { name: 'mode', label: 'Mode', type: 'select', value: r.mode, options: Object.entries(MODE), help: 'Changer de mode retire les bots.' },
       { name: 'mapId', label: 'Carte', type: 'select', value: r.mapId, options: mapsForMode(r.mode).map(id => [id, MAP_INFO[id].name]) },
-      { name: 'target', label: r.mode === 'ffa' ? 'Éliminations pour gagner' : 'Manches pour gagner', type: 'number', value: r.target, min: 2, max: 60 },
+      { name: 'target', label: isFfa(r.mode) ? 'Éliminations pour gagner' : 'Manches pour gagner', type: 'number', value: r.target, min: 2, max: 60 },
       { name: 'difficulty', label: 'Difficulté des bots', type: 'select', value: r.difficulty, options: Object.entries(DIFF) },
     ], ok: 'Enregistrer' });
     if (v) { await act('room/settings', { id: d.id, ...v }, 'Salon mis à jour'); openRoom(d.id); }
@@ -904,6 +957,7 @@ document.addEventListener('input', e => {
     if (k === 'chatRoom') { S.chatRoom = e.target.value; refresh(false, true); }
     if (k === 'logQ') { S.logQ = e.target.value; refresh(false, true); }
     if (k === 'matchQ') { S.matchQ = e.target.value; refresh(); }
+    if (k === 'clanQ') { S.clanQ = e.target.value; VIEWS.clans.update(); }
   }, k === 'playerQ' ? 50 : 300);
 });
 

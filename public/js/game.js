@@ -2,17 +2,18 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parseMap, CELL } from '/shared/maps.js';
-import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND } from '/shared/data.js';
+import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER } from '/shared/data.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm } from '/shared/physics.js';
 import { envTexture, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
 import * as SFX from './audio.js';
+import { TouchControls, isTouchDevice } from './touch.js';
 import { profile, save } from './store.js';
 import { mountSettings, isRebinding, applyCrosshair, keyName } from './settings.js';
 import { WEAPON_UNLOCK, RADIO, REPORT_REASONS } from '/shared/progress.js';
 
 const $ = id => document.getElementById(id);
 const ALLY = '#19e3c4', ENEMY = '#ff4f6d';
-const ICONS = { smoke: '◍', molotov: '✹', flash: '✦', dash: '➤', heal: '✚', recon: '◎', wall: '▦', shield: '⛉', blink: '⇢', invis: '◌', overdrive: 'ϟ', megasmoke: '☁', hunt: '◉', fortress: '⛨', phantom: '☾', firestorm: '⚡' };
+const ICONS = { smoke: '◍', molotov: '✹', flash: '✦', dash: '➤', heal: '✚', recon: '◎', wall: '▦', shield: '⛉', blink: '⇢', invis: '◌', overdrive: 'ϟ', megasmoke: '☁', hunt: '◉', fortress: '⛨', phantom: '☾', firestorm: '⚡', haste: '»', cryo: '❄', blizzard: '❅' };
 const REASONS = { elim: 'ÉQUIPE ADVERSE ÉLIMINÉE', time: 'TEMPS ÉCOULÉ', explode: 'NOYAU DÉTONÉ', defuse: 'NOYAU DÉSAMORCÉ', hp: 'TEMPS ÉCOULÉ — AVANTAGE PV', draw: 'TEMPS ÉCOULÉ — PV IDENTIQUES', admin: 'MANCHE ANNULÉE PAR L\'ÉQUIPE' };
 const VM_OFFSET = {
   knife: [0.27, -0.25, -0.48], pistol: [0.22, -0.22, -0.52], heavypistol: [0.22, -0.22, -0.52], smg: [0.23, -0.24, -0.52],
@@ -73,6 +74,7 @@ export class Game {
     this.initHUD();
     this.bindInput();
     this.bindNet();
+    if (isTouchDevice()) this.touch = new TouchControls(this);
     this.applyRoster(start.players);
     $('game').classList.add('active');
     this.onResize();
@@ -337,7 +339,7 @@ export class Game {
 
   isEnemyId(id) {
     if (id === this.myId) return false;
-    if (this.mode === 'ffa') return true;
+    if (isFfa(this.mode)) return true;
     const a = this.roster.get(id), me = this.roster.get(this.myId);
     return !a || !me || a.team !== me.team;
   }
@@ -387,8 +389,8 @@ export class Game {
     $('pause-menu').classList.remove('show');
     $('death-info').innerHTML = '';
     $('banner').className = '';
-    $('credits').style.display = this.mode === 'ffa' ? 'none' : 'flex';
-    $('click-to-play').style.display = 'block';
+    $('credits').style.display = isFfa(this.mode) ? 'none' : 'flex';
+    $('click-to-play').style.display = isTouchDevice() ? 'none' : 'block';
     this.buildAbilityHUD();
     this.buildBuyMenu();
   }
@@ -430,7 +432,7 @@ export class Game {
   }
 
   buildTeamIcons() {
-    if (this.mode === 'ffa') { $('icons-left').innerHTML = ''; $('icons-right').innerHTML = ''; return; }
+    if (isFfa(this.mode)) { $('icons-left').innerHTML = ''; $('icons-right').innerHTML = ''; return; }
     const me = this.roster.get(this.myId);
     const allies = [], enemies = [];
     for (const p of this.roster.values()) (me && p.team === me.team ? allies : enemies).push(p);
@@ -460,7 +462,7 @@ export class Game {
   addKillfeed(m) {
     const kf = $('killfeed');
     const cls = id => id === this.myId ? 'ally' : this.isEnemyId(id) ? 'enemy' : 'ally';
-    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', core: 'Noyau', admin: 'Admin' }[m.w] || m.w;
+    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', core: 'Noyau', admin: 'Admin' }[m.w] || m.w;
     const div = document.createElement('div');
     div.className = 'kf' + (m.k === this.myId || m.v === this.myId ? ' mine' : '');
     div.innerHTML = (m.k ? `<span class="${cls(m.k)}">${esc(this.nameOf(m.k))}</span>` : '') +
@@ -474,7 +476,7 @@ export class Game {
     const log = $('game-chat').querySelector('.log');
     const d = document.createElement('div');
     const myTeam = this.roster.get(this.myId)?.team;
-    const color = m.from === 'SYSTÈME' ? '#ffcf5a' : this.mode === 'ffa' ? '#c4b0ff' : m.team === myTeam ? ALLY : ENEMY;
+    const color = m.from === 'SYSTÈME' ? '#ffcf5a' : isFfa(this.mode) ? '#c4b0ff' : m.team === myTeam ? ALLY : ENEMY;
     const tag = m.radio ? '<span class="tag radio">RADIO</span>' : m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : '';
     d.className = m.radio ? 'radio' : m.teamOnly ? 'team' : '';
     d.innerHTML = `${tag}<b style="color:${color}">${esc(m.from)}</b> : ${esc(m.text)}`;
@@ -489,9 +491,17 @@ export class Game {
     while (log.children.length > 8) log.firstChild.remove();
   }
 
+  addClanChat(m) {
+    const log = $('game-chat').querySelector('.log');
+    const d = document.createElement('div'); d.className = 'whisper';
+    d.innerHTML = `<span class="tag clan">${esc(m.tag)}</span>${m.from ? `<b>${esc(m.from)}</b> : ` : ''}${esc(m.text)}`;
+    log.appendChild(d);
+    while (log.children.length > 8) log.firstChild.remove();
+  }
+
   // ---------- messages radio ----------
   toggleRadio(v = !this.radioOpen) {
-    if (this.mode === 'ffa') return;
+    if (isFfa(this.mode)) return;
     this.radioOpen = v;
     const el = $('radio-menu');
     if (v) el.innerHTML = `<h4>RADIO <span class="muted">(chiffre pour envoyer, ${esc(KB('radio'))} pour fermer)</span></h4>` + RADIO.map((t, i) => `<div><b>${i + 1}</b> ${esc(t)}</div>`).join('');
@@ -522,10 +532,11 @@ export class Game {
     for (const [action, code] of Object.entries(ST().keys)) if (code) this.codeMap[code] = action;
   }
 
-  press(code) {
-    const a = this.codeMap[code];
+  press(code) { this.pressAction(this.codeMap[code]); }
+  pressAction(a) {
     if (!a || this.held.has(a)) return;
     this.held.add(a);
+    if (this.kc && (a === 'jump' || a === 'fire')) { this.endKillcam(); return; }
     switch (a) {
       case 'buy': this.toggleBuy(); break;
       case 'chat': this.openChat(false); break;
@@ -541,12 +552,13 @@ export class Game {
       case 'interact': this.net.send('interact', { on: true }); this.interacting = true; break;
       case 'scoreboard': this.showScoreboard(true); break;
       case 'scope': this.toggleScope(); break;
-      case 'fire': if (!this.me?.al && this.mode !== 'ffa') this.specIdx++; break;
+      case 'mark': if (this.me?.al && !this.ended) this.net.send('mark', { d: this.aimDir() }); break;
+      case 'fire': if (!this.me?.al && !isFfa(this.mode)) this.specIdx++; break;
     }
   }
 
-  release(code) {
-    const a = this.codeMap[code];
+  release(code) { this.releaseAction(this.codeMap[code]); }
+  releaseAction(a) {
     if (!a) return;
     this.held.delete(a);
     if (a === 'fire') this.local.triggerHeld = false;
@@ -555,8 +567,9 @@ export class Game {
   }
 
   releaseAll() {
-    for (const a of [...this.held]) { const code = ST().keys[a]; if (code) this.release(code); }
+    for (const a of [...this.held]) this.releaseAction(a);
     this.held.clear();
+    this.touch?.reset();
   }
 
   bindInput() {
@@ -603,10 +616,7 @@ export class Game {
     this._mu = e => this.release('Mouse' + e.button);
     this._wheel = e => {
       if (document.pointerLockElement !== canvas) return;
-      const order = [1, 2, 3].filter(s => this.me?.wp?.[s]);
-      const i = order.indexOf(L.slot);
-      if (i < 0 || !order.length) return;
-      this.switchSlot(order[(i + (e.deltaY > 0 ? 1 : order.length - 1)) % order.length]);
+      this.cycleWeapon(e.deltaY > 0 ? 1 : -1);
     };
     this._plc = () => {
       const locked = document.pointerLockElement === canvas;
@@ -654,6 +664,7 @@ export class Game {
   applySettings(key) {
     const all = key === '*' || !key;
     if (all || key === 'fov') this.updateFov();
+    if (all || key === 'touchSize' || key === 'touchOpacity') this.touch?.applyScale();
     if (all || key === 'vmFov') { this.vmCam.fov = ST().vmFov; this.vmCam.updateProjectionMatrix(); }
     if (all || key === 'renderScale' || key === 'quality') this.onResize();
     if (all || key === 'brightness') this.renderer.toneMappingExposure = ST().brightness;
@@ -669,17 +680,42 @@ export class Game {
     }
   }
 
+  cycleWeapon(dir = 1) {
+    const order = [1, 2, 3].filter(s => this.me?.wp?.[s]);
+    const i = order.indexOf(this.local.slot);
+    if (i < 0 || !order.length) return;
+    this.switchSlot(order[(i + (dir > 0 ? 1 : order.length - 1)) % order.length]);
+  }
+
+  // visée au doigt (commandes tactiles)
+  touchLook(mx, my) {
+    if (!this.canAct() && !(this.me && !this.me.al)) return;
+    const L = this.local;
+    let s = (ST().touchSens || 1) * 0.0048;
+    if (this.scoped) s *= ST().scopeSens / WEAPONS.longbow.scope;
+    L.yaw -= mx * s;
+    L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - my * s * (ST().invertY ? -1 : 1)));
+    this.vmSwayX += mx * 0.0003; this.vmSwayY += my * 0.0003;
+  }
+
   lock() {
     SFX.initAudio();
+    if (this.touch) {
+      // pas de verrouillage du pointeur sur mobile : plein écran et paysage si possible
+      this.showPause(false);
+      $('click-to-play').style.display = 'none';
+      try { const el = document.documentElement; if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {}); } catch { /* non pris en charge */ }
+      return;
+    }
     const c = $('game-canvas');
     try { const r = c.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch { /* ignoré */ }
   }
-  unlock() { if (document.pointerLockElement) { this.expectUnlock = true; document.exitPointerLock(); } }
+  unlock() { if (this.touch) return; if (document.pointerLockElement) { this.expectUnlock = true; document.exitPointerLock(); } }
 
   showPause(v) { this.paused = v; $('pause-menu').classList.toggle('show', v); }
 
   toggleBuy(force) {
-    const open = force ?? !this.buyOpen;
+    const open = this.mode === 'gungame' ? false : (force ?? !this.buyOpen);
     if (open === this.buyOpen) return;
     this.buyOpen = open;
     $('buy-menu').classList.toggle('show', open);
@@ -688,7 +724,7 @@ export class Game {
 
   openChat(team = false) {
     this.chatOpen = true;
-    this.chatTeam = team && this.mode !== 'ffa';
+    this.chatTeam = team && !isFfa(this.mode);
     this.unlock();
     $('game-chat').classList.add('open');
     $('game-chat').classList.toggle('team', this.chatTeam);
@@ -712,19 +748,21 @@ export class Game {
 
   renderScoreboard() {
     if (!this.snap) return;
-    const players = this.snap.players.slice().sort((a, b) => b.sc - a.sc);
+    const gun = this.mode === 'gungame';
+    const players = this.snap.players.slice().sort((a, b) => gun ? (b.gl || 0) - (a.gl || 0) || b.k - a.k : b.sc - a.sc);
     const me = this.roster.get(this.myId);
     const row = p => {
       const r = this.roster.get(p.i) || {};
       const ag = AGENTS[r.agent] || AGENTS.ignis;
-      const ally = this.mode !== 'ffa' && r.team === me?.team;
+      const ally = !isFfa(this.mode) && r.team === me?.team;
       const lvl = r.level ? `<span class="sb-lvl">${r.level}</span>` : '';
-      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${esc(r.name || '?')}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}</span><span>${p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
+      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${esc(r.name || '?')}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
     };
-    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span>PING</span></div>`;
+    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span>PING</span></div>`;
     let html;
     if (this.mode === 'duel') html = `<h2>DUEL 1v1 — premier à ${this.target} manches</h2><br>${head}${players.map(row).join('')}`;
-    else if (this.mode === 'ffa') html = `<h2>MÊLÉE — premier à ${this.target} éliminations</h2><br>${head}${players.map(row).join('')}`;
+    else if (gun) html = `<h2>GUN GAME — chaque élimination donne l'arme suivante, le couteau pour finir</h2><br>${head}${players.map(row).join('')}`;
+    else if (isFfa(this.mode)) html = `<h2>MÊLÉE — premier à ${this.target} éliminations</h2><br>${head}${players.map(row).join('')}`;
     else {
       const ally = players.filter(p => this.roster.get(p.i)?.team === me?.team);
       const enemy = players.filter(p => this.roster.get(p.i)?.team !== me?.team);
@@ -746,6 +784,7 @@ export class Game {
     const L = this.local;
     if (!this.me?.wp?.[s] || L.slot === s) return;
     L.slot = s;
+    SFX.playSwitch();
     L.reloadEnd = 0;
     const w = this.me.wp[s];
     L.mag = w[1]; L.reserve = w[2];
@@ -780,7 +819,7 @@ export class Game {
   eyePos() { const L = this.local; return [L.pos[0], L.pos[1] + L.eyeH, L.pos[2]]; }
 
   canAct() {
-    return this.me?.al && !this.chatOpen && !this.buyOpen && !this.paused && document.pointerLockElement === $('game-canvas');
+    return this.me?.al && !this.chatOpen && !this.buyOpen && !this.paused && (!!this.touch || document.pointerLockElement === $('game-canvas'));
   }
 
   tryFire(now) {
@@ -794,7 +833,7 @@ export class Game {
     if (!def.auto && L.triggerHeld) return;
     if (def.type !== 'melee') {
       if (L.reloadEnd > now) return;
-      if (L.mag <= 0) { SFX.playClick(); L.nextFire = now + 0.3; L.triggerHeld = true; this.reload(); return; }
+      if (L.mag <= 0) { SFX.playEmpty(); L.nextFire = now + 0.3; L.triggerHeld = true; this.reload(); return; }
     }
     L.triggerHeld = true;
     L.nextFire = now + 1 / (def.rate * (this.me.rm || 1));
@@ -905,6 +944,12 @@ export class Game {
     on('hurt', m => { this.local.hurtT = 0.4; SFX.playHurt(); if (m.from) this.showDamageDir(m.from); });
     on('kill', m => {
       this.addKillfeed(m);
+      if (m.k === this.myId && m.v !== this.myId) {
+        const now = performance.now() / 1000;
+        this.streak = now - (this.streakT || 0) < 4 ? (this.streak || 0) + 1 : 1;
+        this.streakT = now;
+        if (this.streak >= 2) { SFX.playStreak(this.streak); this.centerMsg(['', '', 'DOUBLE ÉLIMINATION', 'TRIPLE ÉLIMINATION', 'QUADRUPLE !', 'ACE !'][Math.min(5, this.streak)], 1.4); }
+      }
       if (m.v === this.myId) {
         this.killedBy = m.k;
         if (this.scoped) this.toggleScope(false);
@@ -945,6 +990,14 @@ export class Game {
     on('notice', m => this.centerMsg(m.text, 2.5));
     on('bought', m => { if (m.slot) { this.pendingSwitch = m.slot; } });
     on('wallBreak', () => SFX.playAbility('wall', null));
+    on('mark', m => this.addMark(m));
+    on('killcam', m => this.startKillcam(m));
+    on('gun', m => {
+      const id = GUN_LADDER[Math.min(m.lvl, GUN_LADDER.length - 1)];
+      const name = (WEAPONS[id]?.name || '').toUpperCase();
+      if (m.down) { this.centerMsg(`RÉTROGRADÉ PAR ${String(m.by || '').toUpperCase()} · ${name}`, 2); SFX.playUI('lose'); }
+      else { this.centerMsg(m.lvl >= GUN_LADDER.length - 1 ? 'DERNIÈRE ARME : LE COUTEAU !' : `ARME ${m.lvl + 1}/${GUN_LADDER.length} · ${name}`, 1.6); SFX.playPromote(); }
+    });
     on('chat', m => this.addChat(m));
     on('whisper', m => this.addWhisper(m));
     on('matchSummary', m => this.onSummary(m));
@@ -974,9 +1027,9 @@ export class Game {
       const s2 = this.pendingSwitch; this.pendingSwitch = null;
       L.slot = 0; this.switchSlot(s2);
     }
-    if (!me.wp[L.slot]) { L.slot = me.wp[1] ? 1 : 2; this.setViewmodel(me.wp[L.slot][0]); }
+    if (!me.wp[L.slot]) { L.slot = [1, 2, 3].find(k => me.wp[k]) || 3; if (me.wp[L.slot]) this.setViewmodel(me.wp[L.slot][0]); }
     const w = me.wp[L.slot];
-    if (w && this.vmWeaponId !== w[0]) this.setViewmodel(w[0]);
+    if (w && this.vmWeaponId !== w[0]) { this.setViewmodel(w[0]); L.mag = w[1]; L.reserve = w[2]; L.reloadEnd = 0; }
     if (w && tnow - L.lastShot > 0.4 && L.reloadEnd <= tnow) { L.mag = w[1]; L.reserve = w[2]; }
     if (w && me.rl > 0 && L.reloadEnd <= tnow) L.reloadEnd = tnow + me.rl;
 
@@ -1044,7 +1097,7 @@ export class Game {
       let g = this.fireMeshes.get(f.i);
       if (!g) {
         g = new THREE.Group();
-        const col = f.k === 'shock' ? '#3fd0ff' : '#ff6a1f';
+        const col = f.k === 'shock' ? '#3fd0ff' : f.k === 'frost' ? '#9ee7ff' : '#ff6a1f';
         const disc = new THREE.Mesh(new THREE.CircleGeometry(f.r, 32), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
         disc.rotation.x = -Math.PI / 2; disc.position.y = 0.05; g.add(disc);
         const flames = [];
@@ -1057,7 +1110,7 @@ export class Game {
         }
         g.position.set(...f.p); g.userData = { flames, disc, kind: f.k };
         this.scene.add(g); this.fireMeshes.set(f.i, g);
-        SFX.playFire(f.p);
+        if (f.k === 'frost') SFX.playFrost?.(f.p); else SFX.playFire(f.p);
       }
     }
     for (const [id, g] of this.fireMeshes) if (!fireIds.has(id)) { this.scene.remove(g); this.fireMeshes.delete(id); }
@@ -1066,7 +1119,7 @@ export class Game {
     for (const pr of s.proj) {
       let m = this.projMeshes.get(pr.i);
       if (!m) {
-        const col = pr.k === 'smoke' ? '#c9d0ff' : pr.k === 'flash' ? '#ffffff' : '#ff8a3d';
+        const col = pr.k === 'smoke' ? '#c9d0ff' : pr.k === 'flash' ? '#ffffff' : pr.k === 'cryo' ? '#9ee7ff' : '#ff8a3d';
         m = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.2 }));
         m.position.set(...pr.p);
         this.scene.add(m); this.projMeshes.set(pr.i, m);
@@ -1148,15 +1201,17 @@ export class Game {
     this.updateOthers(dt, now);
     this.updateEffects(dt, now);
     this.updateCamera(dt, now);
+    if (this.kc) this.updateKillcam(now);
     animateSkins(now);
 
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
-    if (this.me?.al && !this.scoped) {
+    if (this.me?.al && !this.scoped && !this.kc) {
       this.renderer.clearDepth();
       this.renderer.render(this.vmScene, this.vmCam);
     }
     this.updateFrameHUD(dt, now);
+    if (this.touch) this.touch.update({ alive: !!this.me?.al, canBuy: this.mode !== 'gungame' && (isFfa(this.mode) || this.snap?.ph === 'buy'), assault: this.mode === 'assault', scope: WEAPONS[this.curWeaponId()]?.scope });
   }
 
   updateLocal(dt, now) {
@@ -1169,10 +1224,14 @@ export class Game {
     L.crouch = H.has('crouch') && !frozen;
     let f = 0, s = 0;
     if (!frozen) { f = (H.has('forward') ? 1 : 0) - (H.has('back') ? 1 : 0); s = (H.has('right') ? 1 : 0) - (H.has('left') ? 1 : 0); }
+    // joystick tactile : petite inclinaison = marche silencieuse
+    const tm = this.touch?.move;
+    let stickMag = 0;
+    if (tm && !frozen && !this.paused) { stickMag = Math.min(1, Math.hypot(tm.x, tm.y)); if (stickMag > 0.15) { f = -tm.y; s = tm.x; } }
     let wx = -Math.sin(L.yaw) * f + Math.cos(L.yaw) * s, wz = -Math.cos(L.yaw) * f - Math.sin(L.yaw) * s;
     const wl = Math.hypot(wx, wz);
     if (wl > 0) { wx /= wl; wz /= wl; }
-    const walking = H.has('walk');
+    const walking = H.has('walk') || (stickMag > 0.15 && stickMag < 0.55);
     let speed = MOVE.run * (def.speed || 1) * (this.me.sm || 1);
     if (walking) speed *= MOVE.walkMul;
     if (L.crouch) speed *= MOVE.crouchMul;
@@ -1184,11 +1243,13 @@ export class Game {
       L.vel[0] += (wx * speed - L.vel[0]) * k;
       L.vel[2] += (wz * speed - L.vel[2]) * k;
     }
-    if (H.has('jump') && L.onGround && !frozen) { L.vel[1] = MOVE.jump; L.onGround = false; }
+    if (H.has('jump') && L.onGround && !frozen) { L.vel[1] = MOVE.jump; L.onGround = false; SFX.playJump(); }
     L.vel[1] -= MOVE.gravity * dt;
     const prev = L.pos.slice();
+    const wasGround = L.onGround, fallV = L.vel[1];
     L.onGround = collideMove(L.pos, L.vel, dt, this.boxes);
-    if (ph === 'buy' && this.mode !== 'ffa') {
+    if (L.onGround && !wasGround && fallV < -3) SFX.playLand(fallV < -11);
+    if (ph === 'buy' && !isFfa(this.mode)) {
       const allowed = this.me.side === 'atk' ? 'T' : 'D';
       if (this.map.cellAt(L.pos[0], L.pos[2]) !== allowed) { L.pos[0] = prev[0]; L.pos[2] = prev[2]; L.vel[0] = L.vel[2] = 0; }
     }
@@ -1344,10 +1405,11 @@ export class Game {
     }
     for (const g of this.fireMeshes.values()) {
       for (const sp of g.userData.flames) {
-        sp.userData.ph = (sp.userData.ph + dt * (g.userData.kind === 'shock' ? 2.5 : 1.2)) % 1;
+        const kd = g.userData.kind;
+        sp.userData.ph = (sp.userData.ph + dt * (kd === 'shock' ? 2.5 : kd === 'frost' ? 0.5 : 1.2)) % 1;
         const ph = sp.userData.ph;
-        sp.position.y = ph * (g.userData.kind === 'shock' ? 0.8 : 1.6);
-        const sc = (1 - ph) * (g.userData.kind === 'shock' ? 0.6 : 1.1) + 0.2;
+        sp.position.y = kd === 'frost' ? (1 - ph) * 2.4 : ph * (kd === 'shock' ? 0.8 : 1.6); // le givre tombe
+        const sc = kd === 'frost' ? 0.35 + (1 - ph) * 0.25 : (1 - ph) * (kd === 'shock' ? 0.6 : 1.1) + 0.2;
         sp.scale.setScalar(sc);
         sp.material.opacity = (1 - ph) * 0.8;
       }
@@ -1385,7 +1447,7 @@ export class Game {
     } else {
       // mode spectateur
       let target = null;
-      if (this.mode !== 'ffa') {
+      if (!isFfa(this.mode)) {
         const me = this.roster.get(this.myId);
         const allies = [...this.others.values()].filter(o => o.cur?.al && this.roster.get(o.id)?.team === me?.team);
         if (allies.length) target = allies[this.specIdx % allies.length];
@@ -1401,7 +1463,7 @@ export class Game {
         const e = this.eyePos();
         cam.position.set(e[0], e[1] + 1.5, e[2]);
         cam.rotation.set(L.pitch, L.yaw, 0);
-        if (this.mode === 'ffa' && this.me) $('death-info').innerHTML = (this.killedBy && this.killedBy !== this.myId ? `ÉLIMINÉ PAR <b>${esc(this.nameOf(this.killedBy))}</b> · ` : '') + `RÉAPPARITION DANS ${Math.ceil(this.me.rs)} s`;
+        if (isFfa(this.mode) && this.me) $('death-info').innerHTML = (this.killedBy && this.killedBy !== this.myId ? `ÉLIMINÉ PAR <b>${esc(this.nameOf(this.killedBy))}</b> · ` : '') + `RÉAPPARITION DANS ${Math.ceil(this.me.rs)} s`;
       }
     }
     // modèle d'arme
@@ -1426,7 +1488,14 @@ export class Game {
     const s = this.snap, me = s.me;
     const myTeam = this.roster.get(this.myId)?.team;
     // score + minuteur
-    if (this.mode === 'ffa') {
+    if (this.mode === 'gungame') {
+      const myG = this.self?.gl ?? 0;
+      const best = Math.max(0, ...s.players.filter(p => p.i !== this.myId).map(p => p.gl || 0));
+      $('score-left').textContent = myG + 1;
+      $('score-right').textContent = best + 1;
+      const next = GUN_LADDER[myG];
+      $('round-label').textContent = `GUN GAME · ARME ${myG + 1}/${GUN_LADDER.length} · ${(WEAPONS[next]?.name || '').toUpperCase()}`;
+    } else if (isFfa(this.mode)) {
       const myK = this.self?.k ?? 0;
       const best = Math.max(0, ...s.players.filter(p => p.i !== this.myId).map(p => p.k));
       $('score-left').textContent = myK;
@@ -1451,8 +1520,10 @@ export class Game {
     $('hp-fill').style.width = me.hp + '%';
     $('armor-fill').style.width = me.ar * 2 + '%';
     document.querySelector('.vitals').classList.toggle('low', me.hp <= 30);
+    // battements de cœur quand la vie est basse
+    if (me.al && me.hp > 0 && me.hp <= 25) { const nowS = performance.now() / 1000; if (nowS > (this.heartT || 0)) { this.heartT = nowS + 0.9; SFX.playHeartbeat(); } }
     $('money').textContent = me.$;
-    $('buy-money').textContent = this.mode === 'ffa' ? '∞' : me.$;
+    $('buy-money').textContent = isFfa(this.mode) ? '∞' : me.$;
     // capacités
     const agent = AGENTS[this.roster.get(this.myId)?.agent];
     if (agent) for (const el of document.querySelectorAll('#abilities .ability')) {
@@ -1473,13 +1544,13 @@ export class Game {
     $('slots').innerHTML = [1, 2, 3].filter(i => me.wp[i]).map(i => `<span class="${i === this.local.slot ? 'on' : ''}">${i}·${WEAPONS[me.wp[i][0]].name}</span>`).join('');
     // menu d'achat
     if (this.buyOpen) {
-      const canBuy = this.mode === 'ffa' || s.ph === 'buy';
+      const canBuy = isFfa(this.mode) || s.ph === 'buy';
       for (const it of document.querySelectorAll('.buy-item')) {
         const id = it.dataset.item, w = WEAPONS[id], a = ARMOR[id];
         const cost = w ? w.cost : a.cost;
         const owned = w ? me.wp[w.slot]?.[0] === id : me.ar >= a.value;
         it.classList.toggle('owned', owned);
-        it.classList.toggle('poor', !canBuy || (this.mode !== 'ffa' && cost > me.$ && !owned));
+        it.classList.toggle('poor', !canBuy || (!isFfa(this.mode) && cost > me.$ && !owned));
       }
     }
     // indice noyau
@@ -1517,6 +1588,7 @@ export class Game {
     if (this.hitT > 0) { this.hitT -= dt; $('hitmarker').style.opacity = Math.max(0, this.hitT / 0.18); }
     // aveuglement
     const fl = L.flashUntil - now;
+    $('frost-overlay').classList.toggle('on', !!(this.me && this.me.al && this.me.sm < 0.99));
     $('flash-overlay').style.opacity = fl > 0 ? Math.min(1, fl / Math.min(0.9, L.flashDur * 0.6)) : 0;
     if (L.hurtT > 0) L.hurtT -= dt;
     $('damage-overlay').style.opacity = Math.max(0, L.hurtT / 0.4) * 0.9 + (me.al && me.hp < 30 ? 0.25 : 0);
@@ -1528,7 +1600,127 @@ export class Game {
       if (d < g.userData.r) inSmoke = Math.max(inSmoke, Math.min(1, (g.userData.r - d) / 1.2) * g.userData.mat.opacity / 0.72);
     }
     $('smoke-overlay').style.opacity = inSmoke * 0.92;
+    this.updateMarks(now);
     if (ST().minimap && now - this.lastMini > 0.05) { this.lastMini = now; this.drawMinimap(); }
+  }
+
+  // ---- killcam : revoir les 3 dernières secondes avant sa mort, du point de vue du tueur ----
+  startKillcam(m) {
+    if (!ST().killcam || this.ended || !Array.isArray(m.frames) || m.frames.length < 3) return;
+    this.endKillcam();
+    const t0 = m.frames[0].t, t1 = m.frames[m.frames.length - 1].t;
+    if (!(t1 > t0)) return;
+    const r = this.roster.get(this.myId);
+    const ghost = buildCharacter(r?.agent || 'ignis', ALLY);
+    this.scene.add(ghost.root);
+    this.kc = { m, t0, dur: t1 - t0, start: performance.now() / 1000 + 0.35, ghost, shotIdx: 0 };
+    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[m.w] || '';
+    $('kc-who').innerHTML = `Éliminé par <b style="color:${ENEMY}">${esc(m.kn || '?')}</b>${wn ? ` · ${esc(wn)}` : ''}${m.h ? ' · <b>tête</b>' : ''} <span class="muted">(${m.hp} PV restants)</span>`;
+    $('kc-skip').textContent = `${KB('jump')} ou clic pour passer`;
+    $('killcam').classList.add('on');
+    document.body.classList.add('killcam-on');
+    SFX.playWhoosh();
+  }
+  endKillcam() {
+    if (!this.kc) return;
+    this.scene.remove(this.kc.ghost.root);
+    this.kc.ghost.root.traverse(o => { o.geometry?.dispose(); });
+    this.kc = null;
+    $('killcam').classList.remove('on');
+    document.body.classList.remove('killcam-on');
+  }
+  updateKillcam(now) {
+    const kc = this.kc, F = kc.m.frames;
+    // le joueur a réapparu, ou la manche a recommencé : on arrête
+    if (this.ended || (this.me?.al && now > kc.start + 0.5)) { this.endKillcam(); return; }
+    const el = Math.max(0, now - kc.start);
+    if (el > kc.dur + 1) { this.endKillcam(); return; }
+    const t = kc.t0 + Math.min(el, kc.dur);
+    let i = 0; while (i < F.length - 2 && F[i + 1].t < t) i++;
+    const a = F[i], b = F[i + 1] || a;
+    const k = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 1;
+    const L3 = (x, y) => x + (y - x) * k;
+    const ka = a.k, kb = b.k;
+    const eyeH = (ka[5] ? PLAYER.eyeCrouch : PLAYER.eye);
+    this.camera.position.set(L3(ka[0], kb[0]), L3(ka[1], kb[1]) + eyeH, L3(ka[2], kb[2]));
+    this.camera.rotation.set(L3(ka[4], kb[4]), lerpAngle(ka[3], kb[3], k), 0);
+    // les autres joueurs (positions actuelles) sont masqués ; seule la victime est rejouée
+    for (const o of this.others.values()) o.ch.root.visible = false;
+    const va = a.v, vb = b.v || a.v, g = kc.ghost.root;
+    if (va) {
+      g.visible = true;
+      g.position.set(L3(va[0], vb[0]), L3(va[1], vb[1]), L3(va[2], vb[2]));
+      g.rotation.y = lerpAngle(va[3], vb[3], k);
+      const dead = el >= kc.dur;
+      g.rotation.x = dead ? -Math.min(1, (el - kc.dur) / 0.35) * Math.PI / 2 : 0;
+    } else g.visible = false;
+    // tirs du tueur pendant la séquence
+    const shots = kc.m.shots || [];
+    while (kc.shotIdx < shots.length && shots[kc.shotIdx][0] <= t) {
+      const [, w, end] = shots[kc.shotIdx++];
+      const def = WEAPONS[w];
+      if (def && def.type !== 'melee' && Array.isArray(end)) {
+        const from = this.camera.position.clone().add(new THREE.Vector3(0, -0.15, 0));
+        this.addTracer(from, new THREE.Vector3(...end));
+        this.addImpact(end, '#ffe0a0');
+      }
+      SFX.playShot(def ? (def.type === 'pistol' ? 'pistol' : def.type) : 'rifle', null);
+    }
+    $('kc-prog').style.width = Math.min(100, el / kc.dur * 100) + '%';
+  }
+
+  // ---- marqueurs de position (clic molette) ----
+  addMark(m) {
+    if (!Array.isArray(m.p) || m.p.length !== 3) return;
+    this.marks = this.marks || [];
+    const old = this.marks.findIndex(k => k.i === m.i); // un seul marqueur par joueur
+    if (old >= 0) this.removeMark(old);
+    if (this.marks.length >= 8) this.removeMark(0);
+    const col = m.d ? '#ff4f6d' : (m.i === this.myId ? '#ffe14d' : ALLY);
+    const g = new THREE.Group();
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 30, 6, 1, true), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending }));
+    beam.position.y = 15; g.add(beam);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.55, 24), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; g.add(ring);
+    g.position.set(m.p[0], m.p[1], m.p[2]);
+    this.scene.add(g);
+    const el = document.createElement('div');
+    el.className = 'mark-tag' + (m.d ? ' danger' : '');
+    el.style.setProperty('--mc', col);
+    el.innerHTML = `<div class="mi">${m.d ? '⚠' : '◆'}</div><div class="mn">${esc(m.i === this.myId ? '' : m.n || '')}</div><div class="md"></div>`;
+    $('hud').appendChild(el);
+    const t0 = performance.now() / 1000;
+    this.marks.push({ i: m.i, p: m.p, d: m.d, t0, end: t0 + (m.d ? 5 : 8), g, ring, el });
+    SFX.playPing(m.i === this.myId ? null : m.p, !!m.d);
+  }
+  removeMark(idx) {
+    const k = this.marks[idx];
+    if (!k) return;
+    this.scene.remove(k.g); k.g.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+    k.el.remove();
+    this.marks.splice(idx, 1);
+  }
+  updateMarks(now) {
+    if (!this.marks?.length) return;
+    const w = innerWidth, h = innerHeight, v = new THREE.Vector3();
+    const eye = this.camera.position;
+    for (let i = this.marks.length - 1; i >= 0; i--) {
+      const k = this.marks[i];
+      if (now > k.end || this.ended) { this.removeMark(i); continue; }
+      const age = now - k.t0;
+      k.ring.scale.setScalar(1 + (age * 1.5 % 1) * 1.6);
+      k.ring.material.opacity = 0.8 * (1 - (age * 1.5 % 1));
+      v.set(k.p[0], k.p[1] + 0.6, k.p[2]).project(this.camera);
+      const behind = v.z > 1;
+      let x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h;
+      if (behind) { x = w - x; y = h - 40; }
+      const off = behind || x < 30 || x > w - 30 || y < 30 || y > h - 30;
+      x = Math.max(30, Math.min(w - 30, x)); y = Math.max(30, Math.min(h - 30, y));
+      k.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+      k.el.classList.toggle('edge', off);
+      k.el.style.opacity = now > k.end - 0.6 ? Math.max(0, (k.end - now) / 0.6) : 1;
+      k.el.querySelector('.md').textContent = Math.round(Math.hypot(k.p[0] - eye.x, k.p[1] - eye.y, k.p[2] - eye.z)) + ' m';
+    }
   }
 
   drawMinimap() {
@@ -1540,11 +1732,12 @@ export class Game {
     const snap = this.snap;
     if (!snap) return;
     for (const sm of this.smokeMeshes.values()) { const [x, y] = P(sm.position.x, sm.position.z); g.fillStyle = 'rgba(200,205,230,.75)'; g.beginPath(); g.arc(x, y, (sm.userData.r / CELL) * s, 0, 7); g.fill(); }
-    for (const f of this.fireMeshes.values()) { const [x, y] = P(f.position.x, f.position.z); g.fillStyle = f.userData.kind === 'shock' ? 'rgba(63,208,255,.5)' : 'rgba(255,110,40,.5)'; g.beginPath(); g.arc(x, y, (f.userData.disc.geometry.parameters.radius / CELL) * s, 0, 7); g.fill(); }
+    for (const f of this.fireMeshes.values()) { const [x, y] = P(f.position.x, f.position.z); g.fillStyle = f.userData.kind === 'shock' ? 'rgba(63,208,255,.5)' : f.userData.kind === 'frost' ? 'rgba(158,231,255,.45)' : 'rgba(255,110,40,.5)'; g.beginPath(); g.arc(x, y, (f.userData.disc.geometry.parameters.radius / CELL) * s, 0, 7); g.fill(); }
     for (const w of this.wallMeshes.values()) { const b = w.userData.box; const [x1, y1] = P(b.min[0], b.min[2]); const [x2, y2] = P(b.max[0], b.max[2]); g.fillStyle = '#9ef0ff'; g.fillRect(x1, y1, Math.max(2, x2 - x1), Math.max(2, y2 - y1)); }
     if (snap.core.p) { const [x, y] = P(snap.core.p[0], snap.core.p[2]); g.fillStyle = '#ff2f6d'; g.save(); g.translate(x, y); g.rotate(Math.PI / 4); g.fillRect(-4, -4, 8, 8); g.restore(); }
     const tnow = performance.now() / 1000;
     const me = this.roster.get(this.myId);
+    for (const k of this.marks || []) { const [x, y] = P(k.p[0], k.p[2]); g.strokeStyle = k.d ? '#ff4f6d' : '#ffe14d'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x + 5, y); g.lineTo(x, y + 6); g.lineTo(x - 5, y); g.closePath(); g.stroke(); }
     for (const o of this.others.values()) {
       const st = o.cur;
       if (!st || !st.al) continue;
@@ -1576,13 +1769,13 @@ export class Game {
     this.showScoreboard(false);
     const meR = this.roster.get(this.myId);
     const mine = m.stats.find(s => s.id === this.myId) || { kills: 0, deaths: 0, assists: 0 };
-    const win = m.mode === 'ffa' ? m.winner === this.myId : m.winner === meR?.team;
+    const win = isFfa(m.mode) ? m.winner === this.myId : m.winner === meR?.team;
     const reward = m.rewards?.[this.myId] ?? 0;
     if (this.isGuest) { profile.eclats += reward; save(); }
     void mine;
     $('end-title').textContent = win ? 'VICTOIRE' : 'DÉFAITE';
     $('end-title').className = 'end-title ' + (win ? 'win' : 'lose');
-    if (m.mode === 'ffa') $('end-score').textContent = `Vainqueur : ${this.nameOf(m.winner)}`;
+    if (isFfa(m.mode)) $('end-score').textContent = `Vainqueur : ${this.nameOf(m.winner)}`;
     else { const a = m.score[meR?.team] ?? 0, b = m.score[meR?.team === 'alpha' ? 'beta' : 'alpha'] ?? 0; $('end-score').textContent = `${a} — ${b}`; }
     $('end-reward').innerHTML = `<span class="gem"></span> +${reward} Éclats`;
     const mvp = m.stats.find(s => s.id === m.mvp);
@@ -1604,7 +1797,7 @@ export class Game {
     for (const a of s.achievements) parts.push(`<div class="ep-row ach">🏆 Succès : ${esc(a.label)} <span class="gem small"></span> +${a.reward}${a.title ? ` · titre « ${esc(a.title)} »` : ''}</div>`);
     $('end-progress').innerHTML = parts.join('');
     $('end-reward').innerHTML = `<span class="gem"></span> +${s.eclatsTotal} Éclats au total`;
-    if (s.level > s.levelBefore) SFX.playUI('win');
+    if (s.level > s.levelBefore) SFX.playLevelUp();
   }
 
   leave() {
@@ -1629,6 +1822,9 @@ export class Game {
     document.removeEventListener('pointerlockchange', this._plc);
     document.removeEventListener('settings-changed', this._sc);
     for (const u of this.unsubs) u();
+    this.touch?.destroy();
+    while (this.marks?.length) this.removeMark(0);
+    this.endKillcam();
     if (document.pointerLockElement) { this.expectUnlock = true; document.exitPointerLock(); }
     this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     this.renderer.dispose();

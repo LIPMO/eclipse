@@ -182,6 +182,8 @@ export class Social {
     const tk = this.A.key(t.name);
     const u = this.userOf(c);
     const card = publicCard(t, !!this.clientOfKey(tk));
+    const cl = t.clan && this.A.data.clans?.[t.clan];
+    card.clan = cl ? { tag: cl.tag, name: cl.name } : null;
     card.relation = !u ? 'guest' : tk === c.account ? 'self' : u.friends.includes(tk) ? 'friend' : u.friendReq.includes(tk) ? 'incoming' : (t.friendReq || []).includes(c.account) ? 'pending' : u.blocked.includes(tk) ? 'blocked' : 'none';
     this.ctx.send(c.id, { type: 'playerProfile', profile: card });
   }
@@ -255,7 +257,7 @@ export class Social {
     const [first, ...rest] = arg.split(/\s+/);
     switch (cmd) {
       case 'aide': case 'help':
-        this.info(c, 'Commandes : /mp pseudo message · /r message (répondre) · /ami pseudo · /inviter pseudo · /bloquer pseudo · /debloquer pseudo · /stats [pseudo] · /signaler pseudo raison');
+        this.info(c, 'Commandes : /mp pseudo message · /r message (répondre) · /ami pseudo · /inviter pseudo · /bloquer pseudo · /debloquer pseudo · /stats [pseudo] · /c message (chat de clan) · /signaler pseudo raison');
         return true;
       case 'mp': case 'w': case 'msg': if (!first || !rest.length) this.info(c, 'Utilisation : /mp pseudo message'); else this.whisper(c, first, rest.join(' ')); return true;
       case 'r': if (!c.lastWhisper) this.info(c, 'Personne ne t\'a encore écrit.'); else if (arg) this.whisper(c, c.lastWhisper, arg); return true;
@@ -263,6 +265,7 @@ export class Social {
       case 'inviter': case 'invite': if (first) this.m_invite(c, { name: first }); return true;
       case 'bloquer': case 'block': if (first) this.m_block(c, { name: first }); return true;
       case 'debloquer': case 'unblock': if (first) { this.m_unblock(c, { name: first }); this.info(c, `${first} est débloqué.`); } return true;
+      case 'c': case 'clan': if (!this.userOf(c)) this.info(c, 'Les clans sont réservés aux comptes.'); else if (arg) this.clans?.chat(c, arg, false); return true;
       case 'stats': {
         const t = first ? this.A.get(first) : this.userOf(c);
         if (!t) { this.info(c, first ? 'Joueur introuvable.' : 'Les statistiques sont réservées aux comptes.'); return true; }

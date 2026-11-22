@@ -148,3 +148,8 @@ td .acts { display: flex; gap: 5px; flex-wrap: wrap; }
   .feed .ln { grid-template-columns: 60px 1fr; }
   .kv { grid-template-columns: 1fr; }
 }
+
+/* tournois */
+.tr-adm { display: flex; gap: 22px; overflow-x: auto; }
+.tr-adm > div { min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
+.tr-adm-m { padding: 6px 8px; border: 1px solid var(--line, rgba(255,255,255,.1)); border-radius: 6px; font-size: 13px; }

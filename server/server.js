@@ -10,8 +10,10 @@ import { Accounts } from './accounts.js';
 import { Admin } from './admin.js';
 import { Bucket, Strikes, baseHeaders, gameCsp, originAllowed } from './security.js';
 import crypto from 'node:crypto';
-import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE } from '../shared/data.js';
+import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE, isFfa, GUN_LADDER } from '../shared/data.js';
 import { Social } from './social.js';
+import { Clans } from './clans.js';
+import { Tournaments } from './tournaments.js';
 import { DIFFICULTIES } from './bot.js';
 import { dailyLogin, eloUpdate } from './progression.js';
 import { levelOf, TITLES, RADIO, REPORT_REASONS } from '../shared/progress.js';
@@ -144,7 +146,8 @@ const REG_PER_HOUR = env('REGISTRATIONS_PER_HOUR', 6);
 const regLimit = new Bucket(REG_PER_HOUR / 3600, REG_PER_HOUR); // inscriptions réussies par IP et par heure
 const chatLimit = new Bucket(1.2, 5);             // messages de chat par joueur
 const reportLimit = new Bucket(5 / 600, 5);       // signalements par joueur (5 puis 1 toutes les 2 min)
-const roomLimit = new Bucket(0.3, 3);             // créations de salon par joueur
+const roomLimit = new Bucket(0.3, 3);
+const socialLimit = new Bucket(1, 8);              // actions de clan et de tournoi par joueur             // créations de salon par joueur
 const MAX_CONN_PER_IP = env('MAX_CONN_PER_IP', 16);
 const connPerIp = new Map();
 const wss = new WebSocketServer({
@@ -186,7 +189,7 @@ function roomCode() {
 }
 function memberInfo(c) {
   const u = c.account && accounts.get(c.account);
-  return { level: u ? levelOf(u.xp) : 1, title: u?.title ? TITLES[u.title] : null };
+  return { level: u ? levelOf(u.xp) : 1, title: u?.title ? TITLES[u.title] : null, clan: c.account ? clans.tagOf(c.account) : null };
 }
 
 function roomSummary(r) {
@@ -194,7 +197,7 @@ function roomSummary(r) {
 }
 function roomState(r) {
   return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null,
-    members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, title: m.title || null, account: !!m.account })) };
+    members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
 }
 // les salons privés n'apparaissent pas dans la liste publique
 const publicRooms = () => [...rooms.values()].filter(r => !r.private).map(roomSummary);
@@ -211,6 +214,7 @@ const MODE_CFG = {
   assault: { max: 10, target: 7, tmin: 2, tmax: 13 },
   duel: { max: 2, target: 5, tmin: 2, tmax: 13 },
   ffa: { max: 8, target: 25, tmin: 5, tmax: 60 },
+  gungame: { max: 8, target: GUN_LADDER.length, tmin: GUN_LADDER.length, tmax: GUN_LADDER.length },
 };
 function teamCounts(r) {
   const c = { alpha: 0, beta: 0, ffa: 0 };
@@ -218,12 +222,12 @@ function teamCounts(r) {
   return c;
 }
 function pickTeam(r) {
-  if (r.mode === 'ffa') return 'ffa';
+  if (isFfa(r.mode)) return 'ffa';
   const c = teamCounts(r);
   return c.alpha <= c.beta ? 'alpha' : 'beta';
 }
 function freeAgent(r, team, prefer) {
-  const taken = new Set([...r.members.values()].filter(m => m.team === team && r.mode !== 'ffa').map(m => m.agent));
+  const taken = new Set([...r.members.values()].filter(m => m.team === team && !isFfa(r.mode)).map(m => m.agent));
   if (prefer && AGENTS[prefer] && !taken.has(prefer)) return prefer;
   const free = AGENT_ORDER.filter(a => !taken.has(a));
   return free.length ? free[(Math.random() * free.length) | 0] : AGENT_ORDER[(Math.random() * AGENT_ORDER.length) | 0];
@@ -231,10 +235,10 @@ function freeAgent(r, team, prefer) {
 
 function addBot(r, team) {
   if (r.members.size >= r.maxPlayers) return;
-  if (r.mode !== 'ffa' && teamCounts(r)[team] >= r.maxPlayers / 2) return;
+  if (!isFfa(r.mode) && teamCounts(r)[team] >= r.maxPlayers / 2) return;
   const used = new Set([...r.members.values()].map(m => m.name));
   const name = (BOT_NAMES.find(n => !used.has('BOT ' + n)) || ('X' + nextId));
-  const bot = { id: 'b' + (nextId++), name: 'BOT ' + name, team: r.mode === 'ffa' ? 'ffa' : team, agent: null, isBot: true, ready: true, skins: randomSkins() };
+  const bot = { id: 'b' + (nextId++), name: 'BOT ' + name, team: isFfa(r.mode) ? 'ffa' : team, agent: null, isBot: true, ready: true, skins: randomSkins() };
   bot.agent = freeAgent(r, bot.team);
   r.members.set(bot.id, bot);
   if (r.match) r.match.addPlayer(bot);
@@ -252,6 +256,7 @@ function leaveRoom(c) {
   social.pushFriendsOf(c.account);
   r.members.delete(c.id);
   if (r.match) r.match.removePlayer(c.id);
+  if (r.tournament && tournaments.onLeave(r, c)) return;
   const humans = [...r.members.values()].filter(m => !m.isBot);
   if (!humans.length && r.official) { r.hostId = null; if (r.match) { r.match = null; r.state = 'lobby'; } broadcastRooms(); return; }
   if (!humans.length) { rooms.delete(r.id); broadcastRooms(); return; }
@@ -260,6 +265,8 @@ function leaveRoom(c) {
 }
 
 function joinRoom(c, r) {
+  if (r.tournament && !r.tournament.players.includes(c.account)) { send(c.id, { type: 'error', text: 'Ce salon de tournoi est réservé aux deux joueurs du match.' }); return; }
+  if (c.roomId === r.id) { pushRoom(r); return; }
   if (c.roomId) leaveRoom(c);
   if (r.members.size >= r.maxPlayers) {
     const bot = [...r.members.values()].reverse().find(m => m.isBot);
@@ -275,6 +282,7 @@ function joinRoom(c, r) {
   if (!r.members.get(r.hostId) || r.members.get(r.hostId).isBot) r.hostId = c.id;
   pushRoom(r);
   if (r.match) r.match.addPlayer(m);
+  if (r.tournament) tournaments.onJoin(r);
   // duel rapide : lancement automatique quand deux joueurs sont présents
   if (r.quick && r.state === 'lobby' && [...r.members.values()].filter(x => !x.isBot).length >= 2) {
     for (const o of r.members.values()) if (!o.isBot) send(o.id, { type: 'chat', from: 'SYSTÈME', text: 'Adversaire trouvé ! Lancement dans 3 secondes…' });
@@ -284,7 +292,7 @@ function joinRoom(c, r) {
 
 function startMatch(r) {
   r.state = 'playing';
-  for (const m of r.members.values()) if (m.team !== 'ffa' && r.mode === 'ffa') m.team = 'ffa';
+  for (const m of r.members.values()) if (m.team !== 'ffa' && isFfa(r.mode)) m.team = 'ffa';
   const match = new Match(r, {
     send, sendRaw,
     onEvent: (type, data) => admin.matchEvent(type, { room: r, ...data }),
@@ -306,17 +314,20 @@ function startMatch(r) {
         const u = res.account && accounts.get(res.account);
         if (!u) { if (c) send(c.id, { type: 'matchSummary', guest: true }); continue; }
         const sum = accounts.applyResult(u, res, { mul, eloDelta: eloDeltas[res.id] ?? null });
+        clans.onMatch(u, (sum.xp || 0) + (sum.questXp || 0), res.won);
         admin.economy('earn', sum.eclatsTotal);
         const mem = r.members.get(res.id); if (mem) mem.level = sum.level;
         if (sum.achievements.length) admin.log('partie', `${u.name} débloque : ${sum.achievements.map(a => a.label).join(', ')}`);
         if (c) { send(c.id, { type: 'profile', profile: accounts.publicProfile(u) }); send(c.id, { type: 'matchSummary', summary: sum }); }
       }
+      if (r.tournament) tournaments.onResults(r, results);
     },
     onEnd: () => {
       r.match = null; r.state = 'lobby';
       for (const m of r.members.values()) m.ready = m.isBot;
       for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'backToRoom' });
       pushRoom(r);
+      if (r.tournament) tournaments.afterMatchEnd(r);
     },
   });
   r.match = match;
@@ -393,6 +404,9 @@ function handleLobby(c, msg) {
       broadcastRooms();
       social.sendFriends(c);
       social.pushFriendsOf(c.account);
+      c.clanTag = clans.tagOf(c.account);
+      send(c.id, clans.payload(res.user));
+      send(c.id, tournaments.payloadFor(c));
       break;
     }
     case 'logout': if (c.token) accounts.logout(c.token); break;
@@ -433,13 +447,14 @@ function handleLobby(c, msg) {
       break;
     }
     // mêlée rapide : rejoint une mêlée publique, ou en crée une avec des bots
-    case 'quickFfa': {
+    case 'quickFfa': case 'quickGun': {
       if (!roomLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends quelques secondes.' }); break; }
       if (c.roomId) leaveRoom(c);
-      const open = [...rooms.values()].find(x => x.mode === 'ffa' && !x.private && [...x.members.values()].filter(m => !m.isBot).length < x.maxPlayers);
+      const qmode = msg.type === 'quickGun' ? 'gungame' : 'ffa';
+      const open = [...rooms.values()].find(x => x.mode === qmode && !x.private && !x.tournament && [...x.members.values()].filter(m => !m.isBot).length < x.maxPlayers);
       if (open) { joinRoom(c, open); if (open.state === 'lobby' && !open.official && open.hostId === c.id) startMatch(open); break; }
       const deny = admin.canCreateRoom(c); if (deny) { send(c.id, { type: 'error', text: deny }); break; }
-      const room = newRoom(c, { name: `Mêlée rapide`, mode: 'ffa' });
+      const room = newRoom(c, { name: qmode === 'gungame' ? 'Gun Game rapide' : 'Mêlée rapide', mode: qmode });
       joinRoom(c, room);
       for (let i = 0; i < 5; i++) addBot(room, 'ffa');
       startMatch(room);
@@ -473,7 +488,7 @@ function handleLobby(c, msg) {
     }
     case 'leaveRoom': if (r) leaveRoom(c); send(c.id, { type: 'left' }); break;
     case 'setTeam': {
-      if (!r || r.state !== 'lobby' || r.mode === 'ffa' || !['alpha', 'beta'].includes(msg.team)) break;
+      if (!r || r.state !== 'lobby' || isFfa(r.mode) || !['alpha', 'beta'].includes(msg.team)) break;
       const m = r.members.get(c.id);
       if (m.team === msg.team || teamCounts(r)[msg.team] >= r.maxPlayers / 2) break;
       m.team = msg.team; m.agent = freeAgent(r, m.team, m.agent);
@@ -485,7 +500,7 @@ function handleLobby(c, msg) {
       if (c.account) { const u = accounts.get(c.account); if (u) accounts.setAgent(u, msg.agent); }
       if (r.state !== 'lobby') break;
       const m = r.members.get(c.id);
-      const taken = r.mode !== 'ffa' && [...r.members.values()].some(o => o !== m && o.team === m.team && o.agent === msg.agent);
+      const taken = !isFfa(r.mode) && [...r.members.values()].some(o => o !== m && o.team === m.team && o.agent === msg.agent);
       if (taken) { const bot = [...r.members.values()].find(o => o.isBot && o.team === m.team && o.agent === msg.agent); if (bot) { bot.agent = m.agent; } else break; }
       m.agent = msg.agent; pushRoom(r); break;
     }
@@ -497,7 +512,7 @@ function handleLobby(c, msg) {
     }
     case 'setReady': if (r) { const m = r.members.get(c.id); m.ready = !!msg.ready; pushRoom(r); } break;
     case 'roomSettings': {
-      if (!isHost || r.state !== 'lobby') break;
+      if (!isHost || r.state !== 'lobby' || r.tournament) break;
       if (validDiff(msg.difficulty)) r.difficulty = msg.difficulty;
       if (typeof msg.private === 'boolean' && msg.private !== !!r.private) { r.private = msg.private; r.code = r.private ? roomCode() : null; }
       if (msg.mode && msg.mode !== r.mode && MODE_CFG[msg.mode]) {
@@ -506,7 +521,7 @@ function handleLobby(c, msg) {
         r.mode = msg.mode; r.maxPlayers = MODE_CFG[r.mode].max; r.target = MODE_CFG[r.mode].target;
         for (const m of [...r.members.values()]) if (m.isBot) r.members.delete(m.id);
         let k = 0;
-        for (const m of r.members.values()) m.team = r.mode === 'ffa' ? 'ffa' : (k++ % 2 ? 'beta' : 'alpha');
+        for (const m of r.members.values()) m.team = isFfa(r.mode) ? 'ffa' : (k++ % 2 ? 'beta' : 'alpha');
         if (!mapsForMode(r.mode).includes(r.mapId)) r.mapId = mapsForMode(r.mode)[0];
       }
       if (mapsForMode(r.mode).includes(msg.mapId)) r.mapId = msg.mapId;
@@ -514,10 +529,10 @@ function handleLobby(c, msg) {
       if (t) r.target = Math.max(MODE_CFG[r.mode].tmin, Math.min(MODE_CFG[r.mode].tmax, t));
       pushRoom(r); break;
     }
-    case 'addBot': if (isHost) { addBot(r, msg.team === 'beta' ? 'beta' : 'alpha'); pushRoom(r); } break;
-    case 'fillBots': if (isHost && r.state === 'lobby') { while (r.members.size < r.maxPlayers) { const before = r.members.size; addBot(r, pickTeam(r)); if (r.members.size === before) break; } pushRoom(r); } break;
+    case 'addBot': if (isHost && !r.tournament) { addBot(r, msg.team === 'beta' ? 'beta' : 'alpha'); pushRoom(r); } break;
+    case 'fillBots': if (isHost && r.state === 'lobby' && !r.tournament) { while (r.members.size < r.maxPlayers) { const before = r.members.size; addBot(r, pickTeam(r)); if (r.members.size === before) break; } pushRoom(r); } break;
     case 'removeBot': if (isHost) { const m = r.members.get(msg.id); if (m && m.isBot) { r.members.delete(m.id); if (r.match) r.match.removePlayer(m.id); pushRoom(r); } } break;
-    case 'start': if (isHost && r.state === 'lobby') startMatch(r); break;
+    case 'start': if (isHost && r.state === 'lobby' && !r.tournament) startMatch(r); break;
     case 'chat': {
       if (!r) break;
       const raw = clean(msg.text, 140);
@@ -531,7 +546,7 @@ function handleLobby(c, msg) {
       const text = verdict.deliver;
       const m = r.members.get(c.id);
       // chat d'équipe : seuls les coéquipiers le reçoivent ; un joueur qui a bloqué l'auteur ne reçoit rien
-      const teamOnly = !!msg.teamOnly && r.mode !== 'ffa';
+      const teamOnly = !!msg.teamOnly && !isFfa(r.mode);
       for (const o of r.members.values()) {
         if (o.isBot || (teamOnly && o.team !== m?.team)) continue;
         if (o.account && social.blocks(o.account, c.account)) continue;
@@ -540,7 +555,7 @@ function handleLobby(c, msg) {
       break;
     }
     case 'radio': {
-      if (!r || !r.match || r.mode === 'ffa') break;
+      if (!r || !r.match || isFfa(r.mode)) break;
       const text = RADIO[Math.round(Number(msg.id))];
       if (!text || !chatLimit.take(c.id)) break;
       if (admin.activeMute(c)) break;
@@ -563,6 +578,8 @@ function handleLobby(c, msg) {
     case 'leaveMatch': if (r) leaveRoom(c); send(c.id, { type: 'left' }); break;
     default:
       if (social.handle(c, msg)) break;
+      if (typeof msg.type === 'string' && /^(clan|tour)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
+      if (clans.handle(c, msg) || tournaments.handle(c, msg)) break;
       if (r && r.match) r.match.handle(c.id, msg);
   }
 }
@@ -607,6 +624,21 @@ const admin = new Admin({
 });
 const social = new Social({ accounts, clients, rooms, send, joinRoom, admin, chatLimit });
 admin.ctx.social = social;
+const clans = new Clans({ accounts, clients, send, admin, chatLimit, social, onTagChange: c => { const r = c.roomId && rooms.get(c.roomId); const m = r && r.members.get(c.id); if (m) { m.clan = c.clanTag || null; pushRoom(r); r.match?.updateMember(m); } } });
+admin.ctx.clans = clans; social.clans = clans;
+// salon d'un match de tournoi : privé, sans bots, réservé aux deux joueurs du match
+function createTourRoom(t, m, name) {
+  const maps = mapsForMode('duel');
+  const room = {
+    id: 'r' + (nextId++), name: name.slice(0, 60), hostId: null, mapId: maps[(Math.random() * maps.length) | 0], mode: 'duel', quick: false,
+    target: t.target, difficulty: 'normal', maxPlayers: 2, state: 'lobby', members: new Map(), match: null, private: true, code: null,
+    tournament: { tid: t.id, match: m.id, players: [m.p1, m.p2] },
+  };
+  rooms.set(room.id, room);
+  return room;
+}
+const tournaments = new Tournaments({ accounts, clients, rooms, send, admin, dataDir: DATA_DIR, createRoom: createTourRoom, joinRoom, startMatch, closeRoom });
+admin.ctx.tournaments = tournaments;
 accounts.onPurchase = skin => { admin.economy('spend', skin.price); admin.economy('skin', skin.id); };
 for (const a of integrityAlerts) admin.log('securite', a);
 if (VERIFIED) admin.log('systeme', `Mode protégé : ${VERIFIED.size} fichiers vérifiés servis depuis la mémoire`);

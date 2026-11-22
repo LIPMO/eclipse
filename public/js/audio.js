@@ -96,6 +96,9 @@ export function playAbility(kind, pos) {
     case 'shield': tone(o, t, 0.35, 400, 800, 'triangle', 0.3); break;
     case 'invis': case 'phantom': tone(o, t, 0.6, 900, 200, 'sine', 0.25); break;
     case 'overdrive': tone(o, t, 0.6, 120, 600, 'sawtooth', 0.2); noise(o, t, 0.5, 600, 1, 'bandpass', 0.4); break;
+    case 'haste': tone(o, t, 0.35, 250, 1100, 'sawtooth', 0.12); noise(o, t, 0.35, 1800, 0.8, 'bandpass', 0.35); break;
+    case 'cryo': case 'blizzard': tone(o, t, 0.5, 2400, 900, 'sine', 0.2); noise(o, t, 0.6, 6000, 0.6, 'highpass', 0.35); break;
+    case 'smoke': case 'megasmoke': case 'molotov': case 'flash': case 'firestorm': noise(o, t, 0.12, 2200, 2, 'bandpass', 0.35); tone(o, t, 0.1, 500, 300, 'triangle', 0.15); break;
     default: noise(o, t, 0.2, 1200, 1, 'bandpass', 0.4);
   }
 }
@@ -120,3 +123,28 @@ export function playUI(kind) {
   else if (kind === 'plant') { tone(master, t, 0.6, 300, 900, 'sawtooth', 0.12); }
   else tone(master, t, 0.06, 1200, 1200, 'sine', 0.12);
 }
+
+// ---- petits effets sonores supplémentaires ----
+export function playFrost(pos) { if (!ctx) return; const t = ctx.currentTime; const o = out(pos, 45); noise(o, t, 1, 7000, 0.5, 'highpass', 0.35); [2100, 2800, 3500].forEach((f, i) => tone(o, t + i * 0.07, 0.25, f, f * 0.9, 'sine', 0.08)); }
+// marqueur de position (clic molette)
+export function playPing(pos, danger = false) {
+  if (!ctx) return; const t = ctx.currentTime; const o = pos ? out(pos, 400) : master;
+  if (danger) { tone(o, t, 0.12, 1300, 1300, 'square', 0.1); tone(o, t + 0.14, 0.12, 1300, 1300, 'square', 0.1); }
+  else { tone(o, t, 0.12, 1050, 1050, 'sine', 0.3); tone(o, t + 0.09, 0.22, 1570, 1570, 'sine', 0.25); }
+}
+// série d'éliminations : plus aigu à chaque kill
+export function playStreak(n) {
+  if (!ctx) return; const t = ctx.currentTime;
+  const base = [0, 660, 784, 880, 1047, 1319][Math.min(5, n)] || 1319;
+  for (let i = 0; i < Math.min(n, 5); i++) tone(master, t + i * 0.07, 0.18, base * (1 + i * 0.12), base * (1 + i * 0.12), 'triangle', 0.16);
+}
+export function playEmpty() { if (!ctx) return; const t = ctx.currentTime; noise(master, t, 0.025, 5000, 6, 'bandpass', 0.3); noise(master, t + 0.05, 0.02, 3500, 6, 'bandpass', 0.2); }
+export function playSwitch() { if (!ctx) return; const t = ctx.currentTime; noise(master, t, 0.04, 2200, 3, 'bandpass', 0.22); noise(master, t + 0.08, 0.05, 1400, 3, 'bandpass', 0.18); }
+export function playJump(self = true) { if (!ctx) return; noise(master, ctx.currentTime, 0.08, 400, 1, 'lowpass', self ? 0.18 : 0.1); }
+export function playLand(hard = false) { if (!ctx) return; const t = ctx.currentTime; noise(master, t, hard ? 0.18 : 0.1, 260, 1, 'lowpass', hard ? 0.55 : 0.28); }
+export function playHeartbeat() { if (!ctx) return; const t = ctx.currentTime; tone(master, t, 0.12, 60, 40, 'sine', 0.5); tone(master, t + 0.18, 0.12, 55, 38, 'sine', 0.35); }
+export function playLevelUp() { if (!ctx) return; const t = ctx.currentTime; [523, 659, 784, 1047].forEach((f, i) => tone(master, t + i * 0.09, 0.35, f, f, 'triangle', 0.22)); tone(master, t + 0.36, 0.6, 1568, 1568, 'sine', 0.12); }
+export function playNotify() { if (!ctx) return; const t = ctx.currentTime; tone(master, t, 0.12, 880, 880, 'sine', 0.18); tone(master, t + 0.1, 0.18, 1320, 1320, 'sine', 0.15); }
+export function playPromote() { if (!ctx) return; const t = ctx.currentTime; tone(master, t, 0.15, 600, 1200, 'square', 0.08); tone(master, t + 0.12, 0.25, 1200, 1200, 'triangle', 0.18); }
+export function playWhoosh() { if (!ctx) return; const t = ctx.currentTime; noise(master, t, 0.6, 900, 0.7, 'bandpass', 0.5); tone(master, t, 0.5, 200, 60, 'sine', 0.25); }
+export function playTick(last = false) { if (!ctx) return; tone(master, ctx.currentTime, 0.07, last ? 1400 : 1000, last ? 1400 : 1000, 'sine', 0.15); }

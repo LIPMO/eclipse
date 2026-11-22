@@ -1,6 +1,6 @@
 // Progression des comptes : XP et niveaux, déblocages, quêtes, succès, titres, Elo, historique, bonus quotidien.
 import crypto from 'node:crypto';
-import { AGENT_ORDER, SKINS } from '../shared/data.js';
+import { AGENT_ORDER, SKINS, isFfa } from '../shared/data.js';
 import { MAP_ORDER } from '../shared/maps.js';
 import {
   levelInfo, levelOf, xpForLevel, levelReward, LEVEL_SKINS, XP, QUESTS, QUEST_REWARD, QUESTS_PER,
@@ -168,7 +168,7 @@ export function applyMatch(u, res, { mul = { xp: 1, eclats: 1 }, overrides, eloD
   s.kills += res.kills; s.deaths += res.deaths; s.assists += res.assists;
   if (res.mode === 'duel') { s.duels++; if (res.won) s.duelWins++; }
   for (const k of ['hsKills', 'knifeKills', 'dmg', 'shots', 'hits', 'plants', 'defuses', 'aces', 'multi3', 'abilities', 'ults']) s[k] += Math.round(res[k] || 0);
-  if (res.mode === 'ffa') s.ffaKills += res.kills;
+  if (isFfa(res.mode)) s.ffaKills += res.kills;
   if (res.mvp) s.mvps++;
   s.playTime += Math.round(res.duration || 0);
   const ag = u.agentStats[res.agent] || (u.agentStats[res.agent] = { matches: 0, wins: 0, kills: 0, deaths: 0, dmg: 0 });
@@ -184,7 +184,7 @@ export function applyMatch(u, res, { mul = { xp: 1, eclats: 1 }, overrides, eloD
   // quêtes
   const q = refreshQuests(u, overrides);
   const questsDone = [];
-  const statOf = { matches: 1, wins: res.won ? 1 : 0, duelWins: res.mode === 'duel' && res.won ? 1 : 0, ffaKills: res.mode === 'ffa' ? res.kills : 0 };
+  const statOf = { matches: 1, wins: res.won ? 1 : 0, duelWins: res.mode === 'duel' && res.won ? 1 : 0, ffaKills: isFfa(res.mode) ? res.kills : 0 };
   let questXp = 0;
   for (const item of [...q.daily, ...q.weekly]) {
     if (item.done) continue;

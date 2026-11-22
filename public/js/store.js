@@ -5,15 +5,15 @@ export const DEFAULT_KEYS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', walk: 'ShiftLeft',
   fire: 'Mouse0', scope: 'Mouse2', reload: 'KeyR', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3',
   abilityQ: 'KeyQ', abilityE: 'KeyE', ult: 'KeyX', interact: 'KeyF', buy: 'KeyB', scoreboard: 'Tab', chat: 'Enter',
-  teamChat: 'KeyY', radio: 'KeyT',
+  teamChat: 'KeyY', radio: 'KeyT', mark: 'Mouse1',
 };
 export const DEFAULT_SETTINGS = {
   // souris
-  sens: 1, scopeSens: 1, invertY: false,
+  sens: 1, scopeSens: 1, invertY: false, touchSens: 1, touchSize: 1, touchOpacity: 0.55,
   // vidéo
   fov: 100, vmFov: 62, renderScale: 1, brightness: 1.05, quality: 'high',
   // interface
-  fps: false, minimap: true, hitmarker: true, bob: true, leftHand: false, enemyColor: '#ff4f6d',
+  fps: false, minimap: true, hitmarker: true, killcam: true, bob: true, leftHand: false, enemyColor: '#ff4f6d',
   // audio
   vol: 0.6, hitSound: true,
   // viseur

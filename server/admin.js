@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { SKINS, WEAPONS, ROUND, DUEL, AGENTS, SKINNABLE } from '../shared/data.js';
+import { SKINS, WEAPONS, ROUND, DUEL, AGENTS, SKINNABLE, isFfa } from '../shared/data.js';
 import { MAP_INFO, mapsForMode } from '../shared/maps.js';
 import { QUESTS, QUEST_REWARD, TITLES, STAFF_TITLES, RANKS, rankOf, levelOf, levelInfo, ELO_START, REPORT_REASONS, ACHIEVEMENTS } from '../shared/progress.js';
 import { addXp, setLevel, ensureUser, titlesOf, rankFor } from './progression.js';
@@ -341,12 +341,12 @@ export class Admin {
       // historique global des parties
       const winner = d.winner === 'alpha' ? 'Alpha' : d.winner === 'beta' ? 'Oméga' : (m?.players.get(d.winner)?.name || '—');
       this.state.matches.unshift({ id: crypto.randomUUID(), t: Date.now(), room: r.name, mode: r.mode, map: r.mapId, duration: Math.round(d.duration || 0),
-        score: r.mode === 'ffa' ? '' : `${m?.score.alpha ?? 0}-${m?.score.beta ?? 0}`, winner, mvp: d.mvp || '', players: d.players || [] });
+        score: isFfa(r.mode) ? '' : `${m?.score.alpha ?? 0}-${m?.score.beta ?? 0}`, winner, mvp: d.mvp || '', players: d.players || [] });
       if (this.state.matches.length > 300) this.state.matches.length = 300;
       // victoires par agent (équilibrage)
       if (m) for (const p of m.players.values()) {
         if (p.isBot) continue;
-        const won = r.mode === 'ffa' ? d.winner === p.id : d.winner === p.team;
+        const won = isFfa(r.mode) ? d.winner === p.id : d.winner === p.team;
         const a = st.agentWins[p.agent] || (st.agentWins[p.agent] = { played: 0, won: 0, kills: 0, deaths: 0 });
         a.played++; if (won) a.won++; a.kills += p.kills; a.deaths += p.deaths;
       }
@@ -725,6 +725,8 @@ const ACTIONS = {
     const key = this.ctx.accounts.key(u.name);
     for (const c of this.clientsOf(key)) this.ctx.kick(c, 'Ton compte a été supprimé.');
     this.revokeSessions(key);
+    this.ctx.clans?.onAccountDeleted(key);
+    this.ctx.tournaments?.onAccountDeleted(key);
     delete this.users()[key];
     this.ctx.accounts.save();
     return { _detail: u.name };
@@ -766,7 +768,7 @@ const ACTIONS = {
   } },
   'room/skip': { level: 1, post: true, label: 'Manche annulée', fn({ body }) {
     const r = this.room(body.id); const m = r.match;
-    if (!m || m.mode === 'ffa' || !['buy', 'live', 'planted'].includes(m.phase)) fail('Aucune manche à annuler.');
+    if (!m || isFfa(m.mode) || !['buy', 'live', 'planted'].includes(m.phase)) fail('Aucune manche à annuler.');
     m.endRound(null, 'admin'); return { _detail: r.name };
   } },
   'room/pause': { level: 1, post: true, label: 'Pause de partie', fn({ body }) {
@@ -804,7 +806,7 @@ const ACTIONS = {
       if (humans.length > cfg[body.mode].max) fail('Trop de joueurs pour ce mode.');
       r.mode = body.mode; r.maxPlayers = cfg[r.mode].max; r.target = cfg[r.mode].target;
       for (const m of [...r.members.values()]) if (m.isBot) r.members.delete(m.id);
-      let k = 0; for (const m of r.members.values()) m.team = r.mode === 'ffa' ? 'ffa' : (k++ % 2 ? 'beta' : 'alpha');
+      let k = 0; for (const m of r.members.values()) m.team = isFfa(r.mode) ? 'ffa' : (k++ % 2 ? 'beta' : 'alpha');
       if (!mapsForMode(r.mode).includes(r.mapId)) r.mapId = mapsForMode(r.mode)[0];
     }
     if (body.mapId && mapsForMode(r.mode).includes(body.mapId)) r.mapId = body.mapId;
@@ -1025,6 +1027,47 @@ const ACTIONS = {
   'suspect/clear': { level: 1, post: true, label: 'Alertes anti-triche effacées', fn({ body }) {
     const s = this.state.suspects[body.key]; if (!s) fail('Introuvable', 404);
     delete this.state.suspects[body.key]; this.save(); return { _detail: s.name };
+  } },
+
+  // ---------- tournois ----------
+  tournaments: { level: 1, fn() { return { list: this.ctx.tournaments.adminList() }; } },
+  'tournament/create': { level: 2, post: true, label: 'Tournoi créé', fn({ body, user }) {
+    let t; try { t = this.ctx.tournaments.create(body, user.name); } catch (e) { fail(e.message); }
+    return { id: t.id, _detail: t.name };
+  } },
+  'tournament/start': { level: 2, post: true, label: 'Tournoi lancé', fn({ body, user }) {
+    const t = this.ctx.tournaments.get(String(body.id || '')); if (!t) fail('Tournoi introuvable', 404);
+    try { this.ctx.tournaments.start(t, user.name); } catch (e) { fail(e.message); }
+    return { _detail: t.name };
+  } },
+  'tournament/cancel': { level: 2, post: true, label: 'Tournoi annulé', fn({ body, user }) {
+    const t = this.ctx.tournaments.get(String(body.id || '')); if (!t) fail('Tournoi introuvable', 404);
+    this.ctx.tournaments.cancel(t, `par ${user.name}`); return { _detail: t.name };
+  } },
+  'tournament/winner': { level: 1, post: true, label: 'Match de tournoi arbitré', fn({ body, user }) {
+    const t = this.ctx.tournaments.get(String(body.id || '')); if (!t) fail('Tournoi introuvable', 404);
+    try { this.ctx.tournaments.setWinner(t, body.match, body.name, user.name); } catch (e) { fail(e.message); }
+    return { _detail: `${t.name} · ${body.match} → ${body.name}` };
+  } },
+  'tournament/delete': { level: 2, post: true, label: 'Tournoi supprimé', fn({ body }) {
+    const t = this.ctx.tournaments.get(String(body.id || '')); if (!t) fail('Tournoi introuvable', 404);
+    try { this.ctx.tournaments.remove(t); } catch (e) { fail(e.message); }
+    return { _detail: t.name };
+  } },
+
+  // ---------- clans ----------
+  clans: { level: 1, fn() { return { clans: this.ctx.clans ? this.ctx.clans.adminList() : [] }; } },
+  'clan/disband': { level: 1, post: true, label: 'Clan dissous', fn({ body, user }) {
+    if (!this.ctx.clans?.adminDisband(String(body.tag || ''), `la modération (${user.name})`)) fail('Clan introuvable', 404);
+    return { _detail: String(body.tag).toUpperCase() };
+  } },
+  'clan/kick': { level: 1, post: true, label: 'Membre retiré d\'un clan', fn({ body }) {
+    if (!this.ctx.clans?.adminKick(String(body.tag || ''), String(body.name || ''))) fail('Clan ou membre introuvable', 404);
+    return { _detail: `${body.name} de [${String(body.tag).toUpperCase()}]` };
+  } },
+  'clan/rename': { level: 1, post: true, label: 'Clan renommé', fn({ body }) {
+    if (!this.ctx.clans?.adminRename(String(body.tag || ''), String(body.name || ''))) fail('Clan introuvable ou nom invalide (3 à 24 caractères)');
+    return { _detail: `[${String(body.tag).toUpperCase()}] → ${body.name}` };
   } },
 
   // ---------- historique des parties ----------

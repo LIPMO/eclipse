@@ -10,7 +10,11 @@ export const ROUND = {
 
 export const DUEL = { buyTime: 10, roundTime: 60, money: 9000 };
 
-export const FFA = { respawn: 3, timeLimit: 600, abilityRecharge: 18 };
+export const FFA = { respawn: 3, timeLimit: 600, gunTimeLimit: 480, abilityRecharge: 18 };
+// modes « chacun pour soi » (pas d'équipes, réapparition) : Mêlée et Gun Game
+export const isFfa = mode => mode === 'ffa' || mode === 'gungame';
+// Gun Game : une arme par niveau, chaque élimination fait passer à la suivante ; la dernière est le couteau
+export const GUN_LADDER = ['lancer', 'tempest', 'viper', 'brute', 'longbow', 'hornet', 'spark', 'knife'];
 
 export const MOVE = {
   run: 6.6, walkMul: 0.5, crouchMul: 0.42, jump: 8.2, gravity: 23,
@@ -37,8 +41,8 @@ export const ARMOR = {
   heavy: { id: 'heavy', name: 'Gilet lourd', cost: 1000, value: 50 },
 };
 
-// Types de capacités gérés : smoke, molotov, flash, dash, heal, recon, wall, shield, blink, invis
-// Ultimes : overdrive, megasmoke, hunt, fortress, phantom, firestorm
+// Types de capacités gérés : smoke, molotov, flash, dash, heal, recon, wall, shield, blink, invis, haste, cryo
+// Ultimes : overdrive, megasmoke, hunt, fortress, phantom, firestorm, blizzard
 export const AGENTS = {
   ignis: {
     id: 'ignis', name: 'IGNIS', role: 'Duelliste', color: '#ff6b2c',
@@ -94,8 +98,71 @@ export const AGENTS = {
       x: { name: 'Tempête ionique', type: 'firestorm', cost: 7, desc: 'Une immense zone électrifiée frappe l\'endroit visé pendant 8 s.' },
     },
   },
+  kairo: {
+    id: 'kairo', name: 'KAIRO', role: 'Duelliste', color: '#ff3d7f',
+    bio: 'Ancien coureur de rue, Kairo frappe vite et disparaît avant la riposte.',
+    abilities: {
+      q: { name: 'Élan', type: 'haste', charges: 2, desc: 'Vitesse de course +35 % pendant 4 secondes.' },
+      e: { name: 'Rupture', type: 'blink', charges: 1, desc: 'Se téléporte de 11 m vers l\'avant.' },
+      x: { name: 'Frénésie', type: 'overdrive', cost: 6, desc: 'Pendant 10 s : vitesse +25 %, cadence +30 % et soin complet.' },
+    },
+  },
+  borea: {
+    id: 'borea', name: 'BORÉA', role: 'Contrôleur', color: '#9ee7ff',
+    bio: 'Glaciologue de combat, Boréa fige les assauts adverses.',
+    abilities: {
+      q: { name: 'Gel', type: 'cryo', charges: 2, desc: 'Grenade de givre : les ennemis dans la zone sont ralentis pendant 6 s.' },
+      e: { name: 'Brume', type: 'smoke', charges: 1, desc: 'Lance une grenade qui libère un nuage opaque pendant 14 s.' },
+      x: { name: 'Blizzard', type: 'blizzard', cost: 7, desc: 'Une immense tempête de givre ralentit et blesse les ennemis dans la zone visée pendant 8 s.' },
+    },
+  },
+  vesper: {
+    id: 'vesper', name: 'VESPER', role: 'Initiateur', color: '#c9a2ff',
+    bio: 'Traqueuse silencieuse, Vesper entend tout ce qui bouge.',
+    abilities: {
+      q: { name: 'Écho', type: 'recon', charges: 1, desc: 'Révèle les ennemis dans un rayon de 40 m pendant 5 s.' },
+      e: { name: 'Lueur', type: 'flash', charges: 2, desc: 'Grenade aveuglante qui explose après un court délai.' },
+      x: { name: 'Prédation', type: 'hunt', cost: 7, desc: 'Révèle la position de tous les ennemis pendant 7 s.' },
+    },
+  },
+  aegis: {
+    id: 'aegis', name: 'AEGIS', role: 'Sentinelle', color: '#ffb547',
+    bio: 'Ancien garde du corps, Aegis ne recule jamais.',
+    abilities: {
+      q: { name: 'Rempart', type: 'shield', charges: 1, desc: 'Gagne instantanément 50 points d\'armure.' },
+      e: { name: 'Bastille', type: 'wall', charges: 1, desc: 'Érige un mur destructible (400 PV) pendant 15 s.' },
+      x: { name: 'Citadelle', type: 'fortress', cost: 6, desc: 'Soigne complètement les alliés proches et leur donne 50 d\'armure.' },
+    },
+  },
+  sol: {
+    id: 'sol', name: 'SOL', role: 'Duelliste', color: '#ffd23f',
+    bio: 'Né dans une centrale solaire, Sol brûle tout sur son passage.',
+    abilities: {
+      q: { name: 'Éruption', type: 'molotov', charges: 1, desc: 'Lance une charge incendiaire qui embrase le sol.' },
+      e: { name: 'Embrasement', type: 'haste', charges: 1, desc: 'Vitesse de course +35 % pendant 4 secondes.' },
+      x: { name: 'Soleil noir', type: 'firestorm', cost: 7, desc: 'Une immense zone brûlante frappe l\'endroit visé pendant 8 s.' },
+    },
+  },
+  nyx: {
+    id: 'nyx', name: 'NYX', role: 'Contrôleur', color: '#6d6aff',
+    bio: 'Insaisissable, Nyx plonge le terrain dans l\'obscurité.',
+    abilities: {
+      q: { name: 'Voile nocturne', type: 'smoke', charges: 2, desc: 'Lance une grenade qui libère un nuage opaque pendant 14 s.' },
+      e: { name: 'Ombre', type: 'invis', charges: 1, desc: 'Devient quasi invisible pendant 4 s (tirer annule l\'effet).' },
+      x: { name: 'Nuit tombante', type: 'megasmoke', cost: 6, desc: 'Déploie instantanément un mur de trois nuages dans la direction visée.' },
+    },
+  },
+  helia: {
+    id: 'helia', name: 'HÉLIA', role: 'Sentinelle', color: '#7dffb2',
+    bio: 'Médecin de terrain, Hélia garde son équipe en vie.',
+    abilities: {
+      q: { name: 'Soin', type: 'heal', charges: 2, desc: 'Régénère 60 PV sur 3 secondes.' },
+      e: { name: 'Givre', type: 'cryo', charges: 1, desc: 'Grenade de givre : les ennemis dans la zone sont ralentis pendant 6 s.' },
+      x: { name: 'Sanctuaire', type: 'fortress', cost: 6, desc: 'Soigne complètement les alliés proches et leur donne 50 d\'armure.' },
+    },
+  },
 };
-export const AGENT_ORDER = ['ignis', 'nimbus', 'oracle', 'bastion', 'spectre', 'volta'];
+export const AGENT_ORDER = ['ignis', 'nimbus', 'oracle', 'bastion', 'spectre', 'volta', 'kairo', 'borea', 'vesper', 'aegis', 'sol', 'nyx', 'helia'];
 
 export const SKINS = [
   { id: 'default', name: 'Standard', price: 0, body: '#3b4048', accent: '#9aa3ad', metal: 0.55, rough: 0.45 },

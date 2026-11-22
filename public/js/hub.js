@@ -1,15 +1,17 @@
 // Menus sociaux et progression : profil, quêtes, classement, amis, messages privés, notifications, signalements.
-import { AGENTS } from '/shared/data.js';
+import { AGENTS, GUN_LADDER } from '/shared/data.js';
 import { MAP_INFO } from '/shared/maps.js';
 import { ACHIEVEMENTS, TITLES, REPORT_REASONS, levelInfo } from '/shared/progress.js';
 import { agentIconHTML } from './models.js';
 import { profile, setToken } from './store.js';
 import { keyName } from './settings.js';
+import { playNotify } from './audio.js';
+import { isTouchDevice } from './touch.js';
 import { WEAPON_UNLOCK, LEVEL_SKINS, DAILY_BONUS } from '/shared/progress.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const MODE = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée' };
+const MODE = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée', gungame: 'Gun Game' };
 const LB_LABEL = { level: 'XP', week: 'XP cette semaine', elo: 'Elo', kills: 'Éliminations', wins: 'Victoires' };
 const fmtDate = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const fmtDur = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${m} min` : `${m} min`; };
@@ -64,6 +66,7 @@ export function initHub(ctx) {
 export function notify({ kind, text, ms = 8000, actions = [], cls = '' }) {
   const el = document.createElement('div');
   el.className = 'notif ' + cls;
+  playNotify();
   el.innerHTML = `<div class="nk">${esc(kind)}</div><div class="nt">${esc(text)}</div>${actions.length ? `<div class="na">${actions.map((a, i) => `<button class="btn small ${i ? 'ghost' : 'primary'}" data-i="${i}">${esc(a[0])}</button>`).join('')}</div>` : ''}<button class="nx">✕</button>`;
   el.onclick = e => {
     const b = e.target.closest('[data-i]');
@@ -97,23 +100,28 @@ export function openGuide() {
   const k = a => `<kbd>${esc(keyName(profile.settings.keys[a]))}</kbd>`;
   openModal(`<h2>COMMENT JOUER</h2>
     <div class="guide">
+      ${isTouchDevice() ? `<h3>SUR TÉLÉPHONE</h3><p>Tiens le téléphone <b>en paysage</b>. Pouce gauche : <b>joystick</b> (incline peu pour marcher sans bruit). Pouce droit : <b>glisse pour viser</b>. ◉ tirer (tu peux viser en gardant le doigt dessus), ⤒ sauter, ⤓ s'accroupir, ↻ recharger, ⇄ changer d'arme, Q E X capacités, ◆ marquer une position, F poser / désamorcer, $ achats, ☰ scores, II pause. Taille, opacité et sensibilité : PARAMÈTRES → Tactile.</p>` : ''}
       <h3>COMMANDES</h3>
       <div class="g-keys">
         <div>${k('forward')}${k('left')}${k('back')}${k('right')} se déplacer</div><div>${k('jump')} sauter · ${k('crouch')} s'accroupir · ${k('walk')} marcher sans bruit</div>
         <div><kbd>Clic gauche</kbd> tirer · <kbd>Clic droit</kbd> lunette</div><div>${k('reload')} recharger · ${k('slot1')}${k('slot2')}${k('slot3')} changer d'arme</div>
         <div>${k('abilityQ')} ${k('abilityE')} capacités · ${k('ult')} ultime</div><div>${k('buy')} menu d'achat · ${k('interact')} poser / désamorcer</div>
         <div>${k('chat')} chat (tous) · ${k('teamChat')} chat d'équipe</div><div>${k('radio')} puis un chiffre : message radio · ${k('scoreboard')} scores</div>
+        <div>${k('mark')} marquer une position pour ton équipe (vise un ennemi : alerte rouge)</div>
       </div>
       <p class="muted small">Toutes les touches se changent dans PARAMÈTRES → Touches. Échap ouvre le menu pause (paramètres, signaler un joueur, quitter).</p>
       <h3>MODES</h3>
       <p><b>Assaut 5v5</b> : les attaquants posent le Noyau sur le site A ou B, les défenseurs l'empêchent ou le désamorcent. Achète tes armes au début de chaque manche. Changement de côté à la mi-temps.</p>
       <p><b>Duel 1v1</b> : manches rapides sur petite carte, argent illimité. Entre deux joueurs inscrits, le duel compte pour le <b>classement Elo</b>.</p>
       <p><b>Mêlée</b> : chacun pour soi, réapparition immédiate, équipement complet pour tout le monde.</p>
+      <p><b>Gun Game</b> : chacun pour soi, une seule arme. Chaque élimination te donne l'arme suivante (${GUN_LADDER.length} armes). La dernière est le couteau : le premier qui élimine au couteau gagne. Se faire tuer au couteau fait reculer d'une arme.</p>
       <p><b>Entraînement</b> : une partie immédiate contre des bots (de Facile à Expert), seul ou avec tes amis invités.</p>
       <h3>PROGRESSION (COMPTES)</h3>
       <p>Chaque partie rapporte de l'<b>XP</b> et des <b>Éclats</b>. À chaque niveau : des Éclats, et des skins exclusifs aux niveaux ${Object.keys(LEVEL_SKINS).join(', ')}.
       En Assaut et en Duel, certaines armes se débloquent en montant de niveau (Viper et Brute au niveau ${WEAPON_UNLOCK.viper}, Lancer au niveau ${WEAPON_UNLOCK.lancer}, Longbow au niveau ${WEAPON_UNLOCK.longbow}).</p>
       <p>3 <b>quêtes du jour</b> et 3 <b>de la semaine</b> (une peut être changée chaque jour), 24 <b>succès</b> qui donnent des titres, un <b>bonus de connexion</b> de ${DAILY_BONUS[0]} à ${DAILY_BONUS[DAILY_BONUS.length - 1]} Éclats par jour.</p>
+      <h3>KILLCAM, CLANS ET TOURNOIS</h3>
+      <p>Après ta mort, la <b>killcam</b> rejoue les 3 dernières secondes vues par ton adversaire (désactivable dans PARAMÈTRES → Interface). Rejoins ou crée un <b>clan</b> (onglet CLAN, niveau 3) : son tag s'affiche devant ton pseudo et l'XP de ses membres le fait monter au classement. Les <b>tournois</b> (onglet TOURNOIS) sont des duels à élimination directe : le vainqueur gagne des Éclats et le titre Champion.</p>
       <h3>ENTRE AMIS</h3>
       <p>Ajoute tes amis dans l'onglet AMIS, invite-les dans ton salon ou rejoins le leur en un clic. Un <b>salon privé</b> n'est accessible que par invitation ou avec son code. Commandes de chat : <b>/aide</b>, <b>/mp pseudo message</b>, <b>/r</b>, <b>/ami</b>, <b>/stats</b>.</p>
       <p class="muted small">Un problème avec un joueur ? Bouton ⚑ dans le salon, sur son profil ou dans le menu pause : l'équipe de modération reçoit ton signalement.</p>
@@ -137,6 +145,7 @@ function showPlayerProfile(p) {
   if (rel === 'incoming') btns.push(`<button class="btn primary small" data-pa="accept">ACCEPTER L'AMI</button>`);
   if (rel === 'pending') btns.push(`<span class="muted small">Demande envoyée</span>`);
   if (rel === 'friend') btns.push(`<span class="badge-ok">AMI</span>`);
+  if (rel !== 'self' && rel !== 'guest' && !p.clan && H.clanStaff?.()) btns.push(`<button class="btn small" data-pa="clan">INVITER DANS MON CLAN</button>`);
   if (rel !== 'self' && rel !== 'guest') {
     if (p.online) btns.push(`<button class="btn small" data-pa="mp">MESSAGE</button>`);
     btns.push(rel === 'blocked' ? `<button class="btn small" data-pa="unblock">DÉBLOQUER</button>` : `<button class="btn ghost small" data-pa="block">BLOQUER</button>`);
@@ -144,7 +153,7 @@ function showPlayerProfile(p) {
   if (rel !== 'self') btns.push(`<button class="btn ghost small" data-pa="report">⚑ SIGNALER</button>`);
   const fav = Object.entries(p.agentStats || {}).sort((a, b) => b[1].matches - a[1].matches)[0];
   openModal(`<div class="pp-head">${agentIconHTML(fav ? fav[0] : p.agent, 'lg')}<div>
-      <div class="pp-name">${esc(p.name)} ${p.online ? '<span class="dot on"></span>' : '<span class="dot"></span>'}</div>
+      <div class="pp-name">${p.clan ? `<span class="clan-tag" title="${esc(p.clan.name)}">[${esc(p.clan.tag)}]</span> ` : ''}${esc(p.name)} ${p.online ? '<span class="dot on"></span>' : '<span class="dot"></span>'}</div>
       <div class="pp-sub">${p.title ? `<span class="title-tag">${esc(p.title)}</span> · ` : ''}Niveau <b>${p.level}</b> · <span style="color:${p.rankColor}">${esc(p.rank)}</span>${p.rank !== 'Non classé' ? ` (${p.elo} Elo)` : ''}</div>
       <div class="muted small">Inscrit le ${new Date(p.created).toLocaleDateString('fr-FR')} · ${fmtDur(s.playTime)} de jeu</div></div></div>
     <div class="pp-stats">
@@ -156,6 +165,7 @@ function showPlayerProfile(p) {
   $('mmodal-in').onclick = e => {
     const a = e.target.closest('[data-pa]')?.dataset.pa; if (!a) return;
     if (a === 'add') { net.send('friendAdd', { name: p.name }); closeModal(); }
+    if (a === 'clan') { net.send('clanInvite', { name: p.name }); closeModal(); }
     if (a === 'accept') { net.send('friendAccept', { name: p.name }); closeModal(); }
     if (a === 'block') { if (confirm(`Bloquer ${p.name} ? Tu ne verras plus ses messages.`)) { net.send('block', { name: p.name }); closeModal(); } }
     if (a === 'unblock') { net.send('unblock', { name: p.name }); closeModal(); }

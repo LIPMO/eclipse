@@ -24,7 +24,7 @@ export class Accounts {
     let raw = {};
     try { raw = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { /* premier lancement */ }
     // objets sans prototype : un pseudo comme « __proto__ » ne peut rien corrompre
-    this.data = { users: dict(raw.users), sessions: dict(raw.sessions), sessionsHashed: !!raw.sessionsHashed };
+    this.data = { users: dict(raw.users), sessions: dict(raw.sessions), sessionsHashed: !!raw.sessionsHashed, clans: dict(raw.clans) };
     if (!this.data.sessionsHashed) {
       // ancienne version : les jetons étaient en clair. Par sécurité, toutes les sessions sont invalidées
       // (chaque joueur se reconnecte une fois avec son mot de passe).

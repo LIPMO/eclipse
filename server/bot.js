@@ -1,5 +1,5 @@
 // IA des bots : navigation A* sur la grille, perception (ligne de vue, fumées), combat.
-import { WEAPONS, PLAYER, MOVE, AGENTS } from '../shared/data.js';
+import { WEAPONS, PLAYER, MOVE, AGENTS, isFfa } from '../shared/data.js';
 import { findPath, CELL } from '../shared/maps.js';
 import { collideMove, raycastBoxes, raySphere, norm } from '../shared/physics.js';
 
@@ -93,7 +93,7 @@ export class BotBrain {
       }
       return null;
     }
-    if (m.mode === 'ffa') {
+    if (isFfa(m.mode)) {
       if (!this.goal || this.reached) { const [i, j] = map.floor[(Math.random() * map.floor.length) | 0]; return { key: 'ffa' + Math.random(), pos: [(i + 0.5) * CELL, (j + 0.5) * CELL] }; }
       return null;
     }
@@ -169,11 +169,14 @@ export class BotBrain {
     if ((k = keyOf('fortress')) && allies.length >= 1 && (p.hp < 60 || allies.some(a => a.hp < 60))) return this.use(k);
     if ((k = keyOf('megasmoke')) && nearSite && !this.usedRound.has('megasmoke')) return this.use(k, this.goal ? this.dirTo([this.goal[0], 1, this.goal[1]]) : null);
     if ((k = keyOf('firestorm')) && enemy && dist > 8 && dist < 40) return this.use(k, this.dirTo(enemy.pos));
+    if ((k = keyOf('blizzard')) && enemy && dist > 8 && dist < 40) return this.use(k, this.dirTo(enemy.pos));
     // soin et armure
     if ((k = keyOf('heal')) && !enemy && p.hp < 55) return this.use(k);
     if ((k = keyOf('shield')) && p.armor < 30 && (enemy || m.phase === 'live')) return this.use(k);
     if (enemy) {
       if ((k = keyOf('molotov')) && dist > 6 && dist < 22) return this.use(k, this.dirTo(enemy.pos, 0.18));
+      if ((k = keyOf('cryo')) && dist > 6 && dist < 22) return this.use(k, this.dirTo(enemy.pos, 0.18));
+      if ((k = keyOf('haste')) && (p.hp < 45 || dist > 14)) return this.use(k);
       if ((k = keyOf('flash')) && dist > 9 && dist < 30 && T < this.reactUntil + 0.3) return this.use(k, this.dirTo(enemy.pos, 0.08));
       if ((k = keyOf('dash')) && p.hp < 50) { this.dashDir = [Math.cos(p.yaw) * (this.strafe || 1), -Math.sin(p.yaw) * (this.strafe || 1)]; return this.use(k); }
       if ((k = keyOf('wall')) && side === 'def' && dist > 12) return this.use(k, this.dirTo(enemy.pos));
@@ -192,6 +195,7 @@ export class BotBrain {
       const wp = this.path[Math.min(this.path.length - 1, this.pathIdx + 1)];
       return this.use(k, norm([wp[0] - p.pos[0], 0, wp[1] - p.pos[2]]));
     }
+    if ((k = keyOf('haste')) && side === 'atk' && this.siteDist(m.botSite) < 30 && !this.usedRound.has('haste')) return this.use(k);
     if ((k = keyOf('dash')) && side === 'atk' && this.siteDist(m.botSite) < 14 && !this.usedRound.has('dash')) { this.dashDir = [-Math.sin(p.yaw), -Math.cos(p.yaw)]; return this.use(k); }
     if ((k = keyOf('wall')) && side === 'def' && this.reached && m.phase === 'live' && !this.usedRound.has('wall') && this.heard) return this.use(k, this.dirTo(this.heard));
   }
@@ -245,7 +249,7 @@ export class BotBrain {
         const d = WEAPONS[w.id];
         if (d.type === 'melee' && dist > 2.4) { wishX = to[0] / dist; wishZ = to[2] / dist; }
         else {
-          const err = cfg.aimErr * (0.6 + dist / 35) + d.spread * 0.5 + (d.type === 'sniper' ? 0.01 : 0);
+          const err = cfg.aimErr * (0.6 + dist / 35) + (d.spread || 0) * 0.5 + (d.type === 'sniper' ? 0.01 : 0);
           const dirs = [];
           for (let i = 0; i < (d.pellets || 1); i++) {
             const pe = d.pellets > 1 ? d.spread : 0;
@@ -282,7 +286,7 @@ export class BotBrain {
           if (this.heard) { this.lookYaw = Math.atan2(-(this.heard[0] - p.pos[0]), -(this.heard[2] - p.pos[2])); this.scanT = 0.8; }
           else if (this.scanT <= 0) { this.lookYaw = p.yaw + (Math.random() - 0.5) * 2.6; this.scanT = 1 + Math.random() * 2; }
           p.yaw += angDiff(this.lookYaw, p.yaw) * Math.min(1, 3 * dt);
-          if (m.mode === 'ffa') this.reached = true;
+          if (isFfa(m.mode)) this.reached = true;
         }
         // pose / désamorçage
         const cell = m.map.cellAt(p.pos[0], p.pos[2]);
@@ -290,7 +294,7 @@ export class BotBrain {
           if (m.side(p) === 'atk' && m.core.carrier === p.id && (cell === 'A' || cell === 'B') && m.phase === 'live' && (this.reached || cell === m.botSite)) { p.interact = true; wishX = wishZ = 0; if (!p.interactPos) p.interactPos = p.pos.slice(); }
           if (m.side(p) === 'def' && m.phase === 'planted' && Math.hypot(p.pos[0] - m.core.pos[0], p.pos[2] - m.core.pos[2]) < 1.8) { p.interact = true; wishX = wishZ = 0; }
         }
-        if (m.mode === 'ffa' && this.reached) { this.goal = null; }
+        if (isFfa(m.mode) && this.reached) { this.goal = null; }
       }
     }
     if (!p.interact) p.interactPos = null;
