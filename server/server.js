@@ -31,7 +31,14 @@ function argPort() {
 const PORT = parseInt(argPort() || process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0'; // 127.0.0.1 derrière un tunnel ou un reverse proxy
 if (!(PORT > 0 && PORT < 65536)) { console.error('Port invalide. Exemple : npm start -- --port 8080'); process.exit(1); }
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.xml': 'application/xml; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json', '.webp': 'image/webp' };
+// page 404 personnalisée (public/404.html) : même contrôle d'intégrité que le reste du site
+function notFound(req, res) {
+  const headers = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Content-Security-Policy': "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'" };
+  const send = buf => { res.writeHead(404, headers); res.end(req.method === 'HEAD' ? undefined : buf); };
+  if (VERIFIED) { const d = VERIFIED.get('public/404.html'); return d ? send(d) : (res.writeHead(404), res.end('Introuvable')); }
+  fs.readFile(path.join(ROOT, 'public', '404.html'), (err, buf) => (err ? (res.writeHead(404), res.end('Introuvable')) : send(buf)));
+}
 const MOUNTS = [
   ['/shared/', path.join(ROOT, 'shared')],
   ['/vendor/three/', path.join(ROOT, 'node_modules', 'three')],
@@ -113,18 +120,18 @@ const server = http.createServer((req, res) => {
     if (VERIFIED) {
       // mode protégé : seuls les fichiers vérifiés au démarrage (empreinte conforme au manifeste) sont servis, depuis la mémoire
       const data = VERIFIED.get(path.relative(ROOT, file).split(path.sep).join('/'));
-      if (!data) { res.writeHead(404); res.end('Introuvable'); return; }
+      if (!data) { notFound(req, res); return; }
       res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : data);
       return;
     }
     fs.readFile(file, (err, data) => {
-      if (err) { res.writeHead(404); res.end('Introuvable'); return; }
+      if (err) { notFound(req, res); return; }
       res.writeHead(200, headers);
       res.end(data);
     });
     return;
   }
-  res.writeHead(404); res.end('Introuvable');
+  notFound(req, res);
 });
 
 // Limites anti-abus
