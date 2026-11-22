@@ -171,6 +171,34 @@ Le script `mettre-a-jour.sh` :
 
 Il ne modifie ni les comptes ni la configuration Cloudflare. Les 2 dernières versions sont gardées (`/opt/eclipse.ancien-…`).
 
+## Mise à jour automatique depuis GitHub
+
+Une fois le jeu installé (`install-serveur.sh`), le serveur peut se mettre à jour tout seul à chaque nouveau commit sur la branche `main` :
+
+```bash
+cd ~/eclipse-deploy && sudo bash scripts/installer-maj-auto.sh
+```
+
+Le script crée une **clé de déploiement en lecture seule** (à ajouter dans GitHub → Settings → Deploy keys, sans cocher « Allow write access »), puis active un minuteur systemd qui vérifie GitHub **toutes les 5 minutes**. À chaque nouveau commit :
+
+1. s'il y a des parties en cours, la mise à jour attend qu'elles se terminent (6 heures au maximum) ;
+2. les comptes et l'ancien code sont sauvegardés dans `/var/backups/eclipse/` (10 sauvegardes gardées) ;
+3. l'intégrité des fichiers est vérifiée, puis la nouvelle version est installée à côté de l'ancienne ;
+4. si le jeu ne redémarre pas correctement, **l'ancienne version est remise automatiquement**, et ce commit n'est plus retenté.
+
+Les comptes (`/var/lib/eclipse`) ne sont jamais modifiés. Le code du dépôt n'est jamais exécuté en root : les scripts de mise à jour sont figés dans `/usr/local/sbin` lors de l'installation (relance `installer-maj-auto.sh` à la main pour les mettre à jour).
+
+| Action | Commande |
+|---|---|
+| Voir ce qu'il se passe | `journalctl -u eclipse-maj-auto -f` |
+| Vérifier tout de suite | `sudo systemctl start eclipse-maj-auto.service` |
+| Mettre en pause | `sudo systemctl disable --now eclipse-maj-auto.timer` |
+| Désinstaller | `sudo bash scripts/installer-maj-auto.sh --uninstall` |
+
+**Avant chaque commit** qui modifie `public/` ou `shared/`, régénère le manifeste avec `node scripts/integrity.mjs` (avec `node_modules` installé). Sinon, la mise à jour est refusée et le site reste sur la version précédente.
+
+**Sécurité** : toute personne capable de pousser sur `main` décide de ce qui tourne sur le serveur. Protège le compte GitHub (mot de passe unique, double authentification) et n'ajoute de collaborateurs qu'en confiance.
+
 ## Lancer avec Docker
 
 ```bash

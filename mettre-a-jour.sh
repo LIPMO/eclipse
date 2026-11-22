@@ -13,7 +13,12 @@
 #  6. en cas d'échec : remet automatiquement l'ancienne version
 #  Ne touche jamais à la configuration Cloudflare ni aux comptes.
 #
-#  Options : --port N (si aucune installation n'est trouvée ; 3002 par défaut)
+#  Options : --port N      (si aucune installation n'est trouvée ; 3002 par défaut)
+#            --source DIR  dossier de la nouvelle version (par défaut : celui du script)
+#            --auto        mode automatique (utilisé par eclipse-maj-auto) : uniquement pour un service existant
+#
+#  Sécurité : ce script n'exécute aucun code de la nouvelle version en root. L'intégrité est vérifiée
+#  par du code écrit ici, et npm est lancé sans scripts d'installation (--ignore-scripts).
 # =====================================================================
 set -uo pipefail
 
@@ -23,6 +28,8 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAMP=$(date +%Y%m%d-%H%M%S)
 BACKUP_ROOT=/var/backups/eclipse
 WANT_PORT=3002
+AUTO=0
+KEEP_BACKUPS=10
 
 log()  { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
@@ -33,6 +40,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --port) WANT_PORT=${2:-}; shift 2 ;;
     --port=*) WANT_PORT=${1#*=}; shift ;;
+    --source) SRC_DIR=$(cd "${2:-}" 2>/dev/null && pwd) || { echo "Dossier source introuvable : ${2:-}" >&2; exit 1; }; shift 2 ;;
+    --auto) AUTO=1; shift ;;
     -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) die "Option inconnue : $1" ;;
   esac
@@ -47,6 +56,25 @@ NEW_VERSION=$(node -p "require('$SRC_DIR/package.json').version")
 log "Mise à jour d'ECLIPSE vers la version $NEW_VERSION"
 
 # --- petites fonctions -------------------------------------------------
+# Vérifie les empreintes SHA-256 de integrity.json. Le code est écrit ici : on ne lance jamais
+# scripts/integrity.mjs de la nouvelle version en root (il pourrait avoir été modifié).
+verify_integrity() { # $1 = dossier
+  node -e '
+const fs = require("fs"), path = require("path"), crypto = require("crypto");
+const dir = process.argv[1];
+let man; try { man = JSON.parse(fs.readFileSync(path.join(dir, "integrity.json"), "utf8")).files; } catch { console.log("integrity.json illisible"); process.exit(1); }
+let bad = 0, later = 0;
+for (const [f, h] of Object.entries(man)) {
+  if (typeof f !== "string" || f.includes("..") || path.isAbsolute(f)) { console.log("CHEMIN INVALIDE :", f); bad++; continue; }
+  const p = path.join(dir, f);
+  if (!fs.existsSync(p)) { if (f.startsWith("node_modules/")) { later++; continue; } console.log("FICHIER MANQUANT :", f); bad++; continue; }
+  if (crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex") !== h) { console.log("FICHIER MODIFIÉ :", f); bad++; }
+}
+const walk = d => { try { return fs.readdirSync(path.join(dir, d), { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(d + "/" + e.name) : [d + "/" + e.name]); } catch { return []; } };
+for (const f of [...walk("public"), ...walk("shared")]) if (!man[f]) { console.log("FICHIER AJOUTÉ :", f); bad++; }
+console.log(bad ? bad + " anomalie(s) détectée(s)" : "Tous les fichiers sont intacts." + (later ? " (" + later + " fichier(s) de bibliothèque installés par npm)" : ""));
+process.exit(bad ? 1 : 0);' "$1"
+}
 # GET http://127.0.0.1:PORT/CHEMIN, affiche le corps (Node est toujours là, curl pas forcément)
 http_get() {
   node -e "require('http').get('http://127.0.0.1:$1$2', r => { let s = ''; r.on('data', d => s += d); r.on('end', () => { process.stdout.write(s); process.exit(r.statusCode === 200 ? 0 : 1); }); }).on('error', () => process.exit(1))" 2>/dev/null
@@ -69,7 +97,7 @@ wait_healthy() { # $1 = port, $2 = version attendue ; 40 s max
 # --- 1. intégrité de l'archive ---------------------------------------------
 log "Vérification de l'archive…"
 if [ -f "$SRC_DIR/integrity.json" ]; then
-  (cd "$SRC_DIR" && node scripts/integrity.mjs --verify) || die "L'archive ne correspond pas à son manifeste d'intégrité : mise à jour annulée (rien n'a été modifié)."
+  verify_integrity "$SRC_DIR" || die "La nouvelle version ne correspond pas à son manifeste d'intégrité : mise à jour annulée (rien n'a été modifié)."
 else
   warn "Pas de manifeste d'intégrité dans l'archive : vérification impossible."
 fi
@@ -123,9 +151,14 @@ if [ -n "$APP_DIR" ] && [ -d "$APP_DIR" ]; then
   tar -C "$(dirname "$APP_DIR")" --exclude="$(basename "$APP_DIR")/node_modules" -czf "$BK/code-$OLD_VERSION.tar.gz" "$(basename "$APP_DIR")" || die "Sauvegarde du code impossible : mise à jour annulée."
 fi
 chmod 600 "$BK"/* 2>/dev/null || true
+# rotation : on garde les $KEEP_BACKUPS sauvegardes les plus récentes
+ls -1dt "$BACKUP_ROOT"/*/ 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm -rf
 ok "Sauvegarde : $BK"
 
 # --- 4a. installation par le script complet (jeu lancé à la main ou installation neuve) ---
+if [ "$MODE" != service ] && [ "$AUTO" = 1 ]; then
+  die "Mode automatique : aucune installation en service trouvée. Installe d'abord le jeu avec install-serveur.sh."
+fi
 if [ "$MODE" != service ]; then
   if [ "$MODE" = manuel ]; then
     # les comptes de l'ancien dossier sont repris dans /var/lib/eclipse
@@ -157,9 +190,9 @@ else
     cp -a "$APP_DIR/node_modules" "$NEW_DIR/" && ok "Dépendances reprises de la version actuelle."
   else
     log "Installation des dépendances (npm)…"
-    (cd "$NEW_DIR" && npm ci --omit=dev --no-audit --no-fund) || { rm -rf "$NEW_DIR"; die "npm a échoué : rien n'a été modifié, l'ancienne version tourne toujours."; }
+    (cd "$NEW_DIR" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund) || { rm -rf "$NEW_DIR"; die "npm a échoué : rien n'a été modifié, l'ancienne version tourne toujours."; }
   fi
-  (cd "$NEW_DIR" && node scripts/integrity.mjs --verify) || { rm -rf "$NEW_DIR"; die "Fichiers installés non conformes : rien n'a été modifié."; }
+  verify_integrity "$NEW_DIR" || { rm -rf "$NEW_DIR"; die "Fichiers installés non conformes : rien n'a été modifié."; }
   chown -R root:root "$NEW_DIR"
   OLD_DIR="$APP_DIR.ancien-$OLD_VERSION-$STAMP"
   log "Bascule vers la version $NEW_VERSION…"
