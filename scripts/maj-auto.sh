@@ -5,7 +5,7 @@
 #  Installé dans /usr/local/sbin/eclipse-maj-auto par scripts/installer-maj-auto.sh,
 #  et lancé toutes les 5 minutes par le minuteur systemd « eclipse-maj-auto.timer ».
 #
-#  1. récupère la branche main du dépôt (clé de déploiement en lecture seule)
+#  1. récupère la branche main du dépôt (HTTPS)
 #  2. s'il y a un nouveau commit : attend la fin des parties en cours (6 h au maximum)
 #  3. l'installe avec /usr/local/sbin/eclipse-maj (sauvegarde, intégrité, bascule, retour arrière)
 #  4. un commit en échec n'est jamais réessayé : on attend le commit suivant
@@ -20,8 +20,9 @@ BRANCH=${ECLIPSE_BRANCH:-main}
 MAX_WAIT_MIN=${ECLIPSE_MAX_WAIT_MIN:-360}
 UPDATER=${ECLIPSE_UPDATER:-/usr/local/sbin/eclipse-maj}
 UNIT_FILE=/etc/systemd/system/eclipse.service
-DEPLOY_KEY=/root/.ssh/eclipse_deploy
+DEPLOY_KEY=/root/.ssh/eclipse_deploy # anciennes installations (1.6 à 1.11) : clé SSH, encore prise en charge
 KNOWN_HOSTS=/root/.ssh/known_hosts_github
+export GIT_TERMINAL_PROMPT=0
 
 log() { echo "[maj-auto] $*"; }
 
@@ -33,11 +34,11 @@ flock -n 9 || { log "Une mise à jour est déjà en cours."; exit 0; }
 [ -d "$REPO_DIR/.git" ] || { log "Dépôt $REPO_DIR absent : lance d'abord scripts/installer-maj-auto.sh."; exit 1; }
 [ -x "$UPDATER" ] || { log "Programme de mise à jour $UPDATER absent."; exit 1; }
 
-# connexion à GitHub : clé dédiée en lecture seule, empreinte de GitHub vérifiée
-if [ -f "$DEPLOY_KEY" ]; then
+# connexion à GitHub : HTTPS (certificat vérifié par git) ; clé SSH seulement si une ancienne installation l'a créée
+if [ -f "$DEPLOY_KEY" ] && [ -f "$KNOWN_HOSTS" ]; then
   export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$KNOWN_HOSTS -o StrictHostKeyChecking=yes -o BatchMode=yes"
 fi
-git -C "$REPO_DIR" fetch --quiet origin "$BRANCH" || { log "Impossible de contacter GitHub (réseau ou clé de déploiement)."; exit 1; }
+git -C "$REPO_DIR" fetch --quiet origin "$BRANCH" || { log "Impossible de lire le dépôt sur GitHub (réseau, ou accès au dépôt privé refusé)."; exit 1; }
 
 NEW=$(git -C "$REPO_DIR" rev-parse "origin/$BRANCH")
 CUR=$(cat "$STATE_DIR/deployed" 2>/dev/null || true)

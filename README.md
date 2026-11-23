@@ -198,7 +198,7 @@ Pour mettre à jour le jeu, relance le script depuis le nouveau dossier : le por
 
 ## Mettre à jour le serveur (une seule commande)
 
-Envoie le nouveau `eclipse-jeu.zip` dans ton dossier personnel sur le serveur, puis, **dans ton terminal SSH** (c'est toi qui tapes le mot de passe sudo) :
+Envoie le nouveau `eclipse-jeu.zip` dans ton dossier personnel sur le serveur (ou l'archive téléchargée sur GitHub avec **Code → Download ZIP** : le fichier s'appelle alors `eclipse-main.zip` et le dossier `eclipse-main`), puis, **dans ton terminal SSH** (c'est toi qui tapes le mot de passe sudo) :
 
 ```bash
 cd ~ && rm -rf maj-eclipse && mkdir maj-eclipse && cd maj-eclipse && unzip -q ~/eclipse-jeu.zip && sudo bash eclipse/mettre-a-jour.sh
@@ -216,27 +216,96 @@ Il ne modifie ni les comptes ni la configuration Cloudflare. Les 2 dernières ve
 
 ## Mise à jour automatique depuis GitHub
 
-Une fois le jeu installé (`install-serveur.sh`), le serveur peut se mettre à jour tout seul à chaque nouveau commit sur la branche `main` :
+Une fois le jeu installé (`install-serveur.sh`), le serveur peut se mettre à jour tout seul à chaque nouveau commit sur la branche `main`. Il lit le dépôt en **HTTPS** : git vérifie lui-même le certificat de GitHub, il n'y a ni clé SSH ni empreinte à gérer.
+
+**Accès au dépôt privé** : le serveur doit pouvoir lire le dépôt. Trois possibilités :
+- **Jeton en lecture seule** : sur GitHub, Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token. Choisis *Only select repositories* → `eclipse`, puis dans Repository permissions : **Contents : Read-only** (rien d'autre). Ce jeton ne se colle que dans le terminal du serveur, jamais dans un chat ni dans un fichier du dépôt. Il est enregistré en clair dans `/root/.git-credentials` (lisible seulement par root) : révoque-le sur GitHub si le serveur est compromis.
+- **Dépôt public** : aucun identifiant n'est nécessaire, mais tout le monde peut alors lire le code.
+- **Sans accès à GitHub** : reste sur la mise à jour à la main avec l'archive (section précédente).
+
+### Installation avec le script
+
+Depuis le dossier décompressé de la nouvelle version (par exemple `~/maj-eclipse/eclipse-main`) :
 
 ```bash
-cd ~/eclipse-deploy && sudo bash scripts/installer-maj-auto.sh
+sudo bash scripts/installer-maj-auto.sh
 ```
 
-Le script crée une **clé de déploiement en lecture seule** (à ajouter dans GitHub → Settings → Deploy keys, sans cocher « Allow write access »), puis active un minuteur systemd qui vérifie GitHub **toutes les 5 minutes**. À chaque nouveau commit :
+Le script réutilise `/opt/eclipse-git` s'il existe déjà (clone fait à la main), sinon il le clone. Si le dépôt est illisible, il s'arrête sans rien installer.
+
+### Installation entièrement à la main
+
+1. Installe git :
+
+```bash
+sudo apt install -y git
+```
+
+2. Avec un jeton (dépôt privé), demande à git de retenir l'identifiant de root. Saute cette étape si le dépôt est public :
+
+```bash
+sudo git config --global credential.helper store
+```
+
+3. Clone le dépôt. Avec un jeton, git demande `Username` (ton pseudo GitHub) puis `Password` : colle le **jeton**, pas ton mot de passe GitHub.
+
+```bash
+sudo git clone --branch main https://github.com/LIPMO/eclipse.git /opt/eclipse-git
+```
+
+```bash
+sudo chmod 700 /opt/eclipse-git
+```
+
+4. Installe une copie figée des deux scripts de mise à jour :
+
+```bash
+sudo install -m 755 -o root -g root /opt/eclipse-git/mettre-a-jour.sh /usr/local/sbin/eclipse-maj
+```
+
+```bash
+sudo install -m 755 -o root -g root /opt/eclipse-git/scripts/maj-auto.sh /usr/local/sbin/eclipse-maj-auto
+```
+
+5. Crée le service :
+
+```bash
+printf '%s\n' '[Unit]' 'Description=ECLIPSE - mise à jour automatique depuis GitHub' 'After=network-online.target eclipse.service' 'Wants=network-online.target' '' '[Service]' 'Type=oneshot' 'ExecStart=/usr/local/sbin/eclipse-maj-auto' 'Nice=10' | sudo tee /etc/systemd/system/eclipse-maj-auto.service > /dev/null
+```
+
+6. Crée le minuteur (toutes les 5 minutes) :
+
+```bash
+printf '%s\n' '[Unit]' 'Description=ECLIPSE - vérification des mises à jour toutes les 5 minutes' '' '[Timer]' 'OnBootSec=3min' 'OnUnitActiveSec=5min' 'RandomizedDelaySec=30s' '' '[Install]' 'WantedBy=timers.target' | sudo tee /etc/systemd/system/eclipse-maj-auto.timer > /dev/null
+```
+
+7. Active-le, puis lance une première vérification et regarde le résultat :
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now eclipse-maj-auto.timer
+```
+
+```bash
+sudo systemctl start eclipse-maj-auto.service; journalctl -u eclipse-maj-auto -n 30 --no-pager
+```
+
+### Fonctionnement
+
+À chaque nouveau commit :
 
 1. s'il y a des parties en cours, la mise à jour attend qu'elles se terminent (6 heures au maximum) ;
 2. les comptes et l'ancien code sont sauvegardés dans `/var/backups/eclipse/` (10 sauvegardes gardées) ;
 3. l'intégrité des fichiers est vérifiée, puis la nouvelle version est installée à côté de l'ancienne ;
 4. si le jeu ne redémarre pas correctement, **l'ancienne version est remise automatiquement**, et ce commit n'est plus retenté.
 
-Les comptes (`/var/lib/eclipse`) ne sont jamais modifiés. Le code du dépôt n'est jamais exécuté en root : les scripts de mise à jour sont figés dans `/usr/local/sbin` lors de l'installation (relance `installer-maj-auto.sh` à la main pour les mettre à jour).
+Les comptes (`/var/lib/eclipse`) ne sont jamais modifiés. Le code du dépôt n'est jamais exécuté en root : les scripts de mise à jour sont figés dans `/usr/local/sbin` (refais l'étape 4, ou relance `installer-maj-auto.sh`, pour les mettre à jour).
 
 | Action | Commande |
 |---|---|
 | Voir ce qu'il se passe | `journalctl -u eclipse-maj-auto -f` |
 | Vérifier tout de suite | `sudo systemctl start eclipse-maj-auto.service` |
 | Mettre en pause | `sudo systemctl disable --now eclipse-maj-auto.timer` |
-| Désinstaller | `sudo bash scripts/installer-maj-auto.sh --uninstall` |
+| Désinstaller | `sudo bash scripts/installer-maj-auto.sh --uninstall` (avec un jeton : ensuite `sudo rm /root/.git-credentials` et révocation du jeton sur GitHub) |
 
 **Avant chaque commit** qui modifie `public/` ou `shared/`, régénère le manifeste avec `node scripts/integrity.mjs` (avec `node_modules` installé). Sinon, la mise à jour est refusée et le site reste sur la version précédente.
 

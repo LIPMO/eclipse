@@ -5,22 +5,24 @@
 #  À lancer UNE fois, depuis le dossier du jeu, après install-serveur.sh :
 #     sudo bash scripts/installer-maj-auto.sh
 #
-#  - crée une clé de déploiement GitHub en LECTURE SEULE pour root
-#  - vérifie l'empreinte de GitHub via son API officielle (HTTPS)
-#  - clone le dépôt dans /opt/eclipse-git
+#  - clone le dépôt en HTTPS dans /opt/eclipse-git (le certificat HTTPS de GitHub
+#    est vérifié automatiquement par git : aucune clé ni empreinte à gérer)
 #  - installe une copie figée des scripts de mise à jour dans /usr/local/sbin
 #    (le code poussé sur GitHub n'est jamais exécuté en root)
 #  - active le minuteur systemd « eclipse-maj-auto.timer » (toutes les 5 minutes)
 #
-#  Options : --repo URL (par défaut git@github.com:LIPMO/eclipse.git), --uninstall
+#  Dépôt privé : le serveur doit pouvoir le lire. Soit tu clones toi-même /opt/eclipse-git
+#  avant de lancer ce script (il réutilise alors ce clone), soit tu enregistres un jeton
+#  GitHub en lecture seule (voir README, « Mise à jour automatique depuis GitHub »).
+#
+#  Options : --repo URL (par défaut https://github.com/LIPMO/eclipse.git), --uninstall
 # =====================================================================
 set -euo pipefail
 
-REPO_URL=git@github.com:LIPMO/eclipse.git
+REPO_URL=https://github.com/LIPMO/eclipse.git
+REPO_SET=0
 REPO_DIR=/opt/eclipse-git
 STATE_DIR=/var/lib/eclipse-maj
-DEPLOY_KEY=/root/.ssh/eclipse_deploy
-KNOWN_HOSTS=/root/.ssh/known_hosts_github
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UNINSTALL=0
 
@@ -31,9 +33,9 @@ die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --repo) REPO_URL=${2:-}; shift 2 ;;
+    --repo) REPO_URL=${2:-}; REPO_SET=1; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) die "Option inconnue : $1" ;;
   esac
 done
@@ -46,62 +48,30 @@ if [ "$UNINSTALL" = 1 ]; then
   rm -f /usr/local/sbin/eclipse-maj /usr/local/sbin/eclipse-maj-auto
   systemctl daemon-reload
   ok "Mise à jour automatique désactivée. Le jeu continue de tourner normalement."
-  warn "Pense à supprimer la clé « serveur ECLIPSE » dans GitHub → Settings → Deploy keys."
+  warn "Si tu avais enregistré un jeton GitHub, supprime /root/.git-credentials et révoque le jeton sur GitHub."
   exit 0
 fi
 
 [ -f /etc/systemd/system/eclipse.service ] || die "Le jeu n'est pas installé en service : lance d'abord install-serveur.sh."
-for c in git curl node ssh-keygen ssh-keyscan flock; do command -v "$c" >/dev/null 2>&1 || die "Commande manquante : $c (sudo apt install -y git curl util-linux openssh-client)"; done
+for c in git node flock; do command -v "$c" >/dev/null 2>&1 || die "Commande manquante : $c (sudo apt install -y git util-linux)"; done
 [ -f "$SRC/mettre-a-jour.sh" ] && [ -f "$SRC/scripts/maj-auto.sh" ] || die "Lance ce script depuis le dossier du jeu."
+export GIT_TERMINAL_PROMPT=0 # jamais de question bloquante : un accès refusé s'arrête avec un message clair
 
-# --- 1. clé de déploiement (lecture seule) ---------------------------------
-mkdir -p /root/.ssh; chmod 700 /root/.ssh
-if [ ! -f "$DEPLOY_KEY" ]; then
-  ssh-keygen -q -t ed25519 -N "" -C "eclipse-maj-auto@$(hostname)" -f "$DEPLOY_KEY"
-  ok "Clé de déploiement créée : $DEPLOY_KEY"
-fi
-chmod 600 "$DEPLOY_KEY"
-
-# --- 2. empreinte de GitHub, récupérée en HTTPS depuis l'API officielle ---------
-# empreinte Ed25519 publiée par GitHub (docs.github.com : « GitHub's SSH key fingerprints »)
-GITHUB_ED25519_FP="SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"
-log "Récupération des clés SSH officielles de GitHub…"
-if curl -fsSL --max-time 20 https://api.github.com/meta 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const k=JSON.parse(s).ssh_keys||[];if(!k.length)process.exit(1);console.log(k.map(x=>'github.com '+x).join('\n'))}catch{process.exit(1)}})" > "$KNOWN_HOSTS.tmp" 2>/dev/null; then
-  ok "Clés obtenues depuis l'API de GitHub (HTTPS)."
-else
-  # secours : clé lue directement, acceptée seulement si son empreinte est celle publiée par GitHub
-  warn "API de GitHub indisponible : vérification de la clé par son empreinte publiée."
-  ssh-keyscan -t ed25519 github.com 2>/dev/null > "$KNOWN_HOSTS.tmp" || true
-  FP=$(ssh-keygen -lf "$KNOWN_HOSTS.tmp" 2>/dev/null | awk '{print $2}')
-  [ "$FP" = "$GITHUB_ED25519_FP" ] || { rm -f "$KNOWN_HOSTS.tmp"; die "Empreinte de GitHub inattendue (${FP:-aucune}) : installation annulée par sécurité."; }
-  ok "Empreinte de GitHub vérifiée : $FP"
-fi
-mv "$KNOWN_HOSTS.tmp" "$KNOWN_HOSTS"; chmod 644 "$KNOWN_HOSTS"
-ok "Empreinte de GitHub enregistrée ($(wc -l < "$KNOWN_HOSTS") clé(s))."
-export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$KNOWN_HOSTS -o StrictHostKeyChecking=yes -o BatchMode=yes"
-
-# --- 3. accès au dépôt ----------------------------------------------------------
+# --- 1. accès au dépôt (HTTPS) --------------------------------------------------
+# un clone déjà présent (fait à la main) est réutilisé tel quel, sauf si --repo est donné
+if [ -d "$REPO_DIR/.git" ] && [ "$REPO_SET" = 0 ]; then REPO_URL=$(git -C "$REPO_DIR" remote get-url origin); fi
 if ! git ls-remote "$REPO_URL" main >/dev/null 2>&1; then
-  [ -t 0 ] || die "Lance ce script dans un terminal : il faut ajouter la clé sur GitHub."
   echo
-  echo "Ajoute cette clé PUBLIQUE sur GitHub, en lecture seule :"
-  echo "  1. https://github.com/${REPO_URL#git@github.com:}" | sed 's/\.git$//'
-  echo "     → Settings → Deploy keys → Add deploy key"
-  echo "  2. Titre : serveur ECLIPSE   ·   NE COCHE PAS « Allow write access »"
-  echo "  3. Colle cette ligne :"
-  echo
-  cat "$DEPLOY_KEY.pub"
-  echo
-  for i in 1 2 3; do
-    read -rp "Appuie sur Entrée quand la clé est ajoutée… " _
-    if git ls-remote "$REPO_URL" main >/dev/null 2>&1; then break; fi
-    warn "GitHub refuse encore l'accès (tentative $i/3). Vérifie la clé et le dépôt."
-    [ "$i" = 3 ] && die "Accès au dépôt impossible : rien n'a été installé."
-  done
+  warn "Le serveur ne peut pas lire $REPO_URL."
+  echo "   Le dépôt est privé : choisis une des solutions du README (« Mise à jour automatique depuis GitHub ») :"
+  echo "   - cloner toi-même le dépôt dans $REPO_DIR, puis relancer ce script ;"
+  echo "   - ou enregistrer un jeton GitHub en lecture seule pour root ;"
+  echo "   - ou rester sur la mise à jour à la main avec l'archive (mettre-a-jour.sh)."
+  die "Rien n'a été installé."
 fi
-ok "Accès au dépôt vérifié (lecture seule)."
+ok "Accès au dépôt vérifié."
 
-# --- 4. copie locale du dépôt ---------------------------------------------------
+# --- 2. copie locale du dépôt ---------------------------------------------------
 if [ -d "$REPO_DIR/.git" ]; then
   git -C "$REPO_DIR" remote set-url origin "$REPO_URL"
   git -C "$REPO_DIR" fetch --quiet origin main
@@ -111,7 +81,7 @@ fi
 chown -R root:root "$REPO_DIR"; chmod 700 "$REPO_DIR"
 ok "Dépôt prêt : $REPO_DIR"
 
-# --- 5. scripts figés (le code du dépôt n'est jamais lancé en root) --------------
+# --- 3. scripts figés (le code du dépôt n'est jamais lancé en root) --------------
 install -m 755 -o root -g root "$SRC/mettre-a-jour.sh" /usr/local/sbin/eclipse-maj
 install -m 755 -o root -g root "$SRC/scripts/maj-auto.sh" /usr/local/sbin/eclipse-maj-auto
 ok "Scripts installés : /usr/local/sbin/eclipse-maj et /usr/local/sbin/eclipse-maj-auto"
@@ -129,7 +99,7 @@ else
   log "La version installée diffère de GitHub : elle sera mise à jour au premier passage du minuteur."
 fi
 
-# --- 6. minuteur systemd ---------------------------------------------------------
+# --- 4. minuteur systemd ---------------------------------------------------------
 cat > /etc/systemd/system/eclipse-maj-auto.service <<'EOF'
 [Unit]
 Description=ECLIPSE - mise à jour automatique depuis GitHub
