@@ -175,12 +175,48 @@ export const SKINS = [
   { id: 'couronne', name: 'Couronne', price: 1200, body: '#e2b84d', accent: '#fff3c4', metal: 1, rough: 0.22, pattern: 'filigree' },
   { id: 'neant', name: 'Néant', price: 1300, body: '#06040c', accent: '#a259ff', glow: true, pattern: 'stars', metal: 0.4, rough: 0.4 },
   { id: 'prisme', name: 'Prisme', price: 1600, body: '#f4f4ff', accent: '#ffffff', glow: true, animated: 'hue', pattern: 'lines', metal: 0.8, rough: 0.2 },
+  // 1.12 : nouveaux skins (communs → légendaires)
+  { id: 'acier', name: 'Acier brossé', price: 250, body: '#8a919b', accent: '#d4d9e0', metal: 0.95, rough: 0.28 },
+  { id: 'urbain', name: 'Urbain', price: 300, body: '#5d636c', accent: '#2c3036', pattern: 'digital', alt: '#9aa1aa', metal: 0.15, rough: 0.8 },
+  { id: 'jungle', name: 'Jungle', price: 300, body: '#2f4a26', accent: '#16240f', pattern: 'digital', alt: '#6b8a3a', metal: 0.1, rough: 0.85 },
+  { id: 'dune', name: 'Dune', price: 300, body: '#c9a66b', accent: '#8a6a3c', pattern: 'digital', alt: '#e6cf9c', metal: 0.1, rough: 0.85 },
+  { id: 'damier', name: 'Damier', price: 350, body: '#f2f2f2', accent: '#16161a', pattern: 'checker', metal: 0.2, rough: 0.55 },
+  { id: 'pop', name: 'Pop', price: 450, body: '#ffd23f', accent: '#ff3d7f', pattern: 'dots', metal: 0.1, rough: 0.5 },
+  { id: 'menthe', name: 'Fondu menthe', price: 500, body: '#19e3c4', accent: '#f4fffc', pattern: 'fade', metal: 0.45, rough: 0.3 },
+  { id: 'relief', name: 'Relief', price: 500, body: '#4d5a3a', accent: '#c8d49a', pattern: 'topo', metal: 0.15, rough: 0.7 },
+  { id: 'tigre', name: 'Tigre', price: 550, body: '#f08a24', accent: '#1a120a', pattern: 'tiger', metal: 0.15, rough: 0.6 },
+  { id: 'eclaboussure', name: 'Éclaboussures', price: 550, body: '#1b1d24', accent: '#ff4fa3', pattern: 'splatter', alt: '#3dd6ff', alt2: '#ffe14d', metal: 0.2, rough: 0.55 },
+  { id: 'marbre', name: 'Marbre', price: 600, body: '#ecebe6', accent: '#b89a55', pattern: 'marble', metal: 0.35, rough: 0.25 },
+  { id: 'crepuscule', name: 'Crépuscule', price: 650, body: '#ff7a3d', accent: '#5b2bd6', pattern: 'fade', metal: 0.4, rough: 0.35 },
+  { id: 'ecailles', name: 'Écailles', price: 700, body: '#1f4d3a', accent: '#7ee0a0', pattern: 'scales', metal: 0.5, rough: 0.35 },
+  { id: 'ruche', name: 'Ruche', price: 900, body: '#1a1407', accent: '#ffb11f', glow: true, pattern: 'hex', metal: 0.6, rough: 0.35 },
+  { id: 'circuit', name: 'Circuit', price: 950, body: '#071a12', accent: '#2bff88', glow: true, pattern: 'circuit', metal: 0.5, rough: 0.4 },
+  { id: 'givre', name: 'Givre', price: 1000, body: '#cfeeff', accent: '#3fb8ff', glow: true, pattern: 'ice', metal: 0.7, rough: 0.15 },
+  { id: 'toxique', name: 'Toxique', price: 1050, body: '#10180a', accent: '#9dff2e', glow: true, pattern: 'cracks', metal: 0.3, rough: 0.6 },
+  { id: 'brasier', name: 'Brasier', price: 1100, body: '#160805', accent: '#ff6a1a', glow: true, pattern: 'flames', metal: 0.3, rough: 0.55 },
+  { id: 'synthwave', name: 'Synthwave', price: 1250, body: '#1a0b2e', accent: '#ff3fd2', glow: true, pattern: 'grid', metal: 0.5, rough: 0.35 },
+  { id: 'dragon', name: 'Dragon', price: 1300, body: '#2a0707', accent: '#ffb347', glow: true, pattern: 'scales', metal: 0.8, rough: 0.25 },
+  { id: 'chrome', name: 'Chrome', price: 1500, body: '#c9ced6', accent: '#ffffff', pattern: 'fade', metal: 1, rough: 0.05 },
+  { id: 'obsidienne', name: 'Obsidienne', price: 1500, body: '#07060a', accent: '#ffcc4d', glow: true, pattern: 'cracks', metal: 1, rough: 0.12 },
+  { id: 'galaxie', name: 'Galaxie', price: 1700, body: '#050818', accent: '#5ad1ff', glow: true, pattern: 'stars', metal: 0.5, rough: 0.3 },
+  { id: 'aurore', name: 'Aurore', price: 1800, body: '#06121a', accent: '#5affc8', glow: true, animated: 'hue', pattern: 'waves', metal: 0.6, rough: 0.25 },
   // skins exclusifs : débloqués en montant de niveau, impossibles à acheter
   { id: 'recrue', name: 'Recrue', price: 0, level: 5, body: '#2c3a2a', accent: '#9bd36a', pattern: 'camo', metal: 0.2, rough: 0.7 },
   { id: 'veteran', name: 'Vétéran', price: 0, level: 10, body: '#3a2a1e', accent: '#e0a458', pattern: 'filigree', metal: 0.6, rough: 0.35 },
   { id: 'elite', name: 'Élite', price: 0, level: 20, body: '#0b1a2e', accent: '#ff3b6b', glow: true, pattern: 'lines', metal: 0.7, rough: 0.25 },
   { id: 'legende', name: 'Légende', price: 0, level: 30, body: '#1a1206', accent: '#ffd76a', glow: true, animated: 'hue', pattern: 'stars', metal: 1, rough: 0.15 },
+  { id: 'maitre', name: 'Maître', price: 0, level: 40, body: '#0a0f1e', accent: '#7cf0ff', glow: true, animated: 'hue', pattern: 'circuit', metal: 0.9, rough: 0.2 },
+  { id: 'eclipse', name: 'Éclipse', price: 0, level: 50, body: '#030308', accent: '#ffb84d', glow: true, pattern: 'eclipse', metal: 1, rough: 0.1 },
 ];
+// rareté d'un skin (affichage et filtres de la collection) : d'après son prix, « exclusif » pour les skins de niveau
+export const RARITY = {
+  common: { name: 'Commun', color: '#9aa3ad' },
+  rare: { name: 'Rare', color: '#3d9bff' },
+  epic: { name: 'Épique', color: '#b05cff' },
+  legendary: { name: 'Légendaire', color: '#ffb11f' },
+  exclusive: { name: 'Exclusif', color: '#ff3b6b' },
+};
+export const rarityOf = s => !s ? 'common' : s.level ? 'exclusive' : s.price >= 1400 ? 'legendary' : s.price >= 800 ? 'epic' : s.price >= 400 ? 'rare' : 'common';
 
 export const REWARDS = { kill: 10, roundWin: 15, matchWin: 150, matchPlayed: 50 };
 

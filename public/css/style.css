@@ -915,3 +915,16 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 .cl-lock { margin: 8px 0 10px; padding: 8px 10px; border: 1px dashed var(--gold); background: rgba(255, 207, 90, .08); font-size: 14px; }
 #cl-lb a { color: var(--text); text-decoration: none; }
 #cl-lb a:hover { color: var(--accent2); text-decoration: underline; }
+
+/* 1.12 : collection (rareté, filtres, vignettes de motif) */
+.coll-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.coll-filters .seg { flex-wrap: wrap; }
+.coll-filters .seg button { padding: 6px 10px; font-size: 12px; white-space: nowrap; flex: 0 0 auto; }
+.coll-filters select { background: var(--panel); color: var(--text); border: 1px solid var(--line); padding: 5px 8px; font-family: var(--body); }
+.skin-card { border-top-width: 3px; }
+.skin-card .rar, .shop-item .rar { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.skin-card .sw, .shop-item .sw { image-rendering: auto; }
+
+/* 1.12 : ami spectateur (retransmission en différé) */
+#spec-panel.friend { width: 260px; border-color: rgba(25, 227, 196, .5); }
+#spec-panel.friend .sp-tag { background: var(--alpha); color: #04211b; }

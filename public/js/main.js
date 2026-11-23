@@ -4,9 +4,9 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Game } from './game.js';
 import { profile, save, session, setToken, applyServerProfile } from './store.js';
-import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa } from '/shared/data.js';
+import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
-import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins } from './models.js';
+import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
 import * as SFX from './audio.js';
 import { mountSettings, keyName, sanitizeSettings, applyPreset } from './settings.js';
 import { initClans, openClanTab } from './clans.js';
@@ -375,6 +375,7 @@ net.on('welcome', m => {
   setTimeout(() => net.send('spectate', { id: specParam }), 300);
   try { history.replaceState(null, '', location.pathname); } catch { /* */ }
 });
+net.on('watchNotice', m => toast(m.text, 5000));
 net.on('specEnd', m => { if (state.game?.spec) { state.game.destroy(); exitGame(); } toast(m.text || 'Observation terminée.', 4000); });
 function exitGame() {
   state.game = null;
@@ -451,7 +452,7 @@ function renderShop() {
   const d = state.shop;
   if (!d) { el.innerHTML = '<div class="muted small">Chargement de la boutique du jour…</div>'; return; }
   const left = Math.max(0, d.resetAt - Date.now()), h = Math.floor(left / 3600000), mn = Math.floor(left % 3600000 / 60000);
-  el.innerHTML = `<div class="shop-head"><b>BOUTIQUE DU JOUR</b> <span class="muted small">-40 % · renouvelée dans ${h} h ${mn} min</span></div><div class="shop-items">${d.items.map(i => { const s = SKINS.find(x => x.id === i.id); const owned = profile.owned.includes(i.id); return `<div class="shop-item"><div class="sw" style="background:linear-gradient(135deg, ${s?.body} 0 55%, ${s?.accent} 55%)"></div><b>${esc(i.name)}</b><span><s class="muted">${i.old}</s> <span class="gem small"></span> ${i.price}</span>${owned ? '<span class="badge-ok small">POSSÉDÉ</span>' : state.guest ? '<span class="muted small">compte requis</span>' : `<button class="btn small primary" data-shop="${esc(i.id)}">ACHETER</button>`}</div>`; }).join('')}</div>`;
+  el.innerHTML = `<div class="shop-head"><b>BOUTIQUE DU JOUR</b> <span class="muted small">-40 % · renouvelée dans ${h} h ${mn} min</span></div><div class="shop-items">${d.items.map(i => { const s = SKINS.find(x => x.id === i.id); const owned = profile.owned.includes(i.id); return `<div class="shop-item"><div class="sw" style="${swatchCss(s)}"></div><b>${esc(i.name)}</b> <span class="rar small" style="color:${RARITY[rarityOf(s)].color}">${RARITY[rarityOf(s)].name}</span><span><s class="muted">${i.old}</s> <span class="gem small"></span> ${i.price}</span>${owned ? '<span class="badge-ok small">POSSÉDÉ</span>' : state.guest ? '<span class="muted small">compte requis</span>' : `<button class="btn small primary" data-shop="${esc(i.id)}">ACHETER</button>`}</div>`; }).join('')}</div>`;
   el.onclick = e => { const b = e.target.closest('[data-shop]'); if (b && confirm('Acheter ce skin ?')) net.send('buyShop', { id: b.dataset.shop }); };
 }
 net.on('shop', m => { state.shop = m; renderShop(); });
@@ -460,13 +461,24 @@ function renderCollection() {
   renderShop();
   $('coll-weapons').innerHTML = SKINNABLE.map(w => `<button class="${w === state.collWeapon ? 'active' : ''}" data-w="${w}">${WEAPONS[w].name.toUpperCase()}<small>${SKINS.find(s => s.id === profile.equipped[w])?.name || 'Standard'}</small></button>`).join('');
   const sel = state.collSkin || profile.equipped[state.collWeapon] || 'default';
-  $('coll-skins').innerHTML = SKINS.map(s => {
+  // filtres : tous, possédés, à acheter, par rareté
+  const f = state.collFilter || 'all';
+  const RORDER = ['common', 'rare', 'epic', 'legendary', 'exclusive'];
+  const list = SKINS.filter(s => f === 'all' || (f === 'owned' ? profile.owned.includes(s.id) || s.id === 'default' : f === 'buy' ? !profile.owned.includes(s.id) && !s.level && s.price > 0 : rarityOf(s) === f));
+  if (state.collSort === 'price') list.sort((a, b) => (a.level ? 1e6 + a.level : a.price) - (b.level ? 1e6 + b.level : b.price));
+  else if (state.collSort === 'rarity') list.sort((a, b) => RORDER.indexOf(rarityOf(b)) - RORDER.indexOf(rarityOf(a)) || b.price - a.price);
+  const ownedN = SKINS.filter(s => s.id === 'default' || profile.owned.includes(s.id)).length;
+  $('coll-filters').innerHTML = `<div class="seg small">${[['all', 'TOUS'], ['owned', 'POSSÉDÉS'], ['buy', 'À ACHETER'], ...RORDER.map(r => [r, RARITY[r].name.toUpperCase()])].map(([k, l]) => `<button data-cf="${k}" class="${f === k ? 'active' : ''}">${l}</button>`).join('')}</div>
+    <span class="grow"></span><span class="muted small">${ownedN}/${SKINS.length} possédés</span>
+    <select id="coll-sort" title="Trier"><option value="">Ordre d'origine</option><option value="price" ${state.collSort === 'price' ? 'selected' : ''}>Prix croissant</option><option value="rarity" ${state.collSort === 'rarity' ? 'selected' : ''}>Rareté</option></select>`;
+  $('coll-skins').innerHTML = list.map(s => {
     const owned = profile.owned.includes(s.id);
     const eq = profile.equipped[state.collWeapon] === s.id;
-    const sw = `background:linear-gradient(135deg, ${s.body} 0 55%, ${s.accent} 55%)${s.glow ? `;box-shadow:0 0 14px -2px ${s.accent}` : ''}`;
+    const rar = RARITY[rarityOf(s)];
+    const sw = `${swatchCss(s)}${s.glow ? `;box-shadow:0 0 14px -2px ${s.accent}` : ''}`;
     const label = eq ? '<div class="sp eq">ÉQUIPÉ</div>' : owned ? '<div class="sp owned">Possédé — cliquer pour équiper</div>' : s.level ? `<div class="sp lock">🔒 Niveau ${s.level}</div>` : `<div class="sp"><span class="gem small"></span>${s.price}</div>`;
-    return `<div class="skin-card ${s.id === sel ? 'selected' : ''}" data-s="${s.id}"><div class="sw" style="${sw}"></div><div class="sn">${s.name}</div>${label}</div>`;
-  }).join('');
+    return `<div class="skin-card ${s.id === sel ? 'selected' : ''}" data-s="${s.id}" style="border-top-color:${rar.color}"><div class="sw" style="${sw}"></div><div class="sn">${s.name}</div>${s.id !== 'default' ? `<div class="rar small" style="color:${rar.color}">${rar.name}${s.animated ? ' · animé' : ''}</div>` : ''}${label}</div>`;
+  }).join('') || '<p class="muted">Aucun skin dans cette catégorie.</p>';
   $('coll-title').textContent = `${WEAPONS[state.collWeapon].name.toUpperCase()} · ${SKINS.find(s => s.id === sel).name}`;
   if (!previews.coll) previews.coll = new Preview($('coll-canvas'));
   const w = buildWeapon(WEAPONS[state.collWeapon].model, sel);
@@ -478,6 +490,14 @@ function renderCollection() {
   const size = box.getSize(new THREE.Vector3()).length();
   previews.coll.set(holder, [0, size * 0.28, size * 1.05], [0, 0, 0]);
 }
+// vignette du motif (image générée), sinon dégradé des deux couleurs
+function swatchCss(s) {
+  if (!s) return '';
+  const url = skinSwatch(s.id);
+  return url ? `background:url(${url}) center/cover` : `background:linear-gradient(135deg, ${s.body} 0 55%, ${s.accent} 55%)`;
+}
+$('coll-filters').onclick = e => { const b = e.target.closest('[data-cf]'); if (b) { state.collFilter = b.dataset.cf; renderCollection(); } };
+$('coll-filters').onchange = e => { if (e.target.id === 'coll-sort') { state.collSort = e.target.value; renderCollection(); } };
 $('coll-weapons').onclick = e => { const b = e.target.closest('button'); if (b) { state.collWeapon = b.dataset.w; state.collSkin = null; renderCollection(); } };
 $('coll-skins').onclick = e => {
   const c = e.target.closest('.skin-card'); if (!c) return;

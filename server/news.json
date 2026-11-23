@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.12.0",
+    "date": "2026-11-23",
+    "title": "26 nouveaux skins et regarder la partie d'un ami",
+    "items": [
+      "24 nouveaux skins d'armes dans la collection : Acier brossé, Urbain, Jungle, Dune, Damier, Pop, Fondu menthe, Relief, Tigre, Éclaboussures, Marbre, Crépuscule, Écailles, Ruche, Circuit, Givre, Toxique, Brasier, Synthwave, Dragon, Chrome, Obsidienne, Galaxie et Aurore (animé).",
+      "2 nouveaux skins exclusifs de niveau : Maître (niveau 40) et Éclipse (niveau 50).",
+      "Collection : chaque skin a une rareté (Commun, Rare, Épique, Légendaire, Exclusif), un aperçu de son motif, des filtres (possédés, à acheter, par rareté) et un tri par prix ou rareté.",
+      "Amis : bouton 👁 REGARDER dans la liste d'amis pour suivre la partie d'un ami en spectateur, en différé de 10 secondes (anti-triche : tu vois exactement ce qu'il voit, rien de plus).",
+      "Ton ami est prévenu quand tu le regardes, et tu peux refuser d'être regardé dans PROFIL (Refuser que mes amis regardent mes parties)."
+    ]
+  },
+  {
     "version": "1.11.1",
     "date": "2026-11-23",
     "title": "Correctifs : clans",

@@ -268,7 +268,7 @@ export function privateProgress(u, overrides) {
     quests: { daily: q.daily.map(quest), weekly: q.weekly.map(quest), canReroll: q.reroll !== q.day, day: q.day, week: q.week },
     achievements: u.achievements, titles: titlesOf(u), title: u.title, history: u.history, agentStats: u.agentStats, mapStats: u.mapStats,
     week: weekly(u), daily: u.daily, seasons: u.seasons, friendsCount: u.friends.length,
-    banner: u.banner || 'nuit', motto: u.motto || '', showcase: u.showcase || [], blockInvites: !!u.blockInvites, lfg: !!u.lfg,
+    banner: u.banner || 'nuit', motto: u.motto || '', showcase: u.showcase || [], blockInvites: !!u.blockInvites, noWatch: !!u.noWatch, lfg: !!u.lfg,
     modeStats: u.modeStats || {}, weaponKills: u.weaponKills || {}, bestStreak: u.bestStreak || 0, endorse: u.endorse || {}, tourHist: u.tourHist || [], tournamentWins: u.tournamentWins || 0,
   };
 }

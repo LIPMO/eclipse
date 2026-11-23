@@ -17,7 +17,7 @@ export const levelReward = level => 50 + level * 10;
 // (Assaut et Duel uniquement : en Mêlée, tout le monde reçoit l'équipement complet)
 export const WEAPON_UNLOCK = { spark: 1, hornet: 1, viper: 2, brute: 2, tempest: 3, lancer: 3, longbow: 5 };
 // Skins exclusifs de niveau (définis dans SKINS avec un champ level)
-export const LEVEL_SKINS = { 5: 'recrue', 10: 'veteran', 20: 'elite', 30: 'legende' };
+export const LEVEL_SKINS = { 5: 'recrue', 10: 'veteran', 20: 'elite', 30: 'legende', 40: 'maitre', 50: 'eclipse' };
 // bannières de profil : débloquées en montant de niveau
 export const BANNERS = {
   nuit: { name: 'Nuit', level: 1, css: 'linear-gradient(135deg,#141a2e,#0b0f1b)' },

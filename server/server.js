@@ -273,6 +273,7 @@ function leaveRoom(c) {
 }
 
 function stopSpectating(c) {
+  if (c.watchMatch) { c.watchMatch.removeFriendSpectator(c.id); c.watchMatch = null; }
   if (!c.spectating) return;
   const room = rooms.get(c.spectating);
   room?.match?.removeSpectator(c.id);
@@ -314,6 +315,8 @@ function startMatch(r) {
   for (const m of r.members.values()) if (m.team !== 'ffa' && isFfa(r.mode)) m.team = 'ffa';
   const match = new Match(r, {
     send, sendRaw,
+    // fin de la retransmission en différé pour un ami spectateur
+    onFriendSpecEnd: cid => { const cl = clients.get(cid); if (cl) cl.watchMatch = null; },
     onEvent: (type, data) => admin.matchEvent(type, { room: r, ...data }),
     rewardMul: () => admin.mul().eclats,
     weaponUnlocks: () => admin.state.config.weaponUnlocks,
@@ -364,6 +367,7 @@ function startMatch(r) {
       } else if (r.opts?.randomMap && !r.tournament) { const pool = mapsForMode(r.mode); r.mapId = pool[(Math.random() * pool.length) | 0]; }
       r.tacPauseUsed = false;
       for (const cl of clients.values()) if (cl.spectating === r.id) cl.spectating = null;
+      r.match.closeFriendSpecs();
       r.match = null; r.state = 'lobby';
       for (const m of r.members.values()) m.ready = m.isBot;
       for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'backToRoom' });
@@ -678,6 +682,25 @@ function handleLobby(c, msg) {
     }
     case 'spectateSwitch': { const room = c.spectating && rooms.get(c.spectating); if (room?.match) room.match.switchSpectator(c.id, String(msg.id || '')); break; }
     case 'spectateStop': stopSpectating(c); break;
+    // ---------- regarder la partie d'un ami (en différé de 10 s, ce que voit l'ami uniquement) ----------
+    case 'watchFriend': {
+      if (!c.account) { send(c.id, { type: 'error', text: 'Crée un compte pour regarder les parties de tes amis.' }); break; }
+      if (r) { send(c.id, { type: 'error', text: 'Quitte ton salon avant de regarder une partie.' }); break; }
+      const u = accounts.get(c.account); const t = accounts.get(clean(msg.name, 16));
+      const tk = t && accounts.key(t.name);
+      if (!u || !t || tk === c.account || !(u.friends || []).includes(tk) || !(t.friends || []).includes(c.account)) { send(c.id, { type: 'error', text: 'Tu ne peux regarder que les parties de tes amis.' }); break; }
+      if (t.noWatch) { send(c.id, { type: 'error', text: `${t.name} ne souhaite pas que ses parties soient regardées.` }); break; }
+      if ((t.blocked || []).includes(c.account)) { send(c.id, { type: 'error', text: `${t.name} n'est pas en partie.` }); break; }
+      const tc = social.clientOfKey(tk); const room = tc && tc.roomId && rooms.get(tc.roomId);
+      if (!room?.match || room.match.phase === 'over' || !room.match.players.has(tc.id)) { send(c.id, { type: 'error', text: `${t.name} n'est pas en partie.` }); break; }
+      if (room.match.friendSpecCount() >= 10) { send(c.id, { type: 'error', text: 'Trop de spectateurs dans cette partie, réessaie plus tard.' }); break; }
+      stopSpectating(c);
+      if (room.match.addFriendSpectator(c.id, tc.id)) {
+        c.watchMatch = room.match;
+        send(tc.id, { type: 'watchNotice', text: `👁 ${c.name} regarde ta partie (en différé de 10 s).` });
+      }
+      break;
+    }
     case 'staffAction': {
       if (admin.levelOf(c) < 1 || !c.spectating) break;
       const room = rooms.get(c.spectating); const tm = room && room.members.get(String(msg.id || ''));

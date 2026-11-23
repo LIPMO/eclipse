@@ -4,6 +4,8 @@ import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
 import { WEAPON_UNLOCK } from '../shared/progress.js';
+// retard de la retransmission pour les amis spectateurs (ms)
+export const FRIEND_DELAY = 10000;
 
 const r2 = v => Math.round(v * 100) / 100;
 const r3 = v => Math.round(v * 1000) / 1000;
@@ -95,6 +97,8 @@ export class Match {
   removePlayer(id) {
     const p = this.players.get(id);
     if (!p) return;
+    // les amis qui regardaient ce joueur voient la fin de sa partie (après le différé)
+    if (this.friendWatched(id)) this.queueDelayed(id, JSON.stringify({ type: 'specEnd', text: `${p.name} a quitté la partie.` }), true);
     if (this.core.carrier === id) this.dropCore(p);
     this.players.delete(id);
     this.broadcast(this.rosterMsg());
@@ -146,12 +150,52 @@ export class Match {
     const s = JSON.stringify(obj);
     for (const p of this.players.values()) if (!p.isBot) this.io.sendRaw(p.id, s);
     if (this.spectators?.size) for (const id of this.spectators.keys()) this.io.sendRaw(id, s);
+    if (this.friendSpecs?.size) this.queueDelayed(null, s);
   }
   send(p, obj) {
     if (!p.isBot) this.io.send(p.id, obj);
     // le staff qui observe ce joueur reçoit aussi ses événements (touches, dégâts, aveuglement…)
     if (this.spectators?.size && obj.type !== 'killcam') for (const [id, sp] of this.spectators) if (sp.target === p.id) this.io.send(id, obj);
+    if (this.friendSpecs?.size && obj.type !== 'killcam' && this.friendWatched(p.id)) this.queueDelayed(p.id, JSON.stringify(obj));
   }
+
+  // ---------- amis spectateurs : retransmission EN DIFFÉRÉ (anti-triche) ----------
+  // L'ami voit exactement ce que voit le joueur suivi (mêmes informations filtrées, aucun rayon X),
+  // avec FRIEND_DELAY ms de retard : impossible de renseigner le joueur en direct.
+  addFriendSpectator(cid, targetId) {
+    const t = this.players.get(targetId);
+    if (!t || t.isBot || this.phase === 'over') return false;
+    (this.friendSpecs ||= new Map()).set(cid, { target: t.id });
+    this.io.send(cid, { ...this.startMsg(t.id), you: t.id, spectate: true, friendSpec: true, delay: FRIEND_DELAY / 1000, watchName: t.name });
+    if (!this.delayTimer) { this.delayTimer = setInterval(() => this.pumpDelayed(), 50); this.delayTimer.unref?.(); }
+    return true;
+  }
+  removeFriendSpectator(cid) { this.friendSpecs?.delete(cid); }
+  friendSpecCount(targetId) { let n = 0; for (const s of this.friendSpecs?.values() || []) if (!targetId || s.target === targetId) n++; return n; }
+  friendWatched(pid) { for (const s of this.friendSpecs?.values() || []) if (s.target === pid) return true; return false; }
+  queueDelayed(target, str, end = false) {
+    const q = (this.delayQ ||= []);
+    if (q.length >= 6000) q.shift(); // garde-fou mémoire (≈ 40 s de partie)
+    q.push({ at: Date.now() + FRIEND_DELAY, target, str, end });
+  }
+  pumpDelayed() {
+    const q = this.delayQ || [], now = Date.now();
+    while (q.length && q[0].at <= now) {
+      const e = q.shift();
+      for (const [cid, s] of this.friendSpecs || []) {
+        if (e.target !== null && e.target !== s.target) continue;
+        this.io.sendRaw(cid, e.str);
+        if (e.end) { this.friendSpecs.delete(cid); this.io.onFriendSpecEnd?.(cid); }
+      }
+    }
+    if (!q.length && (this.closed || !this.friendSpecs?.size)) {
+      if (this.closed) for (const cid of [...(this.friendSpecs?.keys() || [])]) { this.io.send(cid, { type: 'specEnd', text: 'La partie est terminée.' }); this.io.onFriendSpecEnd?.(cid); }
+      this.friendSpecs?.clear();
+      clearInterval(this.delayTimer); this.delayTimer = null;
+    }
+  }
+  // la partie est finie (salon fermé ou retour au salon) : on termine la retransmission une fois le différé écoulé
+  closeFriendSpecs() { this.closed = true; if (this.friendSpecs?.size && !this.delayTimer) { this.delayTimer = setInterval(() => this.pumpDelayed(), 50); this.delayTimer.unref?.(); } }
 
   // ---------- spectateur staff (invisible) ----------
   addSpectator(cid, targetId) {
@@ -172,6 +216,7 @@ export class Match {
   }
   removeSpectator(cid) { this.spectators?.delete(cid); }
   endSpectators(text) {
+    this.closeFriendSpecs();
     if (!this.spectators?.size) return;
     for (const id of this.spectators.keys()) this.io.send(id, { type: 'specEnd', text });
     this.spectators.clear();
@@ -1156,7 +1201,11 @@ export class Match {
       };
       const meStr = JSON.stringify(me);
       meCache.set(p.id, { meStr, core: JSON.stringify(core) });
-      if (!p.isBot) this.io.sendRaw(p.id, '{"type":"snap","me":' + meStr + ',"players":[' + list.join(',') + '],"core":' + JSON.stringify(core) + ',' + commonStr);
+      if (!p.isBot) {
+        const snapStr = '{"type":"snap","me":' + meStr + ',"players":[' + list.join(',') + '],"core":' + JSON.stringify(core) + ',' + commonStr;
+        this.io.sendRaw(p.id, snapStr);
+        if (this.friendSpecs?.size && this.friendWatched(p.id)) this.queueDelayed(p.id, snapStr);
+      }
     }
     // staff spectateur : vue du joueur observé, avec TOUS les joueurs (pour juger un éventuel « wallhack »)
     if (this.spectators?.size) {

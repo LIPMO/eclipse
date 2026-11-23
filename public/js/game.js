@@ -93,7 +93,7 @@ export class Game {
     this.isHost = !!start.host;
     this.roundHistory = [];
     this.bubbles = [];
-    this.spec = start.spectate ? { xray: false, third: false, buf: [], info: null, ghost: null } : null;
+    this.spec = start.spectate ? { xray: false, third: false, buf: [], info: null, ghost: null, friend: !!start.friendSpec, delay: start.delay || 0, name: start.watchName || '' } : null;
     this.range = start.diff === 'cible'; // champ de tir (défi de visée)
     this.muted = new Set(); this.dropMeshes = new Map(); this.allyDeaths = []; this.prevSlot = null; this.lastLoadout = null; this.bought = {}; this.readyN = null;
 
@@ -1405,6 +1405,7 @@ export class Game {
       const wid = me.wp[me.sl]?.[0];
       L.slot = me.sl; if (me.wp[me.sl]) { L.mag = me.wp[me.sl][1]; L.reserve = me.wp[me.sl][2]; }
       if (wid && this.vmWeaponId !== wid) this.setViewmodel(wid);
+      if (this.spec.friend && !this.spec.started) { this.spec.started = true; $('sp-wait')?.remove(); }
       const selfP = s.players.find(p => p.i === this.myId);
       if (selfP && selfP.p) { this.spec.buf.push({ t: s.t, p: selfP.p, y: selfP.y, pt: selfP.pt, c: selfP.c, al: selfP.al }); if (this.spec.buf.length > 30) this.spec.buf.shift(); }
     }
@@ -2231,6 +2232,18 @@ export class Game {
     document.body.classList.add('spectating');
     const el = document.createElement('div');
     el.id = 'spec-panel';
+    // ami spectateur : panneau simple, retransmission en différé, pas de rayons X ni d'outils de modération
+    if (this.spec.friend) {
+      el.classList.add('friend');
+      el.innerHTML = `<div class="sp-head"><span class="sp-tag">👁 SPECTATEUR</span><span class="muted small">différé de ${this.spec.delay} s</span></div>
+        <div class="sp-name">Tu regardes <b>${esc(this.spec.name)}</b></div>
+        <div id="sp-wait" class="muted small">La retransmission commence dans ${this.spec.delay} secondes…</div>
+        <div class="sp-row"><button class="btn small" data-sp="third" id="sp-third">Vue : 1re personne</button><button class="btn small ghost" data-sp="quit">Quitter</button></div>
+        <p class="muted small">V : changer de vue · Tab : scores · Échap : quitter</p>`;
+      $('hud').appendChild(el);
+      el.onclick = e => { const b = e.target.closest('[data-sp]'); if (b) this.specAction(b.dataset.sp); };
+      return;
+    }
     el.innerHTML = `<div class="sp-head"><span class="sp-tag">👁 OBSERVATION</span><span class="muted small">invisible pour les joueurs</span></div>
       <div id="sp-body">Chargement…</div>
       <div class="sp-row"><select id="sp-target"></select><button class="btn small" data-sp="prev">◀</button><button class="btn small" data-sp="next">▶</button></div>
@@ -2258,6 +2271,12 @@ export class Game {
   }
   specKey(e) {
     if (e.repeat) return;
+    if (this.spec.friend) {
+      if (e.code === 'KeyV') this.specAction('third');
+      else if (e.code === 'Escape') this.specAction('quit');
+      else if (e.code === 'Tab') this.showScoreboard(!$('scoreboard').classList.contains('show'));
+      return;
+    }
     if (e.code === 'ArrowRight') this.specAction('next');
     else if (e.code === 'ArrowLeft') this.specAction('prev');
     else if (e.code === 'KeyX') this.specAction('xray');
@@ -2267,6 +2286,7 @@ export class Game {
   }
   specAction(a) {
     const sp = this.spec;
+    if (sp.friend && !['third', 'quit'].includes(a)) return;
     const list = sp.info?.players || [];
     if (a === 'next' || a === 'prev') {
       if (!list.length) return;

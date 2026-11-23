@@ -327,6 +327,7 @@ export function renderProfile() {
     <div class="pf-show">${[0, 1, 2].map(i => `<select data-show="${i}"><option value="">— vide —</option>${pr.achievements.map(id => { const a = ACHIEVEMENTS.find(x => x.id === id); return a ? `<option value="${id}" ${pr.showcase?.[i] === id ? 'selected' : ''}>${esc(a.label)}</option>` : ''; }).join('')}</select>`).join('')}</div>
     <label class="check"><input type="checkbox" id="pf-lfg" ${pr.lfg ? 'checked' : ''}> Je cherche une équipe (visible par mes amis)</label>
     <label class="check"><input type="checkbox" id="pf-blockinv" ${pr.blockInvites ? 'checked' : ''}> Refuser toutes les invitations (salons et clans)</label>
+    <label class="check"><input type="checkbox" id="pf-nowatch" ${pr.noWatch ? 'checked' : ''}> Refuser que mes amis regardent mes parties</label>
     <div class="row"><button class="btn ghost small" id="pf-share">🔗 COPIER LE LIEN DE MON PROFIL</button></div>
   </div>
   <div class="pf-stats">${[
@@ -363,6 +364,7 @@ export function renderProfile() {
   root.querySelectorAll('[data-show]').forEach(sel => { sel.onchange = () => net.send('setProfile', { showcase: [...root.querySelectorAll('[data-show]')].map(x => x.value).filter(Boolean) }); });
   $('pf-lfg').onchange = e => net.send('setProfile', { lfg: e.target.checked });
   $('pf-blockinv').onchange = e => net.send('setProfile', { blockInvites: e.target.checked });
+  $('pf-nowatch').onchange = e => net.send('setProfile', { noWatch: e.target.checked });
   $('pf-share').onclick = () => { const url = `${location.origin}/#profil=${encodeURIComponent(profile.name)}`; (navigator.clipboard?.writeText(url) || Promise.reject()).then(() => toast('Lien copié : ' + url, 4000), () => toast(url, 6000)); };
   $('pw-form').onsubmit = e => {
     e.preventDefault();
@@ -410,6 +412,7 @@ export function renderFriends() {
       <div class="panel"><h3>MES AMIS (${F.friends.filter(f => f.online).length} en ligne / ${F.friends.length})</h3>
         ${F.friends.map(f => `<div class="fr-row ${f.online ? 'on' : ''}"><button class="pin ${f.pinned ? 'on' : ''}" data-f="pin" data-n="${esc(f.name)}" title="${f.pinned ? 'Retirer des favoris' : 'Épingler en haut de la liste'}">★</button><span class="dot ${f.online ? 'on' : ''}"></span><div class="fr-who">${f.clan ? `<span class="clan-tag">[${esc(f.clan)}]</span> ` : ''}<b class="link" data-f="profile" data-n="${esc(f.name)}">${esc(f.name)}</b> <span class="muted small">niv. ${f.level}${f.title ? ' · ' + esc(f.title) : ''}</span>${f.lfg ? ' <span class="badge-ok small">CHERCHE UNE ÉQUIPE</span>' : ''}<div class="muted small">${esc(f.status)}${f.roomName ? ` · ${esc(f.roomName)}` : ''}${!f.online && f.lastSeen ? ` · vu ${ago(f.lastSeen)}` : ''}</div></div>
           <span class="grow"></span>
+          ${f.watch && !inRoom ? `<button class="btn small" data-f="watch" data-n="${esc(f.name)}" title="Regarder sa partie en spectateur (différé de 10 s)">👁 REGARDER</button>` : ''}
           ${f.roomId && !f.full ? `<button class="btn small" data-f="join" data-n="${esc(f.name)}">REJOINDRE</button>` : ''}
           ${f.online && inRoom && f.roomId !== state.room?.id ? `<button class="btn small" data-f="invite" data-n="${esc(f.name)}">INVITER</button>` : ''}
           ${f.online && (!H.party || H.party.lead) && !(H.party?.members || []).some(m => m.name === f.name) ? `<button class="btn ghost small" data-f="party" data-n="${esc(f.name)}" title="Inviter dans mon groupe (jusqu'à 4 joueurs)">＋ GROUPE</button>` : ''}
@@ -441,6 +444,7 @@ export function renderFriends() {
     if (f === 'remove' && confirm(`Retirer ${n} de tes amis ?`)) net.send('friendRemove', { name: n });
     if (f === 'unblock') net.send('unblock', { name: n });
     if (f === 'join') net.send('joinFriend', { name: n });
+    if (f === 'watch') net.send('watchFriend', { name: n });
     if (f === 'invite') net.send('invite', { name: n });
     if (f === 'mp') { H.mpTo = n; delete H.unread[n]; updateFriendsBadge(); renderFriends(); $('mp-text')?.focus(); }
     if (f === 'party') net.send('partyInvite', { name: n });

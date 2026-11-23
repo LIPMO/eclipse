@@ -42,7 +42,10 @@ export class Social {
     const row = key => {
       const f = this.A.get(key); if (!f) return null;
       ensureUser(f);
-      return { name: f.name, level: levelOf(f.xp), title: f.title ? TITLES[f.title] : null, lastSeen: f.lastSeen || f.created, pinned: (u.pinned || []).includes(key), lfg: !!f.lfg, clan: f.clan ? this.A.data.clans?.[f.clan]?.tag || null : null, ...this.status(this.clientOfKey(key)) };
+      const st = this.status(this.clientOfKey(key));
+      // regarder sa partie (en différé) : amis réciproques, sauf si le joueur l'a refusé dans son profil
+      const watch = st.status === 'en partie' && !f.noWatch && (f.friends || []).includes(this.A.key(u.name)) && !(f.blocked || []).includes(this.A.key(u.name));
+      return { name: f.name, level: levelOf(f.xp), title: f.title ? TITLES[f.title] : null, lastSeen: f.lastSeen || f.created, pinned: (u.pinned || []).includes(key), lfg: !!f.lfg, clan: f.clan ? this.A.data.clans?.[f.clan]?.tag || null : null, ...st, watch };
     };
     const friends = u.friends.map(row).filter(Boolean).sort((a, b) => (b.pinned - a.pinned) || (b.online - a.online) || a.name.localeCompare(b.name));
     return { type: 'friends', friends, incoming: u.friendReq.map(k => this.A.get(k)?.name).filter(Boolean), blocked: u.blocked.map(k => this.A.get(k)?.name).filter(Boolean) };
@@ -293,6 +296,7 @@ export class Social {
     }
     if (Array.isArray(msg.showcase)) u.showcase = [...new Set(msg.showcase.filter(id => typeof id === 'string' && u.achievements.includes(id)))].slice(0, 3);
     if (typeof msg.blockInvites === 'boolean') u.blockInvites = msg.blockInvites;
+    if (typeof msg.noWatch === 'boolean') { u.noWatch = msg.noWatch; this.pushFriendsOf(this.A.key(u.name)); }
     if (typeof msg.lfg === 'boolean') { u.lfg = msg.lfg; this.pushFriendsOf(c.account); }
     this.A.save();
     this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });

@@ -183,6 +183,99 @@ function patternTex(skin, emissive) {
         for (let i = 0; i < 120; i++) { g.fillStyle = Math.random() < 0.3 ? A : '#ffffff'; const r = rnd(0.5, 2.2); g.beginPath(); g.arc(rnd(0, s), rnd(0, s), r, 0, 7); g.fill(); }
         if (!emissive) { const gr = g.createRadialGradient(s * 0.6, s * 0.4, 0, s * 0.6, s * 0.4, s * 0.5); gr.addColorStop(0, 'rgba(162,89,255,.35)'); gr.addColorStop(1, 'transparent'); g.fillStyle = gr; g.fillRect(0, 0, s, s); }
         break;
+      // ---- motifs ajoutés en 1.12 ----
+      case 'digital': { // camouflage numérique (pixels)
+        if (emissive) break;
+        const cols = [A, skin.alt || shade(skin.body, 1.3), shade(skin.body, 0.75)];
+        for (let i = 0; i < 26; i++) { const cx = rnd(0, s), cy = rnd(0, s), n = 3 + (Math.random() * 6 | 0); g.fillStyle = cols[i % 3]; for (let k = 0; k < n * 3; k++) g.fillRect(Math.floor((cx + rnd(-n, n) * 8) / 8) * 8, Math.floor((cy + rnd(-n, n) * 8) / 8) * 8, 8, 8); }
+        break;
+      }
+      case 'checker':
+        if (emissive) break;
+        g.fillStyle = A;
+        for (let y = 0; y < s; y += 32) for (let x = 0; x < s; x += 32) if (((x + y) / 32) % 2) g.fillRect(x, y, 32, 32);
+        break;
+      case 'dots':
+        if (emissive) break;
+        g.fillStyle = A;
+        for (let y = 0; y < s + 16; y += 32) for (let x = 0; x < s + 16; x += 32) { g.beginPath(); g.arc(x + ((y / 32) % 2 ? 16 : 0), y, 8, 0, 7); g.fill(); }
+        break;
+      case 'fade': { // dégradé en diagonale de la couleur principale vers l'accent
+        if (emissive) break;
+        const gr = g.createLinearGradient(0, s, s, 0); gr.addColorStop(0, skin.body); gr.addColorStop(1, A);
+        g.fillStyle = gr; g.fillRect(0, 0, s, s); noise(g, s, 0.04, 800);
+        break;
+      }
+      case 'topo': // courbes de niveau
+        g.strokeStyle = A; g.lineWidth = 1.6;
+        for (let c = 0; c < 4; c++) { const cx = rnd(0, s), cy = rnd(0, s); for (let r = 10; r < 120; r += 12) { g.beginPath(); for (let a = 0; a <= 6.3; a += 0.2) { const rr = r + Math.sin(a * 3 + c) * r * 0.18; g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8); } g.stroke(); } }
+        break;
+      case 'tiger':
+        if (emissive) break;
+        g.fillStyle = A;
+        for (let i = 0; i < 12; i++) { const y = rnd(-20, s), w = rnd(6, 14); g.beginPath(); g.moveTo(0, y); g.bezierCurveTo(s * 0.3, y + rnd(-25, 25), s * 0.6, y + rnd(-25, 25), rnd(s * 0.4, s), y + rnd(-15, 15)); g.bezierCurveTo(s * 0.6, y + w + rnd(-10, 10), s * 0.3, y + w, 0, y + w); g.fill(); }
+        break;
+      case 'splatter': {
+        if (emissive) break;
+        const cols = [A, skin.alt || '#ffffff', skin.alt2 || shade(A, 0.6)];
+        for (let i = 0; i < 22; i++) { const x = rnd(0, s), y = rnd(0, s), r = rnd(5, 18); g.fillStyle = cols[i % 3]; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); for (let k = 0; k < 6; k++) { const a = rnd(0, 6.3), d = r + rnd(4, 22); g.beginPath(); g.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, rnd(1, 4), 0, 7); g.fill(); } }
+        break;
+      }
+      case 'marble':
+        if (emissive) break;
+        for (let i = 0; i < 18; i++) { g.strokeStyle = i % 3 ? 'rgba(90,90,100,.35)' : A; g.lineWidth = i % 3 ? 1 : 2; g.beginPath(); let x = rnd(0, s), y = 0; g.moveTo(x, y); while (y < s) { x += rnd(-14, 14); y += rnd(8, 20); g.lineTo(x, y); } g.stroke(); }
+        break;
+      case 'scales': // écailles (dragon)
+        g.strokeStyle = A; g.lineWidth = 2;
+        for (let y = 0; y < s + 16; y += 14) for (let x = 0; x < s + 16; x += 20) {
+          const ox = x + ((y / 14) % 2 ? 10 : 0);
+          if (!emissive) { g.fillStyle = shade(skin.body, 0.85 + ((x * 7 + y) % 5) * 0.08); g.beginPath(); g.arc(ox, y, 10, 0, Math.PI); g.fill(); }
+          g.beginPath(); g.arc(ox, y, 10, 0, Math.PI); g.stroke();
+        }
+        break;
+      case 'hex': { // nid d'abeilles
+        g.strokeStyle = A; g.lineWidth = 2.2; const r = 14, h = r * Math.sqrt(3);
+        for (let row = -1; row < s / h + 1; row++) for (let col = -1; col < s / (r * 1.5) + 1; col++) {
+          const cx = col * r * 1.5, cy = row * h + (col % 2 ? h / 2 : 0);
+          g.beginPath(); for (let k = 0; k < 7; k++) { const a = Math.PI / 3 * k; g.lineTo(cx + Math.cos(a) * (r - 2), cy + Math.sin(a) * (r - 2)); } g.stroke();
+        }
+        break;
+      }
+      case 'circuit': // pistes de circuit imprimé
+        g.strokeStyle = A; g.fillStyle = A; g.lineWidth = 2;
+        for (let i = 0; i < 26; i++) {
+          let x = Math.round(rnd(0, s) / 16) * 16, y = Math.round(rnd(0, s) / 16) * 16;
+          g.beginPath(); g.moveTo(x, y);
+          for (let k = 0; k < 4; k++) { if (Math.random() < 0.5) x += (Math.random() < 0.5 ? -1 : 1) * 16 * (1 + (Math.random() * 3 | 0)); else y += (Math.random() < 0.5 ? -1 : 1) * 16 * (1 + (Math.random() * 3 | 0)); g.lineTo(x, y); }
+          g.stroke(); g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill();
+        }
+        break;
+      case 'ice': // cristaux de glace
+        g.strokeStyle = emissive ? A : 'rgba(255,255,255,.85)'; g.lineWidth = 1.5;
+        for (let i = 0; i < 18; i++) { const cx = rnd(0, s), cy = rnd(0, s), r = rnd(10, 28); for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k + rnd(-0.2, 0.2); g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); g.stroke(); } }
+        if (!emissive) { g.strokeStyle = A; g.lineWidth = 1; for (let i = 0; i < 10; i++) { g.beginPath(); g.moveTo(rnd(0, s), rnd(0, s)); g.lineTo(rnd(0, s), rnd(0, s)); g.stroke(); } }
+        break;
+      case 'flames': { // flammes qui montent depuis le bas
+        const fl = (col, hgt) => { g.fillStyle = col; for (let x = -10; x < s + 10; x += rnd(14, 26)) { const top = s - rnd(hgt * 0.5, hgt); g.beginPath(); g.moveTo(x - 12, s); g.quadraticCurveTo(x - 10, (s + top) / 2, x + rnd(-6, 6), top); g.quadraticCurveTo(x + 10, (s + top) / 2, x + 12, s); g.fill(); } };
+        fl(A, s * 0.9); if (!emissive) fl('#ffd34d', s * 0.45);
+        break;
+      }
+      case 'grid': { // grille rétro (synthwave)
+        g.strokeStyle = A; g.lineWidth = 2;
+        for (let y = s * 0.35; y < s; y += (y - s * 0.3) * 0.22 + 4) { g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke(); }
+        for (let i = -8; i <= 8; i++) { g.beginPath(); g.moveTo(s / 2 + i * 6, s * 0.35); g.lineTo(s / 2 + i * 48, s); g.stroke(); }
+        if (!emissive) { const gr = g.createLinearGradient(0, 0, 0, s * 0.35); gr.addColorStop(0, '#ffb13d'); gr.addColorStop(1, '#ff3fd2'); g.fillStyle = gr; g.beginPath(); g.arc(s / 2, s * 0.35, s * 0.2, Math.PI, 0); g.fill(); }
+        break;
+      }
+      case 'eclipse': { // couronne solaire autour d'un disque noir
+        const cx = s / 2, cy = s / 2;
+        const gr = g.createRadialGradient(cx, cy, s * 0.16, cx, cy, s * 0.5); gr.addColorStop(0, A); gr.addColorStop(0.35, emissive ? shade(A, 0.5) : 'rgba(255,140,40,.45)'); gr.addColorStop(1, emissive ? '#000' : skin.body);
+        g.fillStyle = gr; g.fillRect(0, 0, s, s);
+        g.strokeStyle = A; g.lineWidth = 1.5;
+        for (let i = 0; i < 60; i++) { const a = rnd(0, 6.3), r1 = s * 0.18, r2 = s * rnd(0.24, 0.48); g.beginPath(); g.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); g.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2); g.stroke(); }
+        g.fillStyle = emissive ? '#000' : skin.body; g.beginPath(); g.arc(cx, cy, s * 0.16, 0, 7); g.fill();
+        break;
+      }
       default:
         if (!emissive) noise(g, s, 0.05, 1500);
     }
@@ -191,17 +284,35 @@ function patternTex(skin, emissive) {
   return t;
 }
 
+// motifs sans version lumineuse (le skin brille alors seulement par ses pièces d'accent)
+const NO_GLOW_PATTERNS = new Set(['carbon', 'camo', 'petals', 'digital', 'checker', 'dots', 'fade', 'tiger', 'splatter', 'marble']);
 export const animatedMaterials = new Set();
 export function skinMaterials(skinId) {
   const skin = SKINS.find(s => s.id === skinId) || SKINS[0];
   const body = new THREE.MeshStandardMaterial({ color: skin.pattern ? '#ffffff' : skin.body, map: skin.pattern ? patternTex(skin, false) : null, metalness: skin.metal ?? 0.5, roughness: skin.rough ?? 0.5 });
-  if (skin.glow && skin.pattern && !['carbon', 'camo', 'petals'].includes(skin.pattern)) {
+  if (skin.glow && skin.pattern && !NO_GLOW_PATTERNS.has(skin.pattern)) {
     body.emissiveMap = patternTex(skin, true); body.emissive = new THREE.Color(skin.accent); body.emissiveIntensity = 0.8;
   }
   const accent = new THREE.MeshStandardMaterial({ color: skin.accent, metalness: 0.6, roughness: 0.35, emissive: skin.glow ? new THREE.Color(skin.accent) : new THREE.Color(0), emissiveIntensity: skin.glow ? 1.1 : 0 });
   const dark = new THREE.MeshStandardMaterial({ color: '#16181d', metalness: 0.3, roughness: 0.7 });
   if (skin.animated === 'hue') { body.userData.hue = true; accent.userData.hue = true; animatedMaterials.add(body); animatedMaterials.add(accent); }
   return { body, accent, dark };
+}
+// petite vignette (image) du motif d'un skin, pour la collection et la boutique
+const swatchCache = {};
+export function skinSwatch(skinId) {
+  if (swatchCache[skinId]) return swatchCache[skinId];
+  const skin = SKINS.find(s => s.id === skinId) || SKINS[0];
+  let url = '';
+  try {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+    const g = c.getContext('2d');
+    if (skin.pattern) g.drawImage(patternTex(skin, false).image, 0, 0, 256, 128, 0, 0, 128, 64);
+    else { const gr = g.createLinearGradient(0, 0, 128, 64); gr.addColorStop(0, skin.body); gr.addColorStop(0.55, skin.body); gr.addColorStop(0.56, skin.accent); gr.addColorStop(1, skin.accent); g.fillStyle = gr; g.fillRect(0, 0, 128, 64); }
+    if (skin.glow && skin.pattern && !NO_GLOW_PATTERNS.has(skin.pattern)) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.55; g.drawImage(patternTex(skin, true).image, 0, 0, 256, 128, 0, 0, 128, 64); }
+    url = c.toDataURL('image/png');
+  } catch { /* canvas indisponible : dégradé CSS */ }
+  return (swatchCache[skinId] = url);
 }
 export function animateSkins(t) {
   for (const m of animatedMaterials) {
