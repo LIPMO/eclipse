@@ -106,6 +106,9 @@ const SECTIONS = [
     { k: 'renderScale', t: 'range', label: 'Résolution de rendu', min: 0.5, max: 1, step: 0.05, pct: true, hint: 'Baisse-la pour gagner des FPS' },
     { k: 'brightness', t: 'range', label: 'Luminosité', min: 0.6, max: 1.6, step: 0.05, pct: true },
     { k: 'quality', t: 'select', label: 'Qualité graphique', opts: [['high', 'Haute (ombres)'], ['low', 'Basse (sans ombres)']], hint: 'Appliquée à la prochaine partie' },
+    { k: 'bloom', t: 'toggle', label: 'Halo lumineux (bloom) et vignettage', hint: 'Les lumières, néons et tirs rayonnent. Sur téléphone, actif seulement avec le préréglage Haut ou Ultra' },
+    { k: 'relief', t: 'toggle', label: 'Relief des surfaces', hint: 'Briques, dalles et caisses en relief, ombre au pied des murs. Appliqué à la prochaine partie' },
+    { k: 'particles', t: 'toggle', label: 'Particules d\'ambiance', hint: 'Poussière dans l\'air de jour, lucioles la nuit' },
   ] },
   { id: 'hud', title: 'Interface', items: [
     { k: 'minimap', t: 'toggle', label: 'Afficher la mini-carte' },
@@ -165,10 +168,10 @@ const SECTIONS = [
   ] },
 ];
 const GFX = {
-  low: { quality: 'low', renderScale: 0.7, fpsCap: 0, bob: false },
-  medium: { quality: 'low', renderScale: 0.9 },
-  high: { quality: 'high', renderScale: 1 },
-  ultra: { quality: 'high', renderScale: 1, fpsCap: 0 },
+  low: { quality: 'low', renderScale: 0.7, fpsCap: 0, bob: false, bloom: false, relief: false, particles: false },
+  medium: { quality: 'low', renderScale: 0.9, bloom: false, relief: true, particles: true },
+  high: { quality: 'high', renderScale: 1, bloom: true, relief: true, particles: true },
+  ultra: { quality: 'high', renderScale: 1, fpsCap: 0, bloom: true, relief: true, particles: true },
 };
 export function applyPreset(name) { if (GFX[name]) { Object.assign(S(), GFX[name]); S().gfxPreset = name; save(); document.dispatchEvent(new CustomEvent('settings-changed', { detail: { key: '*' } })); } }
 // export / import de tous les réglages (code texte)
@@ -312,7 +315,7 @@ function onInput(e) {
   else v = el.value;
   if (k === 'fpsCap') v = Number(v) || 0;
   if (k === 'gfxPreset') { if (v !== 'custom') { applyPreset(v); render(); } else { S().gfxPreset = 'custom'; changed(k); } return; }
-  if (['quality', 'renderScale'].includes(k)) S().gfxPreset = 'custom';
+  if (['quality', 'renderScale', 'bloom', 'relief', 'particles'].includes(k)) S().gfxPreset = 'custom';
   S()[k] = v;
   if (el.dataset.num) { const r = root.querySelector(`input[type=range][data-k="${k}"]`); if (r) r.value = v; }
   else if (it?.num) { const n = root.querySelector(`[data-num="${k}"]`); if (n && document.activeElement !== n) n.value = v; }

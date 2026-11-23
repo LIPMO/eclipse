@@ -31,6 +31,33 @@ function shade(hex, f) {
 
 // ---------- textures d'environnement ----------
 const texCache = {};
+// carte de normales calculée à partir d'une texture dessinée (relief des briques, dalles, planches…)
+const normCache = new Map();
+export function normalMapFor(tex, strength = 2.5) {
+  const img = tex?.image; if (!img || !img.getContext) return null;
+  const key = tex.uuid + strength;
+  if (normCache.has(key)) return normCache.get(key);
+  const s = img.width, src = img.getContext('2d').getImageData(0, 0, s, img.height).data, h = img.height;
+  const lum = new Float32Array(s * h);
+  for (let i = 0; i < s * h; i++) lum[i] = (src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114) / 255;
+  const c = document.createElement('canvas'); c.width = s; c.height = h;
+  const g = c.getContext('2d'), out = g.createImageData(s, h), d = out.data;
+  const L = (x, y) => lum[((y + h) % h) * s + ((x + s) % s)];
+  for (let y = 0; y < h; y++) for (let x = 0; x < s; x++) {
+    // filtre de Sobel (bords répétés pour une texture sans couture)
+    const dx = (L(x + 1, y - 1) + 2 * L(x + 1, y) + L(x + 1, y + 1)) - (L(x - 1, y - 1) + 2 * L(x - 1, y) + L(x - 1, y + 1));
+    const dy = (L(x - 1, y + 1) + 2 * L(x, y + 1) + L(x + 1, y + 1)) - (L(x - 1, y - 1) + 2 * L(x, y - 1) + L(x + 1, y - 1));
+    let nx = -dx * strength, ny = dy * strength, nz = 1;
+    const n = Math.hypot(nx, ny, nz); nx /= n; ny /= n; nz /= n;
+    const i = (y * s + x) * 4;
+    d[i] = (nx * 0.5 + 0.5) * 255; d[i + 1] = (ny * 0.5 + 0.5) * 255; d[i + 2] = (nz * 0.5 + 0.5) * 255; d[i + 3] = 255;
+  }
+  g.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.copy(tex.repeat); t.anisotropy = 4;
+  normCache.set(key, t);
+  return t;
+}
 export function envTexture(kind, accent = '#00e5ff') {
   const key = kind + accent;
   if (texCache[key]) return texCache[key];

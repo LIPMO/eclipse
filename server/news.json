@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.10.0",
+    "date": "2026-11-23",
+    "title": "Graphismes améliorés",
+    "items": [
+      "Halo lumineux (bloom) : les néons, le Noyau et les lumières rayonnent, avec un léger vignettage. Superbe sur les cartes de nuit.",
+      "Relief des surfaces : briques, dalles, fissures de glace et caisses en volume, et ombre au pied des murs.",
+      "Particules d'ambiance : poussière dans l'air de jour, lucioles colorées la nuit.",
+      "Ombres plus fines avec le préréglage Ultra.",
+      "Tout se règle dans PARAMÈTRES → Vidéo. Le préréglage « PC faible » désactive ces effets ; sur téléphone, le halo n'est actif qu'en préréglage Haut ou Ultra."
+    ]
+  },
+  {
     "version": "1.9.0",
     "date": "2026-11-23",
     "title": "Groupes entre amis, réactions et menu plus pratique",

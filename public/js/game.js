@@ -5,7 +5,7 @@ import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
 import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER } from '/shared/data.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm } from '/shared/physics.js';
-import { envTexture, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
+import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
 import * as SFX from './audio.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 import { emojify } from './hub.js';
@@ -96,6 +96,7 @@ export class Game {
 
     this.initRenderer();
     this.buildMap();
+    this.setupBloom();
     this.initViewmodel();
     this.initHUD();
     this.bindInput();
@@ -133,10 +134,51 @@ export class Game {
     window.addEventListener('resize', this._onResize);
   }
 
+  // ---------- halo lumineux (bloom) + vignettage : modules chargés seulement quand l'option est active ----------
+  wantBloom() { return ST().bloom !== false && ST().gfxPreset !== 'low' && (!isTouchDevice() || ['high', 'ultra'].includes(ST().gfxPreset)); }
+  async setupBloom() {
+    if (!this.wantBloom()) { this.composer?.dispose?.(); this.composer = null; return; }
+    if (this.composer || this.bloomLoading) return;
+    this.bloomLoading = true;
+    try {
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { ShaderPass }, { OutputPass }] = await Promise.all([
+        import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'),
+        import('three/addons/postprocessing/ShaderPass.js'), import('three/addons/postprocessing/OutputPass.js')]);
+      if (this.destroyed || !this.wantBloom()) return;
+      const night = !!this.map?.theme?.night;
+      const c = new EffectComposer(this.renderer);
+      c.addPass(new RenderPass(this.scene, this.camera));
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), night ? 0.85 : 0.35, night ? 0.6 : 0.45, night ? 0.35 : 0.9);
+      c.addPass(this.bloomPass);
+      c.addPass(new ShaderPass({
+        uniforms: { tDiffuse: { value: null }, strength: { value: night ? 0.38 : 0.28 } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'uniform sampler2D tDiffuse; uniform float strength; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv); vec2 d = vUv - 0.5; float v = 1.0 - strength * smoothstep(0.25, 0.85, length(d) * 1.35); gl_FragColor = vec4(c.rgb * v, c.a); }',
+      }));
+      c.addPass(new OutputPass());
+      this.composer = c;
+      this.onResize();
+    } catch (e) { console.warn('Halo lumineux indisponible', e); this.composer = null; }
+    finally { this.bloomLoading = false; }
+  }
+  updateDust(dt) {
+    const p = this.camera.position, g = this.dust.geometry.attributes.position, a = g.array, t = performance.now() / 1000;
+    this.dust.position.set(0, 0, 0);
+    for (let i = 0; i < a.length; i += 3) {
+      a[i] += Math.sin(t * 0.3 + i) * 0.12 * dt; a[i + 1] += (Math.cos(t * 0.21 + i * 0.7) * 0.08 - 0.02) * dt; a[i + 2] += Math.cos(t * 0.25 + i) * 0.12 * dt;
+      // les particules restent dans un cube de 50 m autour du joueur
+      if (a[i] - p.x > 25) a[i] -= 50; else if (a[i] - p.x < -25) a[i] += 50;
+      if (a[i + 2] - p.z > 25) a[i + 2] -= 50; else if (a[i + 2] - p.z < -25) a[i + 2] += 50;
+      if (a[i + 1] < 0) a[i + 1] += 7; else if (a[i + 1] > 7) a[i + 1] -= 7;
+    }
+    g.needsUpdate = true;
+  }
+
   onResize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ST().gfxPreset === 'ultra' ? 2 : ST().quality === 'high' ? 1.5 : 1) * ST().renderScale);
     this.renderer.setSize(w, h, false);
+    if (this.composer) { this.composer.setPixelRatio(this.renderer.getPixelRatio()); this.composer.setSize(w, h); }
     this.aspect = w / h;
     this.camera.aspect = this.aspect;
     this.vmCam.aspect = this.aspect;
@@ -173,7 +215,7 @@ export class Game {
     sun.castShadow = true;
     const sc = sun.shadow.camera, R = Math.max(W, H) * 0.65;
     sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 10; sc.far = 250;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(ST().gfxPreset === 'ultra' ? 4096 : 2048, ST().gfxPreset === 'ultra' ? 4096 : 2048);
     sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04;
     S.add(sun, sun.target);
 
@@ -187,21 +229,30 @@ export class Game {
       }
     };
     const wallGeos = [], crateGeos = [];
+    const relief = ST().relief !== false && ST().gfxPreset !== 'low';
     for (const b of m.boxes) {
       const sx = b.max[0] - b.min[0], sy = b.max[1] - b.min[1], sz = b.max[2] - b.min[2];
       const g = new THREE.BoxGeometry(sx, sy, sz);
       if (b.kind === 'wall') fixUV(g, sx, sy, sz, 4);
+      if (relief) { // assombrit le bas des murs et des caisses (occlusion ambiante simplifiée)
+        const pos = g.attributes.position, col = new Float32Array(pos.count * 3), low = b.kind === 'wall' ? 0.72 : 0.8;
+        for (let i = 0; i < pos.count; i++) { const k = b.min[1] > 0.05 ? 1 : (pos.getY(i) < 0 ? low : 1); col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k; }
+        g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      }
       g.translate((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
       (b.kind === 'wall' ? wallGeos : crateGeos).push(g);
     }
-    const wallMat = new THREE.MeshStandardMaterial({ map: envTexture(th.wall, th.accent), roughness: 0.92, metalness: th.wall === 'neon' ? 0.3 : 0.02 });
+    const wallMat = new THREE.MeshStandardMaterial({ map: envTexture(th.wall, th.accent), roughness: 0.92, metalness: th.wall === 'neon' ? 0.3 : 0.02, vertexColors: relief });
+    if (relief) { wallMat.normalMap = normalMapFor(wallMat.map, th.wall === 'ice' ? 1.5 : 3); wallMat.normalScale.set(1, 1); }
     if (th.wall === 'neon') { wallMat.emissiveMap = envTexture('neonEmissive', th.accent); wallMat.emissive = new THREE.Color('#ffffff'); wallMat.emissiveIntensity = 1.6; }
     if (th.wall === 'ice') { wallMat.roughness = 0.35; wallMat.metalness = 0.1; }
     const walls = new THREE.Mesh(mergeGeometries(wallGeos), wallMat);
     walls.castShadow = walls.receiveShadow = true;
     S.add(walls);
     if (crateGeos.length) {
-      const crates = new THREE.Mesh(mergeGeometries(crateGeos), new THREE.MeshStandardMaterial({ map: envTexture(th.crate, th.accent), roughness: 0.8 }));
+      const crateMat = new THREE.MeshStandardMaterial({ map: envTexture(th.crate, th.accent), roughness: 0.8, vertexColors: relief });
+      if (relief) crateMat.normalMap = normalMapFor(crateMat.map, 2.5);
+      const crates = new THREE.Mesh(mergeGeometries(crateGeos), crateMat);
       crates.castShadow = crates.receiveShadow = true;
       S.add(crates);
     }
@@ -222,7 +273,9 @@ export class Game {
     const floorTex = envTexture(th.floor, th.accent).clone();
     floorTex.needsUpdate = true;
     floorTex.repeat.set(W / 6, H / 6);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: floorTex, roughness: th.floor === 'snow' ? 0.6 : 0.95 }));
+    const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: th.floor === 'snow' ? 0.6 : 0.95 });
+    if (relief) { const n = normalMapFor(envTexture(th.floor, th.accent), th.floor === 'snow' ? 1.2 : 2.2); if (n) { floorMat.normalMap = n.clone(); floorMat.normalMap.needsUpdate = true; floorMat.normalMap.repeat.copy(floorTex.repeat); } }
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, H), floorMat);
     floor.rotation.x = -Math.PI / 2; floor.position.set(W / 2, 0, H / 2);
     floor.receiveShadow = true;
     S.add(floor);
@@ -294,6 +347,16 @@ export class Game {
     rg.addColorStop(0, 'rgba(255,255,255,1)'); rg.addColorStop(0.4, 'rgba(255,255,255,.5)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
     pg.fillStyle = rg; pg.fillRect(0, 0, 64, 64);
     this.softTex = new THREE.CanvasTexture(pc);
+    // particules d'ambiance : poussière de jour, lucioles colorées la nuit (suivent la caméra)
+    {
+      const N = 420, pos = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 50; pos[i * 3 + 1] = Math.random() * 7; pos[i * 3 + 2] = (Math.random() - 0.5) * 50; }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ map: this.softTex, size: th.night ? 0.16 : 0.07, color: th.night ? th.accent : '#fff4dc', transparent: true, opacity: th.night ? 0.75 : 0.45, depthWrite: false, blending: th.night ? THREE.AdditiveBlending : THREE.NormalBlending, sizeAttenuation: true });
+      this.dust = new THREE.Points(geo, mat); this.dust.frustumCulled = false; this.dust.renderOrder = 2;
+      this.dust.visible = ST().particles !== false && ST().gfxPreset !== 'low';
+      S.add(this.dust);
+    }
     // mini-carte de base
     this.miniBase = document.createElement('canvas'); this.miniBase.width = this.miniBase.height = 220;
     this.miniXf = drawMapPreview(this.miniBase, m);
@@ -807,6 +870,8 @@ export class Game {
     if (all || key === 'vmFov') { this.vmCam.fov = ST().vmFov; this.vmCam.updateProjectionMatrix(); }
     if (all || key === 'renderScale' || key === 'quality') this.onResize();
     if (all || key === 'brightness') this.renderer.toneMappingExposure = ST().brightness;
+    if (all || key === 'bloom' || key === 'gfxPreset') this.setupBloom();
+    if ((all || key === 'particles') && this.dust) this.dust.visible = ST().particles !== false && ST().gfxPreset !== 'low';
     if (all || key.startsWith('ch')) { this.chExtra = -1; applyCrosshair($('crosshair')); }
     if (all || key === 'fps') $('fps').style.display = ST().fps ? 'block' : 'none';
     if (all || key === 'minimap') $('minimap').style.display = ST().minimap ? 'block' : 'none';
@@ -1393,8 +1458,9 @@ export class Game {
     if (this.kc) this.updateKillcam(now);
     animateSkins(now);
 
-    this.renderer.clear();
-    this.renderer.render(this.scene, this.camera);
+    if (this.dust?.visible) this.updateDust(dt);
+    if (this.composer) this.composer.render(dt);
+    else { this.renderer.clear(); this.renderer.render(this.scene, this.camera); }
     if (this.me?.al && !this.scoped && !this.kc && !this.spec?.third) {
       this.renderer.clearDepth();
       this.renderer.render(this.vmScene, this.vmCam);
@@ -2244,6 +2310,7 @@ export class Game {
     for (const u of this.unsubs) u();
     this.touch?.destroy();
     while (this.marks?.length) this.removeMark(0);
+    this.composer?.dispose?.(); this.composer = null;
     this.endKillcam();
     if (this.spec) { this.spec.ghost && this.scene.remove(this.spec.ghost.root); document.body.classList.remove('spectating'); $('spec-panel')?.remove(); }
     if (document.pointerLockElement) { this.expectUnlock = true; document.exitPointerLock(); }

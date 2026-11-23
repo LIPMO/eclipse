@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS = {
   // souris
   sens: 1, sensY: 1, scopeSens: 1, invertY: false, touchSens: 1, touchSize: 1, touchOpacity: 0.55, touchLeft: false,
   // vidéo
-  fov: 100, vmFov: 62, renderScale: 1, brightness: 1.05, quality: 'high', gfxPreset: 'custom', fpsCap: 0, lowFpsTip: true,
+  fov: 100, vmFov: 62, renderScale: 1, brightness: 1.05, quality: 'high', gfxPreset: 'custom', fpsCap: 0, lowFpsTip: true, bloom: true, relief: true, particles: true,
   // interface
   fps: false, minimap: true, hitmarker: true, killcam: true, bob: true, leftHand: false, enemyColor: '#ff4f6d', allyColor: '#19e3c4',
   netGraph: false, damageNumbers: true, chatMode: 'all', chatSize: 1, hudScale: 1, confirmQuit: true,
