@@ -1354,9 +1354,19 @@
 "🙋 J'ai besoin d'une arme ! (# crédits)": "🙋 I need a weapon! (# credits)",
 "🙏 Désolé": "🙏 Sorry",
 "🤖 ENTRAÎNEMENT": "🤖 TRAINING",
-"🤝 Fair-play": "🤝 Fair play"
+"🤝 Fair-play": "🤝 Fair play",
+"Le tag (2 à 5 lettres ou chiffres) s'affiche devant le pseudo de chaque membre, en partie et dans les salons.": "The tag (2 to 5 letters or digits) shows before each member's name, in matches and rooms.",
+"Tu es niveau": "You are level",
+"il faut le niveau": "you need level",
+"pour créer un clan. Joue quelques parties pour gagner de l'XP, ou rejoins un clan sur invitation (sans condition de niveau).": "to create a clan. Play a few matches to earn XP, or join a clan by invitation (no level required).",
+"Tag invalide : 2 à 5 lettres ou chiffres, sans espace ni accent.": "Invalid tag: 2 to 5 letters or digits, no spaces or accents.",
+"Nom du clan : 3 caractères minimum.": "Clan name: at least 3 characters."
 },
 "patterns": [
+[
+"^Il faut être niveau (\\d+) pour créer un clan \\(tu es niveau (\\d+)\\)\\.$",
+"You need level $1 to create a clan (you are level $2)."
+],
 [
 "^(.+) : SÉRIE DE (\\d+) ÉLIMINATIONS !$",
 "$1: $2 KILL STREAK!"

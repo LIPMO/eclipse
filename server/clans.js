@@ -30,6 +30,8 @@ export class Clans {
   }
 
   get A() { return this.ctx.accounts; }
+  // niveau requis pour créer un clan : réglable dans l'administration (Inscriptions et bonus)
+  get minLevel() { const v = Number(this.ctx.admin?.state?.config?.clanMinLevel); return Number.isFinite(v) && v >= 1 ? Math.round(v) : CLAN.minLevel; }
   get clans() { return this.A.data.clans; }
   send(c, obj) { this.ctx.send(c.id, obj); }
   err(c, text) { this.ctx.send(c.id, { type: 'error', text }); }
@@ -76,7 +78,7 @@ export class Clans {
     const key = this.A.key(u.name);
     const cl = this.clanOf(u);
     const invites = Object.values(this.clans).filter(x => x.invites.includes(key)).map(x => ({ tag: x.tag, name: x.name, members: x.members.length }));
-    return { type: 'clan', clan: cl ? this.view(cl, key) : null, invites };
+    return { type: 'clan', clan: cl ? this.view(cl, key) : null, invites, minLevel: this.minLevel, myLevel: levelOf(u.xp || 0) };
   }
   push(key) { const c = this.online(key); const u = this.A.get(key); if (c && u) this.send(c, this.payload(u)); }
   pushAll(cl) { for (const k of cl.members) this.push(k); }
@@ -101,7 +103,7 @@ export class Clans {
 
   m_clanCreate(c, u, msg) {
     if (u.clan) return this.err(c, 'Tu fais déjà partie d\'un clan.');
-    if (levelOf(u.xp || 0) < CLAN.minLevel) return this.err(c, `Il faut être niveau ${CLAN.minLevel} pour créer un clan.`);
+    if (levelOf(u.xp || 0) < this.minLevel) return this.err(c, `Il faut être niveau ${this.minLevel} pour créer un clan (tu es niveau ${levelOf(u.xp || 0)}).`);
     const tag = clean(msg.tag, 5).toUpperCase();
     const name = clean(msg.name, CLAN.nameMax);
     if (!CLAN.tagRe.test(tag)) return this.err(c, 'Tag invalide : 2 à 5 lettres ou chiffres.');

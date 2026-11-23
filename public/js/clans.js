@@ -14,7 +14,8 @@ export function initClans(ctx) {
   ({ net, state, toast } = ctx);
   hub.clanStaff = () => !!C.data?.clan && C.data.clan.myRole !== 'member';
   net.on('clan', m => {
-    const changed = (C.data?.clan?.tag || null) !== (m.clan?.tag || null);
+    // le classement est redemandé quand on change de clan ou que le nombre de membres change
+    const changed = (C.data?.clan?.tag || null) !== (m.clan?.tag || null) || (C.data?.clan?.members?.length || 0) !== (m.clan?.members?.length || 0);
     C.data = m; updateBadge();
     if (state.tab === 'clan') { renderClan(); if (changed) net.send('clanLeaderboard'); }
   });
@@ -48,9 +49,11 @@ export function renderClan() {
   const cl = d.clan;
   let left;
   if (!cl) {
+    const need = d.minLevel || 3, lvl = d.myLevel || 1, locked = lvl < need;
     left = `<div class="panel"><h3>CRÉER UN CLAN</h3>
-        <p class="muted small">Le tag (2 à 5 lettres ou chiffres) s'affiche devant le pseudo de chaque membre, en partie et dans les salons. Niveau 3 requis.</p>
-        <form id="cl-create" class="cl-form"><input id="cl-tag" maxlength="5" placeholder="TAG" autocomplete="off" style="text-transform:uppercase"><input id="cl-name" maxlength="24" placeholder="Nom du clan"><button class="btn primary" type="submit">CRÉER</button></form></div>
+        <p class="muted small">Le tag (2 à 5 lettres ou chiffres) s'affiche devant le pseudo de chaque membre, en partie et dans les salons.${need > 1 ? ` Niveau ${need} requis.` : ''}</p>
+        ${locked ? `<p class="cl-lock">🔒 Tu es niveau <b>${lvl}</b> : il faut le niveau <b>${need}</b> pour créer un clan. Joue quelques parties pour gagner de l'XP, ou rejoins un clan sur invitation (sans condition de niveau).</p>` : ''}
+        <form id="cl-create" class="cl-form"><input id="cl-tag" maxlength="5" placeholder="TAG" autocomplete="off" style="text-transform:uppercase" ${locked ? 'disabled' : ''}><input id="cl-name" maxlength="24" placeholder="Nom du clan" ${locked ? 'disabled' : ''}><button class="btn primary" type="submit" ${locked ? 'disabled' : ''}>CRÉER</button></form></div>
       <div class="panel"><h3>INVITATIONS REÇUES (${d.invites.length})</h3>
         ${d.invites.map(i => `<div class="fr-row on"><b>[${esc(i.tag)}]</b> ${esc(i.name)} <span class="muted small">${i.members} membre(s)</span><span class="grow"></span><button class="btn small ghost" data-c="view" data-t="${esc(i.tag)}">VOIR</button><button class="btn small primary" data-c="accept" data-t="${esc(i.tag)}">REJOINDRE</button><button class="btn small ghost" data-c="decline" data-t="${esc(i.tag)}">✕</button></div>`).join('') || '<p class="muted">Aucune invitation. Un chef ou un officier peut t\'inviter depuis son onglet CLAN.</p>'}</div>`;
   } else {
@@ -79,7 +82,13 @@ export function renderClan() {
     </div></div>`;
   renderClanChat(); renderClanLb();
   const f = id => $(id);
-  if (f('cl-create')) f('cl-create').onsubmit = e => { e.preventDefault(); net.send('clanCreate', { tag: f('cl-tag').value.trim().toUpperCase(), name: f('cl-name').value.trim() }); };
+  if (f('cl-create')) f('cl-create').onsubmit = e => {
+    e.preventDefault();
+    const tag = f('cl-tag').value.trim().toUpperCase(), name = f('cl-name').value.trim();
+    if (!/^[A-Z0-9]{2,5}$/.test(tag)) return toast('Tag invalide : 2 à 5 lettres ou chiffres, sans espace ni accent.');
+    if (name.length < 3) return toast('Nom du clan : 3 caractères minimum.');
+    net.send('clanCreate', { tag, name });
+  };
   if (f('cl-inv')) f('cl-inv').onsubmit = e => { e.preventDefault(); const n = f('cl-inv-name').value.trim(); if (n) net.send('clanInvite', { name: n }); f('cl-inv-name').value = ''; };
   if (f('cl-desc')) f('cl-desc').onsubmit = e => { e.preventDefault(); net.send('clanDesc', { desc: f('cl-desc-in').value }); };
   if (f('cl-motd')) f('cl-motd').onsubmit = e => { e.preventDefault(); net.send('clanMotd', { motd: f('cl-motd-in').value }); };

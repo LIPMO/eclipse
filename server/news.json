@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.11.1",
+    "date": "2026-11-23",
+    "title": "Correctifs : clans",
+    "items": [
+      "Clans : l'onglet CLAN indique clairement ton niveau et le niveau requis pour créer un clan, au lieu d'un bouton qui ne faisait rien.",
+      "Clans : le niveau requis (3 par défaut) se règle dans l'administration, Configuration → Inscriptions et bonus (1 = tout le monde).",
+      "Clans : le classement se met à jour quand un membre rejoint ou quitte le clan, et ses liens sont lisibles."
+    ]
+  },
+  {
     "version": "1.11.0",
     "date": "2026-11-23",
     "title": "Manette, jeu en anglais, revente d'armes et 27 nouveautés en partie",

@@ -448,6 +448,7 @@ const VIEWS = {
         <div class="card" data-section="regs"><h3>Inscriptions et bonus</h3>
           ${num('maxAccountsPerIp', 'Comptes créés au maximum par connexion (IP) en 24 h (0 = illimité)', 0, 50, 1, 'Limite les comptes multiples et le contournement des bans.')}
           ${chk('weekendXp', 'Bonus d\'XP du week-end (×1,5 le samedi et le dimanche)')}
+          ${num('clanMinLevel', 'Niveau requis pour créer un clan', 1, 50, 1, '1 = tout le monde peut créer un clan dès l\'inscription.')}
           <button class="btn primary" data-act="cfgSave" data-section="regs">Enregistrer</button></div>
         <div class="card" data-section="perf"><h3>Performances, sauvegardes et limites</h3>
           ${chk('perfAlerts', 'Alerter le staff quand le serveur ralentit', 'Message au staff connecté (et sur Discord si coché) quand le calcul du jeu dépasse le seuil pendant 15 s, ou si la mémoire dépasse 85 %. Au plus une alerte toutes les 10 minutes.')}
