@@ -20,8 +20,6 @@ BRANCH=${ECLIPSE_BRANCH:-main}
 MAX_WAIT_MIN=${ECLIPSE_MAX_WAIT_MIN:-360}
 UPDATER=${ECLIPSE_UPDATER:-/usr/local/sbin/eclipse-maj}
 UNIT_FILE=/etc/systemd/system/eclipse.service
-DEPLOY_KEY=/root/.ssh/eclipse_deploy # anciennes installations (1.6 à 1.11) : clé SSH, encore prise en charge
-KNOWN_HOSTS=/root/.ssh/known_hosts_github
 export GIT_TERMINAL_PROMPT=0
 
 log() { echo "[maj-auto] $*"; }
@@ -34,10 +32,7 @@ flock -n 9 || { log "Une mise à jour est déjà en cours."; exit 0; }
 [ -d "$REPO_DIR/.git" ] || { log "Dépôt $REPO_DIR absent : lance d'abord scripts/installer-maj-auto.sh."; exit 1; }
 [ -x "$UPDATER" ] || { log "Programme de mise à jour $UPDATER absent."; exit 1; }
 
-# connexion à GitHub : HTTPS (certificat vérifié par git) ; clé SSH seulement si une ancienne installation l'a créée
-if [ -f "$DEPLOY_KEY" ] && [ -f "$KNOWN_HOSTS" ]; then
-  export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$KNOWN_HOSTS -o StrictHostKeyChecking=yes -o BatchMode=yes"
-fi
+# connexion à GitHub : HTTPS, le certificat est vérifié par git (aucune clé)
 git -C "$REPO_DIR" fetch --quiet origin "$BRANCH" || { log "Impossible de lire le dépôt sur GitHub (réseau, ou accès au dépôt privé refusé)."; exit 1; }
 
 NEW=$(git -C "$REPO_DIR" rev-parse "origin/$BRANCH")

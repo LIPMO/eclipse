@@ -60,6 +60,9 @@ export GIT_TERMINAL_PROMPT=0 # jamais de question bloquante : un accès refusé 
 # --- 1. accès au dépôt (HTTPS) --------------------------------------------------
 # un clone déjà présent (fait à la main) est réutilisé tel quel, sauf si --repo est donné
 if [ -d "$REPO_DIR/.git" ] && [ "$REPO_SET" = 0 ]; then REPO_URL=$(git -C "$REPO_DIR" remote get-url origin); fi
+# une ancienne installation peut avoir une adresse SSH : on repasse en HTTPS, sans clé
+REPO_URL=$(printf %s "$REPO_URL" | sed -E 's#^git@github.com:#https://github.com/#')
+if [ -d "$REPO_DIR/.git" ]; then git -C "$REPO_DIR" remote set-url origin "$REPO_URL" 2>/dev/null || true; fi
 if ! git ls-remote "$REPO_URL" main >/dev/null 2>&1; then
   echo
   warn "Le serveur ne peut pas lire $REPO_URL."
