@@ -13,7 +13,7 @@ const LB_KINDS = [['level', 'Niveau'], ['week', 'Semaine'], ['elo', 'Elo duel'],
 const toLocalInput = t => { if (!t) return ''; const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const TAGS = { surveille: ['Surveillé', 'danger'], suspect: ['Suspect', 'danger'], vip: ['VIP', 'admin'], testeur: ['Testeur', ''], createur: ['Créateur', 'admin'], partenaire: ['Partenaire', 'ok'] };
 const tagBadges = tags => (tags || []).map(t => TAGS[t] ? `<span class="badge ${TAGS[t][1]}">${TAGS[t][0]}</span>` : '').join(' ');
-const LOG_TYPES = { tournoi: 'Tournois', clan: 'Clans', securite: 'Sécurité', systeme: 'Système', auth: 'Connexions', connexion: 'Déconnexions', partie: 'Parties', kill: 'Éliminations', moderation: 'Modération', admin: 'Admin' };
+const LOG_TYPES = { client: 'Navigateurs', tournoi: 'Tournois', clan: 'Clans', securite: 'Sécurité', systeme: 'Système', auth: 'Connexions', connexion: 'Déconnexions', partie: 'Parties', kill: 'Éliminations', moderation: 'Modération', admin: 'Admin' };
 const DURATIONS = [['15', '15 minutes'], ['60', '1 heure'], ['360', '6 heures'], ['1440', '1 jour'], ['4320', '3 jours'], ['10080', '7 jours'], ['43200', '30 jours'], ['0', 'Définitif']];
 
 const S = {
@@ -35,6 +35,8 @@ function fmtDur(sec) {
   if (d) return `${d} j ${hh} h`; if (hh) return `${hh} h ${m} min`; if (m) return `${m} min`; return `${sec} s`;
 }
 const fmtBytes = b => b > 1e9 ? (b / 1e9).toFixed(2) + ' Go' : b > 1e6 ? (b / 1e6).toFixed(1) + ' Mo' : Math.round(b / 1e3) + ' Ko';
+const fmtCfg = v => v === true ? 'oui' : v === false ? 'non' : v === '' || v == null ? '(vide)' : typeof v === 'number' && v > 1e12 ? fmtDate(v) : String(v);
+const flag = cc => /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map(c => 0x1F1A5 + c.charCodeAt(0))) : '';
 const roleBadge = r => r && r !== 'player' ? `<span class="badge ${r}">${ROLE[r]}</span>` : '';
 const kd = (k, d) => d ? (k / d).toFixed(2) : String(k || 0);
 const until = t => !t ? '<span class="badge danger">Définitif</span>' : `${fmtDate(t)} <span class="muted small">(${fmtDur((t - Date.now()) / 1000)})</span>`;
@@ -142,7 +144,9 @@ const VIEWS = {
       const k = (v, l, s = '') => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
       const hs = o.totals.kills ? Math.round(o.totals.headshots / o.totals.kills * 100) : 0;
       const tickCls = o.tick.avg > 20 ? 'bad' : o.tick.avg > 10 ? 'warn-t' : 'ok';
-      return `<div class="grid kpis">
+      const banner = (o.pendingRestart ? `<div class="banner warn">⟳ Redémarrage programmé par <b>${h(o.pendingRestart.by)}</b> : il aura lieu dès que plus aucune partie n'est en cours. ${lvl() >= 3 ? '<button class="btn small" data-act="restartCancel">Annuler</button>' : ''}</div>` : '')
+        + (o.maintSchedule ? `<div class="banner warn">🛠 Maintenance programmée le ${fmtDate(o.maintSchedule.at)} (par ${h(o.maintSchedule.by)})${o.maintSchedule.msg ? ' : ' + h(o.maintSchedule.msg) : ''} ${lvl() >= 2 ? '<button class="btn small" data-act="maintCancel">Annuler</button>' : ''}</div>` : '');
+      return banner + `<div class="grid kpis">
         ${k(o.online, 'Joueurs en ligne', `${o.guests} invité(s) · ${o.connections} connexion(s)`)}
         ${k(o.inGame, 'En partie', `${o.matches} partie(s) en cours`)}
         ${k(o.rooms, 'Salons ouverts')}
@@ -169,6 +173,7 @@ const VIEWS = {
         <div class="card"><h3>Précision par arme</h3>${(S.wstats || []).length ? `<table><thead><tr><th>Arme</th><th>Éliminations</th><th>À la tête</th></tr></thead><tbody>${S.wstats.slice(0, 12).map(w => `<tr><td>${h(w.name)}</td><td>${w.kills}</td><td>${w.kills ? Math.round(w.hs / w.kills * 100) : 0} %</td></tr>`).join('')}</tbody></table>` : '<div class="muted small">Pas encore de données.</div>'}</div>
         <div class="card"><h3>Heures de pointe <span class="muted small">(moyenne de joueurs en ligne)</span></h3>${S.peaks?.samples ? `<div class="hours">${S.peaks.hours.map((v, i) => { const mx = Math.max(1, ...S.peaks.hours); return `<div title="${i} h : ${v}"><i style="height:${Math.round(v / mx * 100)}%"></i><span>${i % 3 === 0 ? i : ''}</span></div>`; }).join('')}</div>` : '<div class="muted small">Les données s\'accumulent minute par minute.</div>'}</div>
         <div class="card"><h3>Rapport des 7 derniers jours</h3>${S.week ? `<dl class="kv"><dt>Nouveaux comptes</dt><dd>${S.week.newAccounts}</dd><dt>Joueurs actifs</dt><dd>${S.week.active}</dd><dt>Parties</dt><dd>${S.week.matches}</dd><dt>Pic de connexions</dt><dd>${S.week.peak}</dd><dt>Signalements</dt><dd>${S.week.reports}</dd><dt>Bans</dt><dd>${S.week.bans}</dd><dt>Meilleurs joueurs</dt><dd>${S.week.top.map(t => `${h(t.name)} <span class="muted small">(${t.xp} XP)</span>`).join(', ') || '—'}</dd></dl>` : ''}</div>
+        <div class="card"><h3>Dernières sanctions</h3>${o.recentSanctions?.length ? `<table><tbody>${o.recentSanctions.map(a => `<tr><td class="small">${fmtDate(a.t)}</td><td><b>${h(a.action)}</b><div class="muted small">${h(a.detail)}</div></td><td class="small">${h(a.by)}</td></tr>`).join('')}</tbody></table>` : '<div class="muted small">Aucune sanction récente.</div>'}</div>
         <div class="card"><h3>Observations en cours</h3>${S.specs?.length ? S.specs.map(x => `<div class="small">👁 <b>${h(x.staff)}</b> observe <b>${h(x.target)}</b> <span class="muted">(${h(x.room)})</span></div>`).join('') : '<div class="muted small">Personne n\'observe de partie.</div>'}</div>
         <div class="card"><h3>Inscriptions par jour</h3>${bars(o.regsByDay.map(([d, v]) => ({ label: d.slice(5).split('-').reverse().join('/'), value: v })))}</div>
         <div class="card"><h3>Parties par jour</h3>${bars(o.matchesByDay.map(([d, v]) => ({ label: d.slice(5).split('-').reverse().join('/'), value: v })))}</div>
@@ -278,7 +283,7 @@ const VIEWS = {
     update() {
       const t = S.modTab;
       let html = '';
-      if (t === 'bans') html = `<div class="toolbar"><button class="btn primary small" data-act="newBan">＋ Nouveau ban</button><span class="muted small">Les bans temporaires se lèvent automatiquement à expiration.</span></div>
+      if (t === 'bans') html = `<div class="toolbar"><button class="btn primary small" data-act="newBan">＋ Nouveau ban</button>${lvl() >= 2 ? '<button class="btn small" data-act="exportBans">⇩ Bans (CSV)</button><button class="btn small" data-act="exportReports">⇩ Signalements (CSV)</button>' : ''}<span class="muted small">Les bans temporaires se lèvent automatiquement à expiration.</span></div>
         <div class="tbl-wrap"><table><thead><tr><th>Cible</th><th>Type</th><th>Raison</th><th>Par</th><th>Le</th><th>Expire</th><th></th></tr></thead><tbody>
         ${S.bans.map(b => `<tr><td><b>${h(b.label)}</b></td><td>${b.type === 'ip' ? 'Adresse IP' : 'Compte'}</td><td>${h(b.reason)}</td><td>${h(b.by)}</td><td>${fmtDate(b.at)}</td><td>${until(b.until)}</td>
           <td><button class="btn small" data-act="unban" data-id="${h(b.id)}" data-name="${h(b.label)}">Débannir</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Aucun ban actif.</td></tr>'}</tbody></table></div>`;
@@ -393,7 +398,7 @@ const VIEWS = {
 
   config: {
     title: 'Configuration', live: false,
-    async load() { const r = await api('config'); S.config = r.config; S.weaponDefaults = r.weaponDefaults; S.weapons = r.weapons; },
+    async load() { const [r, hist] = await Promise.all([api('config'), api('config/history')]); S.config = r.config; S.weaponDefaults = r.weaponDefaults; S.weapons = r.weapons; S.cfgHist = hist; },
     render() {
       const c = S.config;
       const chk = (k, l, help = '') => `<label class="check"><input type="checkbox" data-k="${k}" ${c[k] ? 'checked' : ''}> ${l}</label>${help ? `<div class="muted small" style="margin:-6px 0 10px 26px">${help}</div>` : ''}`;
@@ -444,6 +449,22 @@ const VIEWS = {
           ${num('maxAccountsPerIp', 'Comptes créés au maximum par connexion (IP) en 24 h (0 = illimité)', 0, 50, 1, 'Limite les comptes multiples et le contournement des bans.')}
           ${chk('weekendXp', 'Bonus d\'XP du week-end (×1,5 le samedi et le dimanche)')}
           <button class="btn primary" data-act="cfgSave" data-section="regs">Enregistrer</button></div>
+        <div class="card" data-section="perf"><h3>Performances, sauvegardes et limites</h3>
+          ${chk('perfAlerts', 'Alerter le staff quand le serveur ralentit', 'Message au staff connecté (et sur Discord si coché) quand le calcul du jeu dépasse le seuil pendant 15 s, ou si la mémoire dépasse 85 %. Au plus une alerte toutes les 10 minutes.')}
+          ${num('perfTickMs', 'Seuil de lenteur (ms par image de jeu)', 5, 200, 1, 'Le budget est de 33 ms. 30 ms = le jeu commence à saccader.')}
+          ${chk('discordPerf', 'Envoyer aussi ces alertes sur Discord')}
+          ${chk('autoBackup', 'Sauvegarde automatique chaque jour', 'Comptes, clans, tournois et administration, copiés dans data/backups.')}
+          ${num('backupKeep', 'Nombre de sauvegardes conservées', 1, 30)}
+          <div class="row">${num('rateChat', 'Messages de chat d\'affilée (par joueur)', 2, 30, 1, 'Défaut : 5. Ensuite, environ 1 message par seconde.')}${num('rateSocial', 'Actions sociales d\'affilée', 4, 60, 1, 'Profil, clan, tournoi, cadeaux. Défaut : 12.')}</div>
+          <button class="btn primary" data-act="cfgSave" data-section="perf">Enregistrer</button></div>
+        <div class="card"><h3>Maintenance programmée</h3>
+          ${c.maintenance ? '<p><span class="badge danger">MAINTENANCE ACTIVE</span> Désactive-la dans « Accès au serveur ».</p>' : ''}
+          ${S.ov?.maintSchedule ? `<p>Prévue le <b>${fmtDate(S.ov.maintSchedule.at)}</b>${S.ov.maintSchedule.msg ? ' : ' + h(S.ov.maintSchedule.msg) : ''}</p><button class="btn" data-act="maintCancel">Annuler la maintenance prévue</button>`
+            : `<p class="muted small">Les joueurs sont prévenus tout de suite, puis 10, 5 et 1 minute avant. Plus aucune partie ne peut commencer dans les 5 dernières minutes. À l'heure dite, la maintenance s'active et les joueurs (hors staff) sont déconnectés.</p>
+          <div class="row"><div class="field"><label>Dans (minutes)</label><input type="number" id="mt-min" value="15" min="1" max="1440"></div><div class="field grow"><label>Message (facultatif)</label><input id="mt-msg" maxlength="200" placeholder="Mise à jour du jeu"></div></div>
+          <button class="btn primary" data-act="maintSchedule">Programmer</button>`}</div>
+        <div class="card" style="grid-column:1/-1"><h3>Historique des modifications de la configuration</h3>
+          ${S.cfgHist?.length ? `<div class="tbl-wrap" style="max-height:340px"><table><thead><tr><th>Date</th><th>Par</th><th>Réglage</th><th>Avant</th><th>Après</th><th></th></tr></thead><tbody>${S.cfgHist.slice(0, 100).map(x => `<tr><td class="small">${fmtDate(x.t)}</td><td><b>${h(x.by)}</b></td><td>${h(x.label)}</td><td class="muted">${h(fmtCfg(x.old))}</td><td>${h(fmtCfg(x.new))}</td><td>${x.revertable ? `<button class="btn small ghost" data-act="cfgRevert" data-id="${h(x.id)}" data-label="${h(x.label)}" data-old="${h(fmtCfg(x.old))}">Remettre l'ancienne valeur</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Aucune modification enregistrée pour l\'instant.</div>'}</div>
         <div class="card danger-zone"><h3>Zone sensible</h3>
           <p class="muted small">Remet à zéro les statistiques globales du tableau de bord (parties, éliminations, popularité). Les comptes ne sont pas touchés.</p>
           <button class="btn danger" data-act="statsReset">Réinitialiser les statistiques globales</button></div>
@@ -454,7 +475,7 @@ const VIEWS = {
   logs: {
     title: 'Journaux', live: true,
     async load(full) {
-      if (S.logTab === 'audit') { S.audit = await api('audit'); return; }
+      if (S.logTab === 'audit') { S.audit = await api(`audit?q=${encodeURIComponent(S.auditQ || '')}&days=${S.auditDays || 0}`); return; }
       const last = full ? 0 : (S.logs[S.logs.length - 1]?.id || 0);
       const rows = await api(`logs?since=${last}&type=${S.logType}&q=${encodeURIComponent(S.logQ)}`);
       S.logsNew = rows; S.logs = full ? rows : S.logs.concat(rows).slice(-1500);
@@ -469,7 +490,9 @@ const VIEWS = {
       if (S.logTab === 'audit') {
         const staff = [...new Set((S.audit || []).map(a => a.by))].sort();
         const rows = (S.audit || []).filter(a => !S.auditBy || a.by === S.auditBy);
-        $('list').innerHTML = `<div class="toolbar"><label class="muted small">Membre du staff : <select data-input="auditBy"><option value="">Tous</option>${staff.map(n => `<option ${S.auditBy === n ? 'selected' : ''}>${h(n)}</option>`).join('')}</select></label><span class="muted small">${rows.length} action(s)</span></div><div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Membre</th><th>Action</th><th>Détail</th></tr></thead><tbody>
+        $('list').innerHTML = `<div class="toolbar"><label class="muted small">Membre du staff : <select data-input="auditBy"><option value="">Tous</option>${staff.map(n => `<option ${S.auditBy === n ? 'selected' : ''}>${h(n)}</option>`).join('')}</select></label>
+          <label class="muted small">Période : <select data-input="auditDays">${[[0, 'Tout'], [1, '24 h'], [7, '7 jours'], [30, '30 jours']].map(([v, l]) => `<option value="${v}" ${+(S.auditDays || 0) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <input class="grow" data-input="auditQ" placeholder="Rechercher une action ou un joueur…" value="${h(S.auditQ || '')}"><span class="muted small">${rows.length} action(s)</span></div><div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Membre</th><th>Action</th><th>Détail</th></tr></thead><tbody>
           ${rows.map(a => `<tr><td>${fmtDate(a.t)}</td><td><b>${h(a.by)}</b></td><td>${h(a.action)}</td><td class="muted">${h(a.detail)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Aucune action enregistrée.</td></tr>'}</tbody></table></div>`;
         return;
       }
@@ -622,8 +645,8 @@ const VIEWS = {
   system: {
     title: 'Système & métriques', live: true,
     async load() {
-      const [staff, metrics] = await Promise.all([lvl() >= 1 ? api('accounts?filter=staff&sort=role&dir=desc').then(r => r.rows) : [], api('metrics')]);
-      S.staff = staff; S.metrics = metrics;
+      const [staff, metrics, health, perms, backups] = await Promise.all([lvl() >= 1 ? api('accounts?filter=staff&sort=role&dir=desc').then(r => r.rows) : [], api('metrics'), api('health'), S.perms ? Promise.resolve(S.perms) : api('permissions'), lvl() >= 3 ? api('backups') : Promise.resolve(null)]);
+      Object.assign(S, { staff, metrics, health, perms, backups });
     },
     after() {
       const m = S.metrics; if (!m) return;
@@ -644,22 +667,30 @@ const VIEWS = {
         <div class="card"><h3>Latence <span class="seg">${[[60, '1 h'], [360, '6 h'], [1440, '24 h']].map(([v, l]) => `<button data-act="range" data-v="${v}" class="${S.range === v ? 'active' : ''}">${l}</button>`).join('')}</span></h3><canvas class="chart" id="ch-ping"></canvas></div>
         <div class="card"><h3>Erreurs et charge du serveur</h3><canvas class="chart" id="ch-err"></canvas></div>
         <div class="card"><h3>Ping des joueurs connectés</h3>${m.pings.length ? `<table><thead><tr><th>Joueur</th><th>Ping</th><th>Salon</th></tr></thead><tbody>${m.pings.slice(0, 30).map(p => `<tr><td>${h(p.name)}</td><td class="${p.ping > 150 ? 'bad' : p.ping > 80 ? 'warn-t' : 'ok'}">${p.ping ? p.ping + ' ms' : '—'}</td><td class="muted">${h(p.room)}</td></tr>`).join('')}</tbody></table>` : '<div class="muted small">Aucun joueur connecté.</div>'}</div>
+        <div class="card" style="grid-column:1/-1"><h3>Santé du serveur ${S.health ? `<span class="badge ${S.health.overall === 'ok' ? 'ok' : 'danger'}">${{ ok: 'TOUT VA BIEN', warn: 'À SURVEILLER', bad: 'PROBLÈME' }[S.health.overall]}</span>` : ''}</h3>
+          ${S.health ? `<div class="health">${S.health.checks.map(c => `<div class="hc hc-${c.state}"><i>${{ ok: '✔', warn: '!', bad: '✖' }[c.state]}</i><b>${h(c.name)}</b><span class="muted small">${h(c.detail)}</span></div>`).join('')}</div>` : ''}</div>
+        <div class="card"><h3>Latence par pays</h3>${m.byCountry?.length ? `<table><thead><tr><th>Pays</th><th>Joueurs</th><th>Ping moyen</th></tr></thead><tbody>${m.byCountry.map(c => `<tr><td>${c.country === '??' ? '<span class="muted">Inconnu</span>' : `${flag(c.country)} ${h(c.country)}`}</td><td>${c.players}</td><td class="${c.avgPing > 150 ? 'bad' : c.avgPing > 80 ? 'warn-t' : 'ok'}">${c.avgPing ? c.avgPing + ' ms' : '—'}</td></tr>`).join('')}</tbody></table><p class="muted small">Le pays est fourni par Cloudflare (sans enregistrer d'adresse). En local, il reste « Inconnu ».</p>` : '<div class="muted small">Aucun joueur connecté.</div>'}</div>
+        <div class="card"><h3>Erreurs dans les navigateurs</h3>${m.clientErrors?.length ? `<div class="feed" style="max-height:300px">${m.clientErrors.map(e => `<div class="ln"><span class="tm">${fmtTime(e.t)}</span><span>${h(e.who)}</span><span>${h(e.text)}${e.src ? ` <span class="muted">(${h(e.src)}:${e.line})</span>` : ''}</span><span></span></div>`).join('')}</div>` : '<div class="muted small">Aucune erreur remontée par les joueurs. 👍</div>'}</div>
         <div class="card"><h3>Dernières erreurs</h3>${m.errors.length ? `<div class="feed" style="max-height:300px">${m.errors.map(e => `<div class="ln"><span class="tm">${fmtTime(e.t)}</span><span></span><span>${h(e.text)}</span><span></span></div>`).join('')}</div>` : '<div class="muted small">Aucune erreur enregistrée. 👍</div>'}</div>
       </div>
       <div class="grid cols-2" style="margin-top:14px">
         <div class="card"><h3>Mon compte</h3><dl class="kv"><dt>Pseudo</dt><dd><b>${h(S.me.name)}</b></dd><dt>Rôle</dt><dd>${roleBadge(S.me.role)}</dd></dl>
           <h3 style="margin-top:18px">Ce que chaque rôle peut faire</h3>
-          <dl class="kv small"><dt><span class="badge mod">Modérateur</span></dt><dd>Voir tout, expulser, réduire au silence, bannir jusqu'à 7 jours, gérer les salons et les parties, traiter les signalements.</dd>
-          <dt><span class="badge admin">Admin</span></dt><dd>En plus : comptes (Éclats, skins, mots de passe, rôles modérateur), annonces, notes, configuration, équilibrage, exports, bans définitifs.</dd>
-          <dt><span class="badge owner">Propriétaire</span></dt><dd>Tout, y compris nommer des admins, télécharger la sauvegarde complète et redémarrer le serveur.</dd></dl></div>
+          <p class="muted small">Chaque rôle a aussi les droits des rôles en dessous. Un modérateur peut bannir 7 jours au maximum.</p>
+          ${S.perms ? `<div class="tbl-wrap" style="max-height:320px"><table class="perms"><thead><tr><th>Action</th>${S.perms.roles.map(r => `<th title="${h(r.label)}">${{ mod: 'Modo', admin: 'Admin', owner: 'Proprio' }[r.id]}</th>`).join('')}</tr></thead><tbody>${S.perms.actions.map(a => `<tr><td>${h(a.label)}</td>${S.perms.roles.map(r => `<td class="${r.level >= a.level ? 'ok' : 'muted'}">${r.level >= a.level ? '✔' : '—'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}</div>
         <div class="card"><h3>Équipe (${S.staff.length})</h3>${S.staff.length ? `<table><tbody>${S.staff.map(s => `<tr class="click" data-act="openAccount" data-name="${h(s.name)}"><td><b>${h(s.name)}</b></td><td>${roleBadge(s.role)}</td><td>${s.online ? '<span class="badge live">En ligne</span>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="muted">Aucun membre.</div>'}
           <p class="muted small">Pour nommer quelqu'un : Comptes → clic sur le joueur → Changer le rôle.</p></div>
         <div class="card"><h3>Sauvegardes et exports</h3>
           <div class="row" style="align-items:center">${lvl() >= 3 ? '<button class="btn primary" data-act="backup">⇩ Sauvegarde complète</button>' : ''}
           ${lvl() >= 2 ? '<button class="btn" data-act="exportAccounts">⇩ Comptes (CSV)</button><button class="btn" data-act="exportLogs">⇩ Journaux (JSON)</button>' : '<span class="muted small">Réservé aux administrateurs.</span>'}</div>
-          <p class="muted small">La sauvegarde complète contient tous les comptes (mots de passe hachés) et la configuration. Garde-la en lieu sûr.</p></div>
+          ${lvl() >= 2 ? '<div class="row" style="margin-top:8px"><button class="btn" data-act="exportBans">⇩ Bans (CSV)</button><button class="btn" data-act="exportReports">⇩ Signalements (CSV)</button><button class="btn" data-act="exportMatches">⇩ Parties (CSV)</button></div>' : ''}
+          <p class="muted small">La sauvegarde complète contient tous les comptes (mots de passe hachés) et la configuration. Garde-la en lieu sûr.</p>
+          ${S.backups ? `<h3 style="margin-top:18px">Sauvegardes automatiques ${S.backups.auto ? '<span class="badge ok">actives</span>' : '<span class="badge danger">désactivées</span>'}</h3>
+            <p class="muted small">Une par jour dans <code>data/backups</code>, les ${S.backups.keep} plus récentes sont gardées. Dernière : ${S.backups.last ? fmtDate(S.backups.last) : 'aucune'}.</p>
+            <button class="btn small primary" data-act="backupNow">Sauvegarder maintenant</button>
+            ${S.backups.list.length ? `<table style="margin-top:8px"><tbody>${S.backups.list.map(b => `<tr><td>${h(b.name)}</td><td class="muted small">${fmtBytes(b.size)}</td><td><button class="btn small ghost" data-act="backupGet" data-name="${h(b.name)}">⇩</button></td></tr>`).join('')}</tbody></table>` : ''}` : ''}</div>
         <div class="card danger-zone"><h3>Serveur</h3><dl class="kv"><dt>Version</dt><dd>${h(o.version || '')}</dd><dt>En ligne depuis</dt><dd>${o.uptime != null ? fmtDur(o.uptime) : ''}</dd><dt>Node.js</dt><dd>${h(o.node || '')}</dd><dt>Système</dt><dd>${h(o.platform || '')}</dd></dl>
-          ${lvl() >= 3 ? '<button class="btn danger" data-act="restart" style="margin-top:12px">Redémarrer le serveur</button><p class="muted small">Les joueurs sont déconnectés quelques secondes. Le service systemd ou Docker relance le jeu automatiquement.</p>' : ''}</div>
+          ${lvl() >= 3 ? `<div class="row" style="margin-top:12px">${o.pendingRestart ? '<button class="btn" data-act="restartCancel">Annuler le redémarrage programmé</button>' : '<button class="btn primary" data-act="restartWhenEmpty">Redémarrer quand plus personne ne joue</button>'}<button class="btn danger" data-act="restart">Redémarrer maintenant</button></div><p class="muted small">« Quand plus personne ne joue » attend la fin de toutes les parties (aucune nouvelle partie ne peut commencer d'ici là). Les joueurs sont déconnectés quelques secondes, puis le service systemd ou Docker relance le jeu.</p>` : ''}</div>
       </div>`;
     },
     keepWhileEditing: true,
@@ -677,7 +708,7 @@ async function openAccount(name) {
       <div class="quick-bans"><span class="muted small">Ban rapide :</span>${[[60, '1 h'], [1440, '24 h'], [10080, '7 j'], ...(L >= 2 ? [[0, 'définitif']] : [])].map(([m, l]) => `<button class="btn small ${m ? '' : 'danger'}" data-act="quickBan" data-name="${h(a.name)}" data-min="${m}">${l}</button>`).join('')}</div>
       <div class="acts-grid">
         ${btn('accBan', 'Bannir', 'danger')}${btn('accMute', 'Silence')}
-        ${btn('accWarn', 'Avertir')}${btn('accNote', 'Ajouter une note')}
+        ${btn('accWarn', 'Avertir')}${btn('accNote', 'Ajouter une note')}${btn('accUndo', 'Annuler une sanction')}
         ${L >= 2 ? btn('accXp', 'Niveau / XP') + btn('accElo', 'Elo') + btn('accTitle', 'Titres') + (a.warnings ? btn('accWarnReset', 'Effacer les avertissements') : '') + btn('accEclats', 'Éclats') + btn('accSkin', 'Offrir un skin') + btn('accSkinsNone', 'Retirer les skins') + btn('accResetStats', 'Remettre les stats à zéro') + btn('accResetPw', 'Nouveau mot de passe') + btn('accRename', 'Renommer') + btn('accRole', 'Changer le rôle') + btn('accLogout', 'Déconnecter partout') + btn('accDelete', 'Supprimer le compte', 'danger') : ''}
       </div>
       <h3>PROGRESSION</h3><dl class="kv">
@@ -989,6 +1020,23 @@ const ACT = {
   logTab: d => { S.logTab = d.v; show('logs'); },
   logType: d => { S.logType = d.v; show('logs'); },
   exportLogs: () => download('export/logs', 'eclipse-journaux.json'),
+  exportBans: () => download('export/bans', 'eclipse-bans.csv'),
+  exportReports: () => download('export/reports', 'eclipse-signalements.csv'),
+  async cfgRevert(d) { if (await confirmBox(`Remettre « ${d.label} » à sa valeur précédente (${d.old}) ?`, { ok: 'Remettre' })) act('config/revert', { id: d.id }, 'Ancienne valeur remise'); },
+  async maintSchedule() {
+    const minutes = +$('mt-min').value, message = $('mt-msg').value.trim();
+    if (!(minutes >= 1)) return toast('Indique un nombre de minutes.', true);
+    if (await confirmBox(`Programmer une maintenance dans ${minutes} minute(s) ? Tous les joueurs sont prévenus tout de suite.`, { ok: 'Programmer' })) act('maintenance/schedule', { minutes, message }, 'Maintenance programmée');
+  },
+  async maintCancel() { if (await confirmBox('Annuler la maintenance programmée ? Les joueurs sont prévenus.', { ok: 'Annuler la maintenance' })) act('maintenance/cancel', {}, 'Maintenance annulée'); },
+  async restartWhenEmpty() { if (await confirmBox('Redémarrer dès que plus aucune partie n\'est en cours ? Aucune nouvelle partie ne pourra commencer d\'ici là.', { ok: 'Programmer' })) { const r = await act('restart/whenEmpty', {}, 'Redémarrage programmé'); if (r?.now) setTimeout(() => location.reload(), 6000); } },
+  restartCancel: () => act('restart/cancel', {}, 'Redémarrage annulé'),
+  backupNow: () => act('backup/now', {}, 'Sauvegarde créée'),
+  backupGet: d => download('backup/get?name=' + encodeURIComponent(d.name), d.name),
+  async accUndo(d) {
+    const v = await modal({ title: `Annuler une sanction de ${d.name}`, fields: [{ name: 'type', label: 'Sanction à annuler', type: 'select', value: 'ban', options: [['ban', 'Lever le ban en cours'], ['mute', 'Lever le silence en cours'], ['warn', 'Retirer le dernier avertissement']] }, { name: 'reason', label: 'Raison (gardée dans l\'historique)', maxlength: 160 }], ok: 'Annuler la sanction' });
+    if (v && await act('sanction/undo', { name: d.name, type: v.type, reason: v.reason }, 'Sanction annulée')) openAccount(d.name);
+  },
   // système
   backup: () => download('backup', `eclipse-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`),
   async restart() { if (await confirmBox('Redémarrer le serveur maintenant ? Tous les joueurs seront déconnectés quelques secondes.', { ok: 'Redémarrer' })) { await act('restart', {}, 'Redémarrage en cours…'); setTimeout(() => location.reload(), 6000); } },
@@ -1019,6 +1067,8 @@ document.addEventListener('input', e => {
     if (k === 'matchQ') { S.matchQ = e.target.value; refresh(); }
     if (k === 'clanQ') { S.clanQ = e.target.value; VIEWS.clans.update(); }
     if (k === 'auditBy') { S.auditBy = e.target.value; VIEWS.logs.update(); }
+    if (k === 'auditQ') { S.auditQ = e.target.value; VIEWS.logs.load().then(() => { VIEWS.logs.update(); const i = document.querySelector('[data-input=auditQ]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }); }
+    if (k === 'auditDays') { S.auditDays = +e.target.value; VIEWS.logs.load().then(() => VIEWS.logs.update()); }
   }, k === 'playerQ' ? 50 : 300);
 });
 

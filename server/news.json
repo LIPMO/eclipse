@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.8.0",
+    "date": "2026-11-23",
+    "title": "Accessibilité et outils d'administration",
+    "items": [
+      "Accessibilité : taille du texte des menus, contraste élevé, sous-titres des sons importants avec leur direction (pas, tirs, explosions, capacités), intensité des secousses de caméra réglable et flashs atténués.",
+      "Paramètres : touche / ou Ctrl+F pour chercher un réglage, Échap pour effacer, et changement de touche directement depuis les résultats.",
+      "Annonces de maintenance : les joueurs sont prévenus à l'avance (10, 5 et 1 minute) avant une maintenance programmée.",
+      "Plus de stabilité : sauvegarde automatique quotidienne, alertes quand le serveur ralentit, redémarrage sans couper les parties en cours, et remontée des erreurs pour les corriger plus vite."
+    ]
+  },
+  {
     "version": "1.7.0",
     "date": "2026-11-23",
     "title": "Nouveau mode Dernier debout, champ de tir, profils et paramètres repensés",

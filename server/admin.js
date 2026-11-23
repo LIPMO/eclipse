@@ -32,6 +32,8 @@ const DEFAULT_CONFIG = {
   // alertes Discord (webhook) et inscriptions
   discordWebhook: '', discordCheat: true, discordReports: true, discordBans: true, discordTournaments: true, alertSuspectLogin: true,
   maxAccountsPerIp: Math.max(0, parseInt(process.env.MAX_ACCOUNTS_PER_IP ?? '3', 10) || 0), weekendXp: false,
+  // surveillance des performances, sauvegardes automatiques, limites de débit réglables
+  perfAlerts: true, perfTickMs: 30, discordPerf: true, autoBackup: true, backupKeep: 7, rateChat: 5, rateSocial: 12,
 };
 // filtre proposé au premier lancement (modifiable dans Modération → Filtre de mots)
 const DEFAULT_FILTER = ['connard', 'connasse', 'salope', 'pute', 'enculé', 'encule', 'fdp', 'ntm', 'nique ta mère', 'niquetamere', 'batard', 'bâtard', 'pédé', 'tg', 'ta gueule'];
@@ -46,7 +48,21 @@ const CONFIG_RULES = {
   slowMode: [0, 120], blockLinks: 'bool', autoMute: 'bool', autoMuteThreshold: [1, 20], autoMuteMinutes: [1, 1440], warnBanAt: [0, 20],
   anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool',
   alertSuspectLogin: 'bool', maxAccountsPerIp: [0, 50], weekendXp: 'bool',
+  perfAlerts: 'bool', perfTickMs: [5, 200], discordPerf: 'bool', autoBackup: 'bool', backupKeep: [1, 30], rateChat: [2, 30], rateSocial: [4, 60],
 };
+// libellés lisibles de la configuration (historique des modifications)
+const CONFIG_LABELS = {
+  maintenance: 'Maintenance', maintenanceMsg: 'Message de maintenance', motd: 'Message du jour', registrationOpen: 'Inscriptions ouvertes', guestsAllowed: 'Invités acceptés',
+  guestRooms: 'Salons des invités', chatEnabled: 'Chat activé', maxRooms: 'Salons max.', maxPlayers: 'Joueurs max.', rewardMul: 'Multiplicateur d\'Éclats', startEclats: 'Éclats de départ',
+  buyTime: 'Temps d\'achat', roundTime: 'Durée de manche', fuseTime: 'Mèche du noyau', duelBuyTime: 'Achat en duel', duelRoundTime: 'Manche de duel', xpMul: 'Multiplicateur d\'XP',
+  weaponUnlocks: 'Déblocage des armes', dailyBonus: 'Bonus quotidien', eventName: 'Nom de l\'événement', eventXpMul: 'XP de l\'événement', eventEclatsMul: 'Éclats de l\'événement',
+  eventUntil: 'Fin de l\'événement', slowMode: 'Mode lent', blockLinks: 'Liens bloqués', autoMute: 'Silence automatique', autoMuteThreshold: 'Seuil du silence auto.',
+  autoMuteMinutes: 'Durée du silence auto.', warnBanAt: 'Ban après avertissements', anticheat: 'Anti-triche', acStrikes: 'Seuil anti-triche', discordWebhook: 'Webhook Discord',
+  discordCheat: 'Discord : triche', discordReports: 'Discord : signalements', discordBans: 'Discord : bans', discordTournaments: 'Discord : tournois', alertSuspectLogin: 'Alerte compte surveillé',
+  maxAccountsPerIp: 'Comptes par IP', weekendXp: 'XP du week-end', perfAlerts: 'Alertes de lenteur', perfTickMs: 'Seuil de lenteur (ms)', discordPerf: 'Discord : lenteur',
+  autoBackup: 'Sauvegarde automatique', backupKeep: 'Sauvegardes conservées', rateChat: 'Limite du chat', rateSocial: 'Limite des actions sociales',
+};
+const BACKUP_RE = /^eclipse-\d{4}-\d{2}-\d{2}(-\d{6})?\.json$/;
 const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul']);
 export const ACCOUNT_TAGS = { surveille: 'Surveillé', suspect: 'Suspect', vip: 'VIP', testeur: 'Testeur', createur: 'Créateur', partenaire: 'Partenaire' };
 const DISCORD_RE = /^https:\/\/(discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)\/api\/webhooks\/\d{5,25}\/[\w-]{20,100}$/;
@@ -61,6 +77,13 @@ const maskIp = ip => { const p = String(ip || '').split('.'); return p.length ==
 const csvCell = v => { const s = String(v ?? ''); return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 
 export class Admin {
+  // pays du joueur : en-tête ajouté par Cloudflare, accepté uniquement derrière le tunnel (connexion locale)
+  static countryOf(req) {
+    const remote = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+    if (remote !== '127.0.0.1' && remote !== '::1') return '';
+    const cc = String(req.headers['cf-ipcountry'] || '').toUpperCase();
+    return /^[A-Z]{2}$/.test(cc) && cc !== 'XX' && cc !== 'T1' ? cc : '';
+  }
   static ipOf(req) {
     const remote = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
     const local = remote === '127.0.0.1' || remote === '::1';
@@ -81,7 +104,9 @@ export class Admin {
       audit: saved.audit || [], stats: { ...DEFAULT_STATS(), ...(saved.stats || {}) },
       season: saved.season || { n: 1, name: 'Saison 1', started: Date.now() }, seasonsHistory: saved.seasonsHistory || [],
       matches: saved.matches || [], suspects: saved.suspects || {}, schedule: saved.schedule || [], nameWords: saved.nameWords || [],
+      configHistory: saved.configHistory || [], maintSchedule: saved.maintSchedule || null, lastBackup: saved.lastBackup || 0,
     };
+    this.clientErrors = []; this.slowSamples = 0; this.lastPerfAlert = 0; this.pendingRestart = null;
     this.logs = []; this.chat = []; this.seq = 1; this.errors = []; this.errCount = 0; this.chatStrikes = new Map();
     this.history = []; this.started = Date.now();
     this.net = { out: 0, outMsgs: 0, inMsgs: 0 };
@@ -138,6 +163,9 @@ export class Admin {
       WEAPONS[id].headMul = o.headMul ?? def.headMul;
     }
     this.ctx.accounts.startEclats = c.startEclats;
+    const L = this.ctx.limits || {};
+    if (L.chat) { L.chat.burst = c.rateChat; L.chat.rate = c.rateChat * 0.24; }
+    if (L.social) { L.social.burst = c.rateSocial; L.social.rate = c.rateSocial / 8; }
   }
 
   // ---------- journaux ----------
@@ -232,6 +260,10 @@ export class Admin {
       schedChanged = true;
     }
     if (schedChanged) { this.state.schedule = this.state.schedule.filter(a => !a.done); this.save(); }
+    this.checkPerf(now);
+    this.checkMaintenance(now);
+    this.autoBackup(now);
+    if (this.pendingRestart && !this.anyMatch()) this.doRestart('Redémarrage programmé : plus aucune partie en cours');
     // nettoyage des sanctions expirées
     const keep = x => !x.until || x.until > now;
     const nb = this.state.bans.length, nm = this.state.mutes.length;
@@ -244,7 +276,7 @@ export class Admin {
   discord(kind, text) {
     const cfg = this.state.config;
     if (!cfg.discordWebhook || !DISCORD_RE.test(cfg.discordWebhook)) return;
-    const flag = { cheat: 'discordCheat', report: 'discordReports', ban: 'discordBans', tournament: 'discordTournaments' }[kind];
+    const flag = { cheat: 'discordCheat', report: 'discordReports', ban: 'discordBans', tournament: 'discordTournaments', perf: 'discordPerf' }[kind];
     if (flag && cfg[flag] === false) return;
     this.discordQ ||= [];
     if (this.discordQ.length >= 30) return;
@@ -264,6 +296,101 @@ export class Admin {
     (u.sanctions ||= []).unshift({ t: Date.now(), type, text: String(text || '').slice(0, 240), by: by || 'Automatique' });
     if (u.sanctions.length > 50) u.sanctions.length = 50;
     this.ctx.accounts.save();
+  }
+  staffNotice(text) { for (const c of this.onlineClients()) if (this.levelOf(c) >= 1) this.ctx.send(c.id, { type: 'system', kind: 'staff', text }); }
+  anyMatch() { for (const r of this.ctx.rooms.values()) if (r.match && r.match.phase !== 'over') return true; return false; }
+  // alerte quand le serveur ralentit : 3 mesures de suite au-dessus du seuil (15 s), puis au plus une alerte toutes les 10 min
+  checkPerf(now) {
+    const cfg = this.state.config;
+    const t = this.ticks.slice(-60); if (!cfg.perfAlerts || t.length < 10) { this.slowSamples = 0; return; }
+    const avg = t.reduce((a, b) => a + b, 0) / t.length;
+    const memPct = process.memoryUsage().rss / os.totalmem() * 100;
+    const slow = avg > cfg.perfTickMs || memPct > 85;
+    this.slowSamples = slow ? this.slowSamples + 1 : 0;
+    if (this.slowSamples < 3 || now - this.lastPerfAlert < 600000) return;
+    this.lastPerfAlert = now;
+    const text = `Le serveur ralentit : calcul d'une image de jeu ${Math.round(avg * 10) / 10} ms en moyenne (seuil ${cfg.perfTickMs} ms), mémoire ${Math.round(memPct)} %, ${this.inGameCount()} joueur(s) en partie.`;
+    this.log('systeme', text);
+    this.staffNotice(text);
+    if (cfg.discordPerf) this.discord('perf', `🐢 ${text}`);
+  }
+  // maintenance programmée : avertissements à 10, 5 et 1 minute, puis activation
+  checkMaintenance(now) {
+    const m = this.state.maintSchedule; if (!m) return;
+    const left = m.at - now;
+    for (const w of [10, 5, 1]) {
+      if (left <= w * 60000 && left > 0 && !m.warned.includes(w)) {
+        m.warned.push(w); this.save();
+        for (const c of this.onlineClients()) this.ctx.send(c.id, { type: 'system', kind: 'broadcast', from: 'SERVEUR', text: `Maintenance dans ${w} minute${w > 1 ? 's' : ''}${m.msg ? ' : ' + m.msg : ''}. Termine ta partie.` });
+      }
+    }
+    if (left > 0) return;
+    this.state.maintSchedule = null;
+    const cfg = this.state.config;
+    cfg.maintenance = true; if (m.msg) cfg.maintenanceMsg = m.msg;
+    this.recordConfig(m.by, 'maintenance', false, true);
+    this.save();
+    this.log('admin', `Maintenance programmée activée (demandée par ${m.by})`);
+    for (const c of this.onlineClients()) if (this.levelOf(c) < 1) this.ctx.kick(c, cfg.maintenanceMsg);
+  }
+  recordConfig(by, key, oldV, newV) {
+    const mask = v => key === 'discordWebhook' ? (v ? '(configuré)' : '(vide)') : v;
+    this.state.configHistory.unshift({ id: crypto.randomUUID(), t: Date.now(), by, key, label: CONFIG_LABELS[key] || key, old: mask(oldV), new: mask(newV), revertable: key !== 'discordWebhook' });
+    if (this.state.configHistory.length > 200) this.state.configHistory.length = 200;
+  }
+  // sauvegarde automatique quotidienne (comptes, clans, administration) dans data/backups
+  backupDir() { return path.join(this.ctx.dataDir, 'backups'); }
+  writeBackup(tag = '') {
+    const dir = this.backupDir();
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const d = new Date(), name = `eclipse-${today()}${tag ? '-' + tag : ''}.json`;
+    const tours = (() => { try { return JSON.parse(fs.readFileSync(path.join(this.ctx.dataDir, 'tournaments.json'), 'utf8')); } catch { return null; } })();
+    const data = JSON.stringify({ exported: d.toISOString(), version: this.ctx.version, accounts: this.ctx.accounts.data, admin: this.state, tournaments: tours });
+    fs.writeFileSync(path.join(dir, name + '.tmp'), data, { mode: 0o600 });
+    fs.renameSync(path.join(dir, name + '.tmp'), path.join(dir, name));
+    this.state.lastBackup = Date.now(); this.save();
+    this.pruneBackups();
+    return { name, size: Buffer.byteLength(data) };
+  }
+  pruneBackups() {
+    const keep = this.state.config.backupKeep;
+    const files = this.listBackups();
+    for (const f of files.slice(keep)) { try { fs.unlinkSync(path.join(this.backupDir(), f.name)); } catch { /* */ } }
+  }
+  listBackups() {
+    let names = []; try { names = fs.readdirSync(this.backupDir()).filter(n => BACKUP_RE.test(n)); } catch { return []; }
+    return names.map(n => { const st = fs.statSync(path.join(this.backupDir(), n)); return { name: n, size: st.size, t: st.mtimeMs }; }).sort((a, b) => b.t - a.t);
+  }
+  autoBackup(now) {
+    if (!this.state.config.autoBackup || this.backupBusy) return;
+    if (new Date(this.state.lastBackup || 0).toISOString().slice(0, 10) === today()) return;
+    this.backupBusy = true;
+    try { const b = this.writeBackup(); this.log('systeme', `Sauvegarde automatique : ${b.name} (${Math.round(b.size / 1024)} Ko)`); }
+    catch (e) { this.error('Sauvegarde automatique impossible : ' + e.message); this.state.lastBackup = now; }
+    finally { this.backupBusy = false; }
+  }
+  doRestart(why) {
+    if (this.restarting) return; this.restarting = true;
+    this.log('systeme', why);
+    setTimeout(() => {
+      this.flush(); this.ctx.accounts.flush();
+      for (const c of this.ctx.clients.values()) this.ctx.send(c.id, { type: 'system', kind: 'notice', text: 'Le serveur redémarre, reconnexion automatique dans quelques secondes…' });
+      setTimeout(() => (this.ctx.exit || process.exit)(1), 400); // systemd / Docker relancent le service
+    }, 300);
+  }
+  // nouvelle partie refusée pendant un redémarrage programmé ou juste avant une maintenance
+  blockNewMatch() {
+    if (this.pendingRestart) return 'Le serveur va redémarrer dans un instant : impossible de lancer une nouvelle partie.';
+    const m = this.state.maintSchedule;
+    if (m && m.at - Date.now() < 5 * 60000) return 'Une maintenance commence dans moins de 5 minutes : impossible de lancer une nouvelle partie.';
+    return null;
+  }
+  // erreurs JavaScript remontées par les navigateurs des joueurs (5 par connexion)
+  clientError(c, msg) {
+    c.errSent = (c.errSent || 0) + 1; if (c.errSent > 5) return;
+    const e = { t: Date.now(), who: c.name || '?', text: str(msg.text, 200) || 'Erreur', src: str(msg.src, 120), line: Math.max(0, Math.min(1e6, Math.round(Number(msg.line) || 0))), ua: str(msg.ua, 120) };
+    this.clientErrors.unshift(e); if (this.clientErrors.length > 200) this.clientErrors.length = 200;
+    this.log('client', `Erreur dans le navigateur de ${e.who} : ${e.text}${e.src ? ` (${e.src}:${e.line})` : ''}`);
   }
   // connexion d'un compte surveillé : le staff connecté (et Discord) est prévenu
   onLogin(c, u) {
@@ -594,6 +721,9 @@ const ACTIONS = {
       activeBans: this.state.bans.length, activeMutes: this.state.mutes.length,
       suspects: Object.values(this.state.suspects).filter(x => Date.now() - x.last < 7 * 86400000).length,
       season: this.state.season.name, event: this.eventInfo(),
+      recentSanctions: this.state.audit.filter(a => /^(Bannissement|Réduction au silence|Expulsion|Avertissement|Sanction annulée)/.test(a.action)).slice(-8).reverse(),
+      pendingRestart: this.pendingRestart, maintSchedule: this.state.maintSchedule ? { at: this.state.maintSchedule.at, msg: this.state.maintSchedule.msg, by: this.state.maintSchedule.by } : null,
+      lastBackup: this.state.lastBackup || 0,
     };
   } },
   history: { level: 1, fn() { return { points: this.history }; } },
@@ -709,7 +839,14 @@ const ACTIONS = {
     if (s) rows = rows.filter(l => l.text.toLowerCase().includes(s));
     return rows.slice(-500);
   } },
-  audit: { level: 2, fn() { return this.state.audit.slice(-300).reverse(); } },
+  audit: { level: 2, fn({ q }) {
+    const s = String(q.get('q') || '').toLowerCase().slice(0, 60), by = String(q.get('by') || ''), days = Math.max(0, Math.min(365, parseInt(q.get('days') || '0', 10) || 0));
+    let rows = this.state.audit;
+    if (by) rows = rows.filter(a => a.by === by);
+    if (s) rows = rows.filter(a => (a.action + ' ' + a.detail).toLowerCase().includes(s));
+    if (days) { const since = Date.now() - days * 86400000; rows = rows.filter(a => a.t >= since); }
+    return rows.slice(-300).reverse();
+  } },
   config: { level: 2, fn() {
     return { config: this.state.config, weaponDefaults: WEAPON_DEFAULTS, weapons: Object.fromEntries(Object.entries(WEAPONS).map(([id, w]) => [id, { name: w.name, damage: w.damage, headMul: w.headMul, type: w.type }])) };
   } },
@@ -980,13 +1117,16 @@ const ACTIONS = {
       if (k === 'discordWebhook' && v && !DISCORD_RE.test(v)) fail('Adresse de webhook invalide : elle doit commencer par https://discord.com/api/webhooks/');
       if (rule === 'bool' || rule[0] === 'str') { /* déjà traité */ }
       else { v = Number(v); if (!Number.isFinite(v)) fail(`Valeur invalide pour ${k}`); v = Math.max(rule[0], Math.min(rule[1], DECIMAL.has(k) ? Math.round(v * 10) / 10 : Math.round(v))); }
-      if (cfg[k] !== v) { cfg[k] = v; changed.push(k); }
+      if (cfg[k] !== v) { this.recordConfig(user.name, k, cfg[k], v); cfg[k] = v; changed.push(k); }
     }
     if (patch.weapons && typeof patch.weapons === 'object') {
       for (const [id, o] of Object.entries(patch.weapons)) {
         if (!WEAPON_DEFAULTS[id] || typeof o !== 'object') continue;
         const d = o.reset ? null : { damage: int(o.damage ?? WEAPONS[id].damage, 1, 300), headMul: Math.max(1, Math.min(6, Math.round(Number(o.headMul ?? WEAPONS[id].headMul) * 10) / 10)) };
+        const before = cfg.weapons[id] ? `${cfg.weapons[id].damage} / x${cfg.weapons[id].headMul}` : 'par défaut';
         if (d) cfg.weapons[id] = d; else delete cfg.weapons[id];
+        const after = d ? `${d.damage} / x${d.headMul}` : 'par défaut';
+        if (before !== after) { this.state.configHistory.unshift({ id: crypto.randomUUID(), t: Date.now(), by: user.name, key: 'arme:' + id, label: `Arme ${WEAPONS[id].name} (dégâts / tête)`, old: before, new: after, revertable: false }); this.state.configHistory.length = Math.min(200, this.state.configHistory.length); }
         changed.push('arme:' + id);
       }
     }
@@ -1027,12 +1167,8 @@ const ACTIONS = {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="eclipse-sauvegarde-${today()}.json"`, 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ exported: new Date().toISOString(), version: this.ctx.version, users, admin: this.state }, null, 2)); return RAW;
   } },
-  restart: { level: 3, post: true, label: 'Redémarrage du serveur', fn() {
-    setTimeout(() => {
-      this.flush(); this.ctx.accounts.flush();
-      for (const c of this.ctx.clients.values()) this.ctx.send(c.id, { type: 'system', kind: 'notice', text: 'Le serveur redémarre, reconnexion automatique dans quelques secondes…' });
-      setTimeout(() => process.exit(1), 400); // systemd / Docker relancent le service
-    }, 300);
+  restart: { level: 3, post: true, label: 'Redémarrage du serveur', fn({ user }) {
+    this.doRestart(`Redémarrage immédiat demandé par ${user.name}`);
     return { ok: true };
   } },
   // ---------- métriques ----------
@@ -1041,7 +1177,11 @@ const ACTIONS = {
     const pings = online.map(c => ({ name: c.name, ping: c.ping || 0, room: this.ctx.rooms.get(c.roomId)?.name || '' })).sort((a, b) => b.ping - a.ping);
     const vals = pings.map(p => p.ping).filter(Boolean);
     const t = this.ticks.length ? this.ticks : [0];
+    const cc = new Map();
+    for (const c of online) { const k = c.country || '??'; const e = cc.get(k) || { country: k, players: 0, sum: 0, n: 0 }; e.players++; if (c.ping > 0) { e.sum += c.ping; e.n++; } cc.set(k, e); }
+    const byCountry = [...cc.values()].map(e => ({ country: e.country, players: e.players, avgPing: e.n ? Math.round(e.sum / e.n) : 0 })).sort((a, b) => b.players - a.players);
     return {
+      byCountry, clientErrors: this.clientErrors.slice(0, 50),
       points: this.history, errors: this.errors.slice(-60).reverse(), pings,
       now: { online: online.length, inGame: this.inGameCount(), avgPing: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0, maxPing: vals.length ? Math.max(...vals) : 0,
         tick: Math.round(t.reduce((a, b) => a + b, 0) / t.length * 100) / 100, tickMax: Math.round(Math.max(...t) * 100) / 100, cpu: this.rates.cpu, mem: process.memoryUsage().rss, errorsLastHour: this.errors.filter(e => Date.now() - e.t < 3600000).length },
@@ -1184,6 +1324,107 @@ const ACTIONS = {
     this.log('securite', `Anti-triche ${on ? 'RÉACTIVÉ' : 'DÉSACTIVÉ'} par ${user.name}`);
     this.discord?.('cheat', `🛡️ Anti-triche **${on ? 'réactivé' : 'désactivé'}** par ${user.name}`);
     return { on, _detail: on ? 'réactivé' : 'désactivé' };
+  } },
+
+  // ---------- lot A : historique de configuration, permissions, sanctions, santé, sauvegardes, maintenance ----------
+  'config/history': { level: 2, fn() { return this.state.configHistory; } },
+  'config/revert': { level: 2, post: true, label: 'Configuration restaurée', fn({ body, user, lvl, q, ip }) {
+    const h = this.state.configHistory.find(x => x.id === body.id); if (!h) fail('Modification introuvable', 404);
+    if (!h.revertable || !(h.key in CONFIG_RULES)) fail('Cette modification ne peut pas être annulée automatiquement.');
+    ACTIONS['config/save'].fn.call(this, { body: { patch: { [h.key]: h.old } }, user, lvl, q, ip });
+    return { config: this.state.config, _detail: `${h.label} : ${h.new} → ${h.old}` };
+  } },
+  permissions: { level: 1, fn() {
+    const rows = Object.entries(ACTIONS).filter(([, d]) => d.post || d.label).map(([id, d]) => ({ id, label: d.label || id, level: d.level }));
+    return { roles: [{ id: 'mod', label: 'Modérateur', level: 1 }, { id: 'admin', label: 'Administrateur', level: 2 }, { id: 'owner', label: 'Propriétaire', level: 3 }], actions: rows.sort((a, b) => a.level - b.level || a.label.localeCompare(b.label, 'fr')) };
+  } },
+  'sanction/undo': { level: 1, post: true, label: 'Sanction annulée', fn({ body, user, lvl }) {
+    const u = this.findUser(body.name); ensureUser(u); this.guard(lvl, u, null);
+    const key = this.ctx.accounts.key(u.name), type = String(body.type);
+    if (type === 'ban') {
+      const b = this.activeBan('account', key); if (!b) fail('Ce compte n\'est pas banni.');
+      if (lvl < 2 && !b.until) fail('Seul un administrateur peut lever un ban définitif.', 403);
+      this.state.bans = this.state.bans.filter(x => x !== b);
+    } else if (type === 'mute') {
+      const before = this.state.mutes.length; this.state.mutes = this.state.mutes.filter(m => m.key !== key);
+      if (before === this.state.mutes.length) fail('Ce compte n\'est pas réduit au silence.');
+      for (const c of this.clientsOf(key)) this.ctx.send(c.id, { type: 'system', kind: 'notice', text: 'Tu peux de nouveau écrire dans le chat.' });
+    } else if (type === 'warn') {
+      if (!u.warnings) fail('Ce compte n\'a aucun avertissement.');
+      u.warnings--;
+    } else fail('Type de sanction inconnu');
+    this.save();
+    this.sanction(key, 'undo', `${{ ban: 'Ban levé', mute: 'Silence levé', warn: 'Dernier avertissement retiré' }[type]}${body.reason ? ' — ' + str(body.reason, 160) : ''}`, user.name);
+    return { warnings: u.warnings || 0, _detail: `${u.name} — ${type}` };
+  } },
+  'export/bans': { level: 2, fn({ res }) {
+    const head = ['type', 'cible', 'raison', 'par', 'le', 'jusqu_au'];
+    const csv = [head.join(';'), ...this.state.bans.map(b => [b.type === 'ip' ? 'IP' : 'compte', b.type === 'ip' ? maskIp(b.value) : b.label, b.reason, b.by, new Date(b.at).toISOString(), b.until ? new Date(b.until).toISOString() : 'définitif'].map(csvCell).join(';'))].join('\n');
+    res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="eclipse-bans.csv"', 'Cache-Control': 'no-store' });
+    res.end('\ufeff' + csv); return RAW;
+  } },
+  'export/reports': { level: 2, fn({ res }) {
+    const head = ['le', 'auteur', 'cible', 'motif', 'detail', 'salon', 'traite'];
+    const csv = [head.join(';'), ...this.state.reports.map(r => [new Date(r.t).toISOString(), r.from, r.target, REPORT_REASONS[r.category] || r.category, r.reason, r.room, r.resolved ? 'oui' : 'non'].map(csvCell).join(';'))].join('\n');
+    res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="eclipse-signalements.csv"', 'Cache-Control': 'no-store' });
+    res.end('\ufeff' + csv); return RAW;
+  } },
+  health: { level: 1, fn() {
+    const checks = [], add = (name, state, detail) => checks.push({ name, state, detail });
+    try { const f = path.join(this.ctx.dataDir, '.sante'); fs.writeFileSync(f, String(Date.now())); fs.unlinkSync(f); add('Écriture des données', 'ok', this.ctx.dataDir.startsWith('/') ? 'dossier de données accessible' : 'ok'); }
+    catch (e) { add('Écriture des données', 'bad', 'impossible d\'écrire : ' + e.code); }
+    try { const s = fs.statfsSync(this.ctx.dataDir); const free = s.bavail * s.bsize, pct = free / (s.blocks * s.bsize) * 100; add('Espace disque', pct < 5 ? 'bad' : pct < 15 ? 'warn' : 'ok', `${Math.round(free / 1073741824 * 10) / 10} Go libres (${Math.round(pct)} %)`); }
+    catch { add('Espace disque', 'warn', 'mesure indisponible'); }
+    const memPct = Math.round(process.memoryUsage().rss / os.totalmem() * 100);
+    add('Mémoire du serveur', memPct > 85 ? 'bad' : memPct > 60 ? 'warn' : 'ok', `${Math.round(process.memoryUsage().rss / 1048576)} Mo (${memPct} % de la machine)`);
+    const t = this.ticks.length ? this.ticks : [0], avg = t.reduce((a, b) => a + b, 0) / t.length;
+    add('Vitesse du jeu', avg > this.state.config.perfTickMs ? 'bad' : avg > this.state.config.perfTickMs / 2 ? 'warn' : 'ok', `${Math.round(avg * 100) / 100} ms par image de jeu (seuil ${this.state.config.perfTickMs} ms)`);
+    const errH = this.errors.filter(e => Date.now() - e.t < 3600000).length;
+    add('Erreurs (1 h)', errH > 20 ? 'bad' : errH ? 'warn' : 'ok', `${errH} erreur(s) serveur, ${this.clientErrors.filter(e => Date.now() - e.t < 3600000).length} dans les navigateurs`);
+    add('Fichiers vérifiés', this.ctx.verified ? 'ok' : 'warn', this.ctx.verified ? `${this.ctx.verified()} fichiers servis depuis la mémoire` : 'mode protégé désactivé');
+    const lb = this.state.lastBackup;
+    add('Sauvegarde', !this.state.config.autoBackup ? 'warn' : lb && Date.now() - lb < 2 * 86400000 ? 'ok' : 'bad', !this.state.config.autoBackup ? 'sauvegarde automatique désactivée' : lb ? `dernière le ${new Date(lb).toLocaleString('fr-FR')}` : 'aucune sauvegarde');
+    add('Alertes Discord', this.state.config.discordWebhook ? 'ok' : 'warn', this.state.config.discordWebhook ? 'webhook configuré' : 'aucun webhook');
+    add('Anti-triche', this.state.config.anticheat ? 'ok' : 'warn', this.state.config.anticheat ? 'actif' : 'désactivé');
+    add('Démarré depuis', 'ok', `${Math.floor(process.uptime() / 3600)} h ${Math.floor(process.uptime() % 3600 / 60)} min (version ${this.ctx.version})`);
+    return { checks, overall: checks.some(c => c.state === 'bad') ? 'bad' : checks.some(c => c.state === 'warn') ? 'warn' : 'ok' };
+  } },
+  backups: { level: 3, fn() { return { list: this.listBackups(), last: this.state.lastBackup || 0, keep: this.state.config.backupKeep, auto: this.state.config.autoBackup }; } },
+  'backup/now': { level: 3, post: true, label: 'Sauvegarde manuelle', fn() {
+    const d = new Date(); const b = this.writeBackup(`${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`);
+    return { ...b, _detail: b.name };
+  } },
+  'backup/get': { level: 3, fn({ q, res, user }) {
+    const name = String(q.get('name') || ''); if (!BACKUP_RE.test(name)) fail('Nom de sauvegarde invalide');
+    let data; try { data = fs.readFileSync(path.join(this.backupDir(), name)); } catch { fail('Sauvegarde introuvable', 404); }
+    this.audit(user.name, 'Sauvegarde téléchargée', name);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
+    res.end(data); return RAW;
+  } },
+  'restart/whenEmpty': { level: 3, post: true, label: 'Redémarrage programmé (quand plus personne ne joue)', fn({ user }) {
+    this.pendingRestart = { by: user.name, at: Date.now() };
+    this.staffNotice(`${user.name} a programmé un redémarrage : il aura lieu dès que plus aucune partie n'est en cours.`);
+    if (!this.anyMatch()) this.doRestart(`Redémarrage programmé par ${user.name} (aucune partie en cours)`);
+    return { now: !this.anyMatch(), _detail: user.name };
+  } },
+  'restart/cancel': { level: 3, post: true, label: 'Redémarrage programmé annulé', fn() {
+    if (!this.pendingRestart || this.restarting) fail('Aucun redémarrage en attente.');
+    this.pendingRestart = null; return {};
+  } },
+  'maintenance/schedule': { level: 2, post: true, label: 'Maintenance programmée', fn({ body, user }) {
+    const minutes = int(body.minutes ?? 10, 1, 1440);
+    this.state.maintSchedule = { at: Date.now() + minutes * 60000, msg: str(body.message, 200), by: user.name, warned: [] };
+    // les rappels déjà dépassés ne sont pas envoyés en rafale
+    for (const w of [10, 5, 1]) if (minutes < w) this.state.maintSchedule.warned.push(w);
+    this.save();
+    for (const c of this.onlineClients()) this.ctx.send(c.id, { type: 'system', kind: 'broadcast', from: 'SERVEUR', text: `Maintenance prévue dans ${minutes} minute${minutes > 1 ? 's' : ''}${this.state.maintSchedule.msg ? ' : ' + this.state.maintSchedule.msg : ''}.` });
+    return { at: this.state.maintSchedule.at, _detail: `dans ${minutes} min` };
+  } },
+  'maintenance/cancel': { level: 2, post: true, label: 'Maintenance programmée annulée', fn() {
+    if (!this.state.maintSchedule) fail('Aucune maintenance programmée.');
+    this.state.maintSchedule = null; this.save();
+    for (const c of this.onlineClients()) this.ctx.send(c.id, { type: 'system', kind: 'broadcast', from: 'SERVEUR', text: 'La maintenance prévue est annulée. Bon jeu !' });
+    return {};
   } },
 
   // ---------- tournois ----------

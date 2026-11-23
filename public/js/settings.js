@@ -128,6 +128,11 @@ const SECTIONS = [
   { id: 'access', title: 'Accessibilité', items: [
     { k: 'colorblind', t: 'select', label: 'Filtre daltonien', opts: [['none', 'Aucun'], ['protan', 'Protanopie (rouge)'], ['deutan', 'Deutéranopie (vert)'], ['tritan', 'Tritanopie (bleu)']], hint: 'Corrige les couleurs du jeu pour mieux distinguer alliés et ennemis' },
     { k: 'reduceMotion', t: 'toggle', label: 'Réduire les mouvements', hint: 'Sans secousses de caméra, sans balancement de l\'arme et avec moins d\'animations' },
+    { k: 'uiFont', t: 'range', label: 'Taille du texte des menus', min: 0.85, max: 1.4, step: 0.05, pct: true, hint: 'Agrandit tous les textes et boutons du menu principal' },
+    { k: 'highContrast', t: 'toggle', label: 'Contraste élevé', hint: 'Textes plus clairs, bordures plus visibles et image de jeu plus contrastée' },
+    { k: 'subtitles', t: 'toggle', label: 'Sous-titres des sons importants', hint: 'Affiche « Pas ennemis → », « Tir ennemi ← », explosions, capacités… avec leur direction' },
+    { k: 'shakeAmount', t: 'range', label: 'Intensité des secousses de caméra', min: 0, max: 1, step: 0.05, pct: true, hint: '0 % = aucune secousse' },
+    { k: 'noFlash', t: 'toggle', label: 'Atténuer les flashs lumineux', hint: 'Les aveuglements deviennent un voile sombre au lieu d\'un écran blanc' },
     { k: 'streamer', t: 'toggle', label: 'Mode streamer', hint: 'Masque les pseudos des autres joueurs et les codes de salon' },
   ] },
   { id: 'notifs', title: 'Notifications', items: [
@@ -228,6 +233,15 @@ export function mountSettings(container) {
   render();
 }
 export function isRebinding() { return !!rebinding; }
+// raccourcis : « / » ou Ctrl+F place le curseur dans la recherche, Échap l'efface
+document.addEventListener('keydown', e => {
+  if (!root || !root.isConnected || rebinding || !root.offsetParent) return;
+  const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
+  if ((e.key === '/' && !inField) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
+    e.preventDefault(); const si = root.querySelector('#set-search'); si?.focus(); si?.select(); return;
+  }
+  if (e.key === 'Escape' && document.activeElement?.id === 'set-search' && search) { e.preventDefault(); e.stopPropagation(); search = ''; render(); }
+}, true);
 
 function render() {
   const sec = SECTIONS.find(s => s.id === current);
@@ -237,7 +251,7 @@ function render() {
   else if (sec.custom === 'profiles') body = profilesHTML(sec);
   else if (sec.custom === 'crosshair') body = crosshairHTML(sec);
   else body = sec.items.map(itemHTML).join('');
-  root.innerHTML = `<nav class="set-nav"><input class="set-search" id="set-search" placeholder="🔍 Rechercher un réglage…" value="${esc(search)}" maxlength="30">${SECTIONS.map(s => `<button data-sec="${s.id}" class="${s.id === current && !search ? 'active' : ''}">${s.title.toUpperCase()}</button>`).join('')}</nav>
+  root.innerHTML = `<nav class="set-nav"><input class="set-search" id="set-search" placeholder="🔍 Rechercher… (touche /)" title="Raccourci : / ou Ctrl+F pour chercher, Échap pour effacer" value="${esc(search)}" maxlength="30">${SECTIONS.map(s => `<button data-sec="${s.id}" class="${s.id === current && !search ? 'active' : ''}">${s.title.toUpperCase()}</button>`).join('')}</nav>
     <div class="set-body"><div class="set-head"><h2>${search ? 'RÉSULTATS' : sec.title.toUpperCase()}</h2>${search ? '' : `<button class="btn ghost small" data-reset="${sec.id}">RÉINITIALISER</button>`}</div>${body}</div>`;
   if (search) { const si = root.querySelector('#set-search'); si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
   const prev = root.querySelector('#ch-preview .xhair');
@@ -250,7 +264,7 @@ function searchHTML() {
   const hits = SECTIONS.flatMap(s => (s.items || []).filter(i => norm(i.label + ' ' + (i.hint || '') + ' ' + s.title).includes(q)).map(i => ({ ...i, sec: s.title })));
   const keyHits = ACTIONS.filter(([, l]) => norm(l).includes(q));
   return (hits.map(i => itemHTML(i).replace('<div class="set-label">', `<div class="set-label"><span class="set-sec">${esc(i.sec)} ›</span> `)).join('') || '')
-    + (keyHits.length ? `<p class="set-note">Touches correspondantes : ${keyHits.map(([a, l]) => `${esc(l)} = <b>${esc(keyName(S().keys[a]))}</b>`).join(' · ')} (onglet TOUCHES pour les changer)</p>` : '')
+    + (keyHits.length ? `<p class="set-note">Touches correspondantes (clique pour changer) :</p>${keyHits.map(([a, l]) => `<div class="set-row"><div class="set-label"><span class="set-sec">Touches ›</span> ${esc(l)}</div><div class="set-ctrl"><button class="keybtn ${rebinding === a ? 'wait' : ''}" data-bind="${a}">${rebinding === a ? 'Appuie sur une touche…' : esc(keyName(S().keys[a]))}</button></div></div>`).join('')}` : '')
     || '<p class="set-note">Aucun réglage ne correspond.</p>';
 }
 function profilesHTML(sec) {

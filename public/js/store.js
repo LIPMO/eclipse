@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS = {
   fps: false, minimap: true, hitmarker: true, killcam: true, bob: true, leftHand: false, enemyColor: '#ff4f6d', allyColor: '#19e3c4',
   netGraph: false, damageNumbers: true, chatMode: 'all', chatSize: 1, hudScale: 1, confirmQuit: true,
   // accessibilité et confidentialité
-  colorblind: 'none', reduceMotion: false, streamer: false,
+  colorblind: 'none', reduceMotion: false, streamer: false, uiFont: 1, highContrast: false, subtitles: false, shakeAmount: 1, noFlash: false,
   // notifications
   notifFriends: true, notifClan: true, notifTour: true, notifInvite: true, notifSound: true, notifFriendOnline: true,
   syncAccount: true,

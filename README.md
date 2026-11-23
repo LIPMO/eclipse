@@ -138,6 +138,19 @@ L'onglet **Anti-triche** a un bouton pour désactiver ou réactiver l'anti-trich
 
 Variable facultative : `MAX_ACCOUNTS_PER_IP` (3 par défaut) fixe la limite d'inscriptions par adresse IP sur 24 h au premier lancement ; elle se change ensuite dans la configuration.
 
+### Stabilité et maintenance (1.8)
+- **Santé du serveur** (Système & métriques) : écriture des données, espace disque, mémoire, vitesse du jeu, erreurs, fichiers vérifiés, sauvegarde, Discord, anti-triche.
+- **Sauvegarde automatique** chaque jour dans `data/backups` (comptes, clans, tournois, administration), les 7 dernières sont gardées (réglable). Le propriétaire peut en créer une et les télécharger depuis le panneau.
+- **Alerte de lenteur** : le staff (et Discord si coché) est prévenu quand le calcul du jeu dépasse le seuil pendant 15 s.
+- **Maintenance programmée** : joueurs prévenus tout de suite puis à 10, 5 et 1 minute ; plus de nouvelle partie dans les 5 dernières minutes.
+- **Redémarrer quand plus personne ne joue** : attend la fin des parties en cours avant de redémarrer.
+- **Historique de la configuration** avec retour à l'ancienne valeur, **tableau des permissions** par rôle, **annuler une sanction** depuis la fiche d'un compte, exports CSV des bans et des signalements.
+- **Erreurs des navigateurs** et **latence par pays** (pays fourni par Cloudflare) dans Système & métriques.
+- Limites du chat et des actions sociales réglables dans Configuration.
+
+### Tests
+`npm test` démarre le serveur sur un port libre avec des données temporaires et vérifie l'essentiel (santé, version, sécurité de base, partie contre des bots). GitHub Actions lance ce test, la vérification de la syntaxe et celle d'`integrity.json` à chaque envoi.
+
 ## Installer sur un serveur Linux avec un tunnel Cloudflare
 
 Depuis ton PC, envoie l'archive sur le serveur, puis connecte-toi en SSH :

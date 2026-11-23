@@ -304,6 +304,8 @@ function joinRoom(c, r) {
 }
 
 function startMatch(r) {
+  const blocked = admin.blockNewMatch();
+  if (blocked) { for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'chat', from: 'SYSTÈME', text: blocked }); return; }
   r.state = 'playing';
   for (const m of r.members.values()) if (m.team !== 'ffa' && isFfa(r.mode)) m.team = 'ffa';
   const match = new Match(r, {
@@ -635,6 +637,7 @@ function handleLobby(c, msg) {
       send(c.id, { type: 'reportResult', ok: true, text: `Signalement contre ${name} envoyé à l'équipe de modération. Merci !` });
       break;
     }
+    case 'clientError': admin.clientError(c, msg); break;
     case 'leaveMatch': if (r) leaveRoom(c); stopSpectating(c); send(c.id, { type: 'left' }); break;
     // ---------- spectateur staff (invisible) ----------
     case 'spectateList': {
@@ -718,7 +721,9 @@ function createOfficialRoom({ name, mode, mapId, difficulty, bots }) {
 const admin = new Admin({
   accounts, clients, rooms, dataDir: DATA_DIR, root: ROOT, version: PKG_VERSION, MODE_CFG, DIFFICULTIES,
   send, kick, closeRoom, createRoom: createOfficialRoom, addBot, pickTeam, pushRoom, broadcastRooms, startMatch,
+  limits: { chat: chatLimit, social: socialLimit }, verified: () => VERIFIED ? VERIFIED.size : 0,
 });
+admin.applyConfig();
 const social = new Social({ accounts, clients, rooms, send, joinRoom, admin, chatLimit });
 admin.ctx.social = social;
 const clans = new Clans({ accounts, clients, send, admin, chatLimit, social, onTagChange: c => { const r = c.roomId && rooms.get(c.roomId); const m = r && r.members.get(c.id); if (m) { m.clan = c.clanTag || null; pushRoom(r); r.match?.updateMember(m); } } });
@@ -750,7 +755,7 @@ setInterval(() => {
 
 wss.on('connection', (ws, req) => {
   const id = 'p' + (nextId++);
-  const c = { id, ws, name: null, roomId: null, skins: {}, alive: true, missed: 0, account: null, ip: Admin.ipOf(req), since: Date.now(), ping: 0 };
+  const c = { id, ws, name: null, roomId: null, skins: {}, alive: true, missed: 0, account: null, ip: Admin.ipOf(req), country: Admin.countryOf(req), since: Date.now(), ping: 0 };
   clients.set(id, c);
   connPerIp.set(c.ip, (connPerIp.get(c.ip) || 0) + 1);
   const msgLimit = new Bucket(90, 180); // ~30 entrées/s + tirs + actions

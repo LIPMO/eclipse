@@ -19,6 +19,17 @@ const TARGETS = { assault: [3, 5, 7, 9, 13], duel: [3, 5, 7, 9], ffa: [10, 15, 2
 const DIFF_LABEL = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert', cible: 'Cibles' };
 
 const net = new Net();
+// erreurs JavaScript du navigateur remontées à l'équipe (5 par session, sans données personnelles)
+{
+  let sent = 0;
+  const report = (text, src, line) => {
+    if (++sent > 5) return;
+    const file = String(src || '').replace(location.origin, '').split('?')[0];
+    net.send('clientError', { text: String(text || '').slice(0, 200), src: file.slice(0, 120), line: line || 0, ua: navigator.userAgent.slice(0, 120) });
+  };
+  window.addEventListener('error', e => { if (e.message) report(e.message, e.filename, e.lineno); });
+  window.addEventListener('unhandledrejection', e => report('Promesse rejetée : ' + (e.reason?.message || e.reason), '', 0));
+}
 const state = { myId: null, guest: true, room: null, rooms: [], game: null, tab: 'login', create: { mode: 'assault', map: 'dune', diff: 'normal' }, authMode: 'login', collWeapon: 'lancer', collSkin: null, agentView: 'ignis' };
 
 // ======================= UTILITAIRES =======================
@@ -455,6 +466,9 @@ function applyGlobalSettings() {
   b.classList.toggle('reduce-motion', !!st.reduceMotion);
   b.classList.toggle('streamer', !!st.streamer);
   b.dataset.cb = st.colorblind || 'none';
+  b.style.setProperty('--uif', st.uiFont || 1);
+  b.classList.toggle('hi-contrast', !!st.highContrast);
+  b.classList.toggle('no-flash', !!st.noFlash);
   for (const [k, c] of [['volWeapons', 'weapons'], ['volSteps', 'steps'], ['volAbilities', 'abilities'], ['volUi', 'ui'], ['volNotif', 'notif']]) SFX.setCategoryVolume(c, st[k] ?? 1);
 }
 applyGlobalSettings();

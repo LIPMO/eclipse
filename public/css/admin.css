@@ -167,3 +167,15 @@ td .acts { display: flex; gap: 5px; flex-wrap: wrap; }
 .gsearch { display: flex; gap: 4px; }
 .gsearch input { width: 200px; }
 .sr { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+
+/* ---------- 1.8 : bandeaux, santé du serveur, permissions ---------- */
+.banner { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.banner.warn { background: rgba(255, 207, 90, .12); border: 1px solid rgba(255, 207, 90, .45); }
+.health { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.hc { display: grid; grid-template-columns: 26px 1fr; column-gap: 8px; align-items: center; padding: 8px 10px; border-radius: 6px; background: rgba(255, 255, 255, .03); border: 1px solid var(--line, #262e45); }
+.hc i { grid-row: span 2; font-style: normal; font-weight: 800; text-align: center; border-radius: 50%; width: 22px; height: 22px; line-height: 22px; }
+.hc-ok i { background: rgba(109, 255, 156, .18); color: #6dff9c; } .hc-warn i { background: rgba(255, 207, 90, .18); color: #ffcf5a; } .hc-bad i { background: rgba(255, 79, 109, .2); color: #ff4f6d; }
+.hc-bad { border-color: rgba(255, 79, 109, .5); }
+table.perms td:not(:first-child), table.perms th:not(:first-child) { text-align: center; }
+.ty-client { color: #ff9a3d; }
+table.perms { width: 100%; } table.perms th:not(:first-child), table.perms td:not(:first-child) { width: 64px; }

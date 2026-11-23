@@ -364,6 +364,31 @@ export class Game {
     this.buildTeamIcons();
   }
 
+  // sous-titres des sons importants, avec la direction de la source (option d'accessibilité)
+  caption(text, pos, key, maxDist = 0, every = 1.6) {
+    if (!ST().subtitles || !this.local) return;
+    const now = performance.now() / 1000;
+    this.capLast ||= {};
+    if (now - (this.capLast[key] || 0) < every) return;
+    let arrow = '';
+    if (pos) {
+      const L = this.local, dx = pos[0] - L.pos[0], dz = pos[2] - L.pos[2], d = Math.hypot(dx, dz);
+      if (maxDist && d > maxDist) return;
+      if (d > 1.5) {
+        const f = -dx * Math.sin(L.yaw) - dz * Math.cos(L.yaw), r = dx * Math.cos(L.yaw) - dz * Math.sin(L.yaw);
+        const a = Math.atan2(r, f) * 180 / Math.PI;
+        arrow = Math.abs(a) < 35 ? ' ↑' : Math.abs(a) > 145 ? ' ↓' : a > 0 ? ' →' : ' ←';
+      }
+    }
+    this.capLast[key] = now;
+    let box = document.getElementById('captions');
+    if (!box) { box = document.createElement('div'); box.id = 'captions'; document.getElementById('hud').appendChild(box); }
+    const el = document.createElement('div'); el.className = 'cap'; el.textContent = text + arrow;
+    box.appendChild(el);
+    while (box.children.length > 4) box.firstChild.remove();
+    setTimeout(() => el.remove(), 2200);
+  }
+
   isEnemyId(id) {
     if (id === this.myId) return false;
     if (isFfa(this.mode)) return true;
@@ -1044,10 +1069,10 @@ export class Game {
       SFX.playUI(win ? 'win' : 'lose');
       if (win) { this.roundWins = (this.roundWins || 0) + 1; }
     });
-    on('planted', m => { this.centerMsg(`NOYAU POSÉ SUR LE SITE ${m.site}`, 3); SFX.playUI('plant'); });
-    on('defused', () => this.centerMsg('NOYAU DÉSAMORCÉ', 3));
+    on('planted', m => { this.centerMsg(`NOYAU POSÉ SUR LE SITE ${m.site}`, 3); SFX.playUI('plant'); this.caption(`Noyau posé (site ${m.site})`, null, 'plant'); });
+    on('defused', () => { this.centerMsg('NOYAU DÉSAMORCÉ', 3); this.caption('Noyau désamorcé', null, 'defuse'); });
     on('explode', m => {
-      SFX.playExplosion(m.p);
+      SFX.playExplosion(m.p); this.caption('Explosion', m.p, 'boom');
       const d = Math.hypot(m.p[0] - this.local.pos[0], m.p[2] - this.local.pos[2]);
       this.local.flashUntil = performance.now() / 1000 + (d < 30 ? 1.2 : 0.4);
       this.local.flashDur = 1.2;
@@ -1055,9 +1080,10 @@ export class Game {
       this.addImpact(m.p, '#ff2f6d', 12, 1.2);
     });
     on('flash', m => { const now = performance.now() / 1000; this.local.flashUntil = now + m.d; this.local.flashDur = m.d; });
-    on('flashBang', m => { SFX.playFlashBang(m.p); this.addImpact(m.p, '#ffffff', 5, 0.3); });
+    on('flashBang', m => { SFX.playFlashBang(m.p); this.addImpact(m.p, '#ffffff', 5, 0.3); this.caption('Flash', m.p, 'flash'); });
     on('ability', m => {
       if (m.i !== this.myId) SFX.playAbility(m.k, m.p);
+      if (m.i !== this.myId && m.p) this.caption(this.isEnemyId(m.i) ? 'Capacité ennemie' : 'Capacité alliée', m.p, 'ab' + (this.isEnemyId(m.i) ? 'e' : 'a'), 45);
       // avertissement d'ultime ennemie
       if (ULTS.has(m.k) && this.isEnemyId(m.i)) { const w = $('ult-warn'); w.textContent = `⚠ ULTIME ENNEMIE : ${this.nameOf(m.i)}`; clearTimeout(this.ultT); this.ultT = setTimeout(() => { w.textContent = ''; }, 2500); }
     });
@@ -1227,6 +1253,7 @@ export class Game {
     const def = WEAPONS[m.w];
     const type = def ? def.type : 'rifle';
     SFX.playShot(type === 'pistol' ? 'pistol' : type, m.o);
+    if (this.isEnemyId(m.i)) this.caption(type === 'melee' ? 'Couteau ennemi' : 'Tir ennemi', m.o, 'shot');
     let start = new THREE.Vector3(...m.o);
     if (o && o.ch.weapon && o.ch.root.visible) {
       o.ch.root.updateMatrixWorld(true);
@@ -1413,7 +1440,7 @@ export class Game {
         ch.root.visible = false;
         const sp = o.lastPos ? Math.hypot(st.p[0] - o.lastPos[0], st.p[2] - o.lastPos[2]) / Math.max(dt, 1e-3) : 0;
         o.lastPos = st.p.slice(); o.speedS = (o.speedS || 0) * 0.85 + sp * 0.15;
-        if (o.speedS > 4.3) { o.stepT -= dt; if (o.stepT <= 0) { SFX.playStep(st.p); o.stepT = 0.36; } }
+        if (o.speedS > 4.3) { o.stepT -= dt; if (o.stepT <= 0) { SFX.playStep(st.p); o.stepT = 0.36; if (this.isEnemyId(o.id)) this.caption('Pas ennemis', st.p, 'step', 22); } }
         continue;
       }
       ch.root.visible = true;
@@ -1441,7 +1468,7 @@ export class Game {
       } else { ch.legs[0].rotation.x *= 0.8; ch.legs[1].rotation.x *= 0.8; }
       if (st.al && o.speedS > 4.3 && Math.abs(st.p[1] - (o.prevY ?? st.p[1])) < 0.02) {
         o.stepT -= dt;
-        if (o.stepT <= 0) { SFX.playStep(st.p); o.stepT = 0.36; }
+        if (o.stepT <= 0) { SFX.playStep(st.p); o.stepT = 0.36; if (this.isEnemyId(o.id)) this.caption('Pas ennemis', st.p, 'step', 22); }
       }
       o.prevY = st.p[1];
       // mort
@@ -1528,7 +1555,7 @@ export class Game {
         const f = this.snap.core.f;
         const iv = f > 20 ? 1 : f > 10 ? 0.5 : f > 5 ? 0.25 : 0.12;
         this.coreBeepT -= dt;
-        if (this.coreBeepT <= 0) { this.coreBeepT = iv; SFX.playBeep(f < 10 ? 1.3 : 1); }
+        if (this.coreBeepT <= 0) { this.coreBeepT = iv; SFX.playBeep(f < 10 ? 1.3 : 1); if (f < 10) this.caption('Bips rapides du noyau', null, 'beep', 0, 4); }
       }
     }
   }
@@ -1537,7 +1564,7 @@ export class Game {
     const L = this.local;
     const cam = this.camera;
     let shake = 0;
-    if (this.shake > 0) { this.shake -= dt; shake = ST().reduceMotion ? 0 : this.shake * 0.08; }
+    if (this.shake > 0) { this.shake -= dt; shake = ST().reduceMotion ? 0 : this.shake * 0.08 * (ST().shakeAmount ?? 1); }
     if (this.spec) {
       const e = this.eyePos();
       if (this.spec.third) {
@@ -1639,7 +1666,7 @@ export class Game {
     $('armor-fill').style.width = me.ar * 2 + '%';
     document.querySelector('.vitals').classList.toggle('low', me.hp <= 30);
     // battements de cœur quand la vie est basse
-    if (me.al && me.hp > 0 && me.hp <= 25) { const nowS = performance.now() / 1000; if (nowS > (this.heartT || 0)) { this.heartT = nowS + 0.9; SFX.playHeartbeat(); } }
+    if (me.al && me.hp > 0 && me.hp <= 25) { const nowS = performance.now() / 1000; if (nowS > (this.heartT || 0)) { this.heartT = nowS + 0.9; SFX.playHeartbeat(); this.caption('Battements de cœur (points de vie bas)', null, 'heart', 0, 6); } }
     $('money').textContent = me.$;
     $('buy-money').textContent = isFfa(this.mode) ? '∞' : me.$;
     // capacités
@@ -1718,7 +1745,7 @@ export class Game {
     // aveuglement
     const fl = L.flashUntil - now;
     $('frost-overlay').classList.toggle('on', !!(this.me && this.me.al && this.me.sm < 0.99));
-    $('flash-overlay').style.opacity = fl > 0 ? Math.min(1, fl / Math.min(0.9, L.flashDur * 0.6)) : 0;
+    $('flash-overlay').style.opacity = fl > 0 ? Math.min(1, fl / Math.min(0.9, L.flashDur * 0.6)) * (ST().noFlash ? 0.85 : 1) : 0;
     if (L.hurtT > 0) L.hurtT -= dt;
     $('damage-overlay').style.opacity = Math.max(0, L.hurtT / 0.4) * 0.9 + (me.al && me.hp < 30 ? 0.25 : 0);
     // dans une fumée ?
@@ -1995,6 +2022,7 @@ export class Game {
     const t0 = performance.now() / 1000;
     this.marks.push({ i: m.i, p: m.p, d: m.d, t0, end: t0 + (m.d ? 5 : 8), g, ring, el });
     SFX.playPing(m.i === this.myId ? null : m.p, !!m.d);
+    if (m.i !== this.myId) this.caption(m.d ? 'Danger signalé' : 'Position signalée', m.p, 'ping', 0, 1);
   }
   removeMark(idx) {
     const k = this.marks[idx];

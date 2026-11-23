@@ -794,3 +794,15 @@ body.touch-game #streak { bottom: 70px; } body.touch-game #tip { bottom: 90px; f
 /* menu à 9 onglets : plus compact sur les écrans moyens */
 @media (max-width: 1600px) { .nav button { padding: 22px 8px; letter-spacing: .05em; font-size: 13px; } .topbar { gap: 14px; } }
 @media (max-width: 1500px) { #conn-status { display: none; } .logo span, .brand-text { letter-spacing: .2em; } }
+
+/* ---------- accessibilité (1.8) ---------- */
+#menu .tab { zoom: var(--uif, 1); }
+body.hi-contrast { --muted: #c9d0e2; --line: #4a5577; --line2: #6a78a0; --text: #ffffff; }
+body.hi-contrast .panel { border-color: #6a78a0; }
+body.hi-contrast #hud { text-shadow: 0 0 2px #000, 0 0 3px #000; }
+body.hi-contrast[data-cb="none"] #game-canvas { filter: contrast(1.18) saturate(1.25); }
+body.no-flash #flash-overlay { background: #111522 !important; }
+#captions { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; z-index: 6; }
+#captions .cap { background: rgba(0, 0, 0, .72); color: #fff; font: 600 calc(15px * var(--hs, 1)) var(--body); padding: 3px 12px; border-radius: 4px; letter-spacing: .03em; animation: capIn .15s ease-out; }
+@keyframes capIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+body.reduce-motion #captions .cap { animation: none; }

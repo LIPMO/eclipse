@@ -1,0 +1,27 @@
+# Vérifie chaque envoi sur GitHub : syntaxe de tous les fichiers JavaScript, intégrité, test rapide du serveur.
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Syntaxe
+        run: for f in server/*.js shared/*.js public/js/*.js scripts/*.mjs tests/*.mjs; do node --check "$f" || exit 1; done
+      - name: Intégrité à jour
+        run: |
+          cp integrity.json /tmp/avant.json
+          node scripts/integrity.mjs
+          node -e "const a=require('/tmp/avant.json').files,b=require('./integrity.json').files;const d=Object.keys({...a,...b}).filter(k=>a[k]!==b[k]);if(d.length){console.error('integrity.json pas à jour :',d.join(', '));process.exit(1)}"
+      - name: Test du serveur
+        run: npm test
