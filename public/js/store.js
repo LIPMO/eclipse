@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = {
   netGraph: false, damageNumbers: true, chatMode: 'all', chatSize: 1, hudScale: 1, confirmQuit: true,
   minimapRotate: false, minimapZoom: 1, heardOnMap: true, chEnemy: false, lowAmmoWarn: true, roundBeeps: true, dmgReport: true,
   // commandes
-  crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true,
+  crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true, slide: true,
   // manette
   gpSens: 1, gpSensY: 1, gpInvert: false, gpDeadzone: 0.15, gpAimAssist: true, gpVibration: true,
   // langue

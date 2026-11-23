@@ -1418,7 +1418,13 @@
 "Tu ne peux regarder que les parties de tes amis.": "You can only watch your friends' matches.",
 "Crée un compte pour regarder les parties de tes amis.": "Create an account to watch your friends' matches.",
 "Quitte ton salon avant de regarder une partie.": "Leave your room before watching a match.",
-"Trop de spectateurs dans cette partie, réessaie plus tard.": "Too many spectators in this match, try again later."
+"Trop de spectateurs dans cette partie, réessaie plus tard.": "Too many spectators in this match, try again later.",
+"s'accroupir (en courant : glissade) ·": "crouch (while running: slide) ·",
+"Glissade (s'accroupir en courant)": "Slide (crouch while running)",
+"En courant, la touche s'accroupir lance une glissade : plus petit et plus rapide, mais moins précis. Saute pendant la glissade pour garder l'élan.": "While running, the crouch key starts a slide: smaller and faster, but less accurate. Jump during the slide to keep your momentum.",
+"En courant, appuie sur S'ACCROUPIR pour glisser : tu deviens petit et rapide, mais tu tires moins précisément.": "While running, press CROUCH to slide: you become small and fast, but you shoot less accurately.",
+"Saute pendant la glissade pour garder ton élan.": "Jump during a slide to keep your momentum.",
+"Glissade ennemie": "Enemy slide"
 },
 "patterns": [
 [

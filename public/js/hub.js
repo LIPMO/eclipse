@@ -134,7 +134,7 @@ export function openGuide() {
       ${isTouchDevice() ? `<h3>SUR TÉLÉPHONE</h3><p>Tiens le téléphone <b>en paysage</b>. Pouce gauche : <b>joystick</b> (incline peu pour marcher sans bruit). Pouce droit : <b>glisse pour viser</b>. ◉ tirer (tu peux viser en gardant le doigt dessus), ⤒ sauter, ⤓ s'accroupir, ↻ recharger, ⇄ changer d'arme, Q E X capacités, ◆ marquer une position, F poser / désamorcer, $ achats, ☰ scores, II pause. Taille, opacité et sensibilité : PARAMÈTRES → Tactile.</p>` : ''}
       <h3>COMMANDES</h3>
       <div class="g-keys">
-        <div>${k('forward')}${k('left')}${k('back')}${k('right')} se déplacer</div><div>${k('jump')} sauter · ${k('crouch')} s'accroupir · ${k('walk')} marcher sans bruit</div>
+        <div>${k('forward')}${k('left')}${k('back')}${k('right')} se déplacer</div><div>${k('jump')} sauter · ${k('crouch')} s'accroupir (en courant : glissade) · ${k('walk')} marcher sans bruit</div>
         <div><kbd>Clic gauche</kbd> tirer · <kbd>Clic droit</kbd> lunette</div><div>${k('reload')} recharger · ${k('slot1')}${k('slot2')}${k('slot3')} changer d'arme</div>
         <div>${k('abilityQ')} ${k('abilityE')} capacités · ${k('ult')} ultime</div><div>${k('buy')} menu d'achat · ${k('interact')} poser / désamorcer</div>
         <div>${k('chat')} chat (tous) · ${k('teamChat')} chat d'équipe</div><div>${k('radio')} puis un chiffre : message radio · ${k('scoreboard')} scores</div>

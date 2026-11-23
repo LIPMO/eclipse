@@ -19,6 +19,9 @@ export const GUN_LADDER = ['lancer', 'tempest', 'viper', 'brute', 'longbow', 'ho
 export const MOVE = {
   run: 6.6, walkMul: 0.5, crouchMul: 0.42, jump: 8.2, gravity: 23,
   accel: 75, airAccel: 16, friction: 11, dashSpeed: 22, dashTime: 0.18, blinkDist: 11,
+  // glissade : s'accroupir en courant. Vitesse de départ, durée max, frottement (par s), délai entre deux glissades,
+  // vitesse minimale pour la déclencher (fraction de la course), contrôle de direction, vitesse gardée en sautant
+  slideSpeed: 11, slideTime: 0.8, slideFriction: 1.4, slideCooldown: 1.1, slideStart: 0.8, slideSteer: 2.2, slideJumpKeep: 0.85,
 };
 
 export const PLAYER = { hw: 0.4, h: 1.8, hCrouch: 1.25, eye: 1.62, eyeCrouch: 1.1, maxHp: 100 };

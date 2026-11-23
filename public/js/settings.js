@@ -85,6 +85,7 @@ const SECTIONS = [
     { k: 'scopeSens', t: 'range', label: 'Multiplicateur en lunette', min: 0.2, max: 2, step: 0.05, num: true, hint: '1 = même vitesse de visée qu\'en vue normale (corrigée du zoom)' },
     { k: 'invertY', t: 'toggle', label: 'Inverser l\'axe vertical' },
     { k: 'crouchToggle', t: 'toggle', label: 'Accroupi en mode bascule', hint: 'Un appui pour s\'accroupir, un autre pour se relever' },
+    { k: 'slide', t: 'toggle', label: 'Glissade (s\'accroupir en courant)', hint: 'En courant, la touche s\'accroupir lance une glissade : plus petit et plus rapide, mais moins précis. Saute pendant la glissade pour garder l\'élan.' },
     { k: 'walkToggle', t: 'toggle', label: 'Marche silencieuse en mode bascule' },
     { k: 'scopeHold', t: 'toggle', label: 'Lunette : maintenir le bouton', hint: 'Désactivé : un clic ouvre la lunette, un autre la ferme' },
     { k: 'autoReload', t: 'toggle', label: 'Rechargement automatique quand le chargeur est vide' },

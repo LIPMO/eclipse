@@ -36,6 +36,8 @@ const DEFAULT_CONFIG = {
   perfAlerts: true, perfTickMs: 30, discordPerf: true, autoBackup: true, backupKeep: 7, rateChat: 5, rateSocial: 12,
   // clans : niveau requis pour en créer un (1 = tout le monde)
   clanMinLevel: 3,
+  // déplacement : glissade (s'accroupir en courant)
+  slide: true,
 };
 // filtre proposé au premier lancement (modifiable dans Modération → Filtre de mots)
 const DEFAULT_FILTER = ['connard', 'connasse', 'salope', 'pute', 'enculé', 'encule', 'fdp', 'ntm', 'nique ta mère', 'niquetamere', 'batard', 'bâtard', 'pédé', 'tg', 'ta gueule'];
@@ -50,7 +52,7 @@ const CONFIG_RULES = {
   slowMode: [0, 120], blockLinks: 'bool', autoMute: 'bool', autoMuteThreshold: [1, 20], autoMuteMinutes: [1, 1440], warnBanAt: [0, 20],
   anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool',
   alertSuspectLogin: 'bool', maxAccountsPerIp: [0, 50], weekendXp: 'bool',
-  perfAlerts: 'bool', perfTickMs: [5, 200], discordPerf: 'bool', autoBackup: 'bool', backupKeep: [1, 30], rateChat: [2, 30], rateSocial: [4, 60], clanMinLevel: [1, 50],
+  perfAlerts: 'bool', perfTickMs: [5, 200], discordPerf: 'bool', autoBackup: 'bool', backupKeep: [1, 30], rateChat: [2, 30], rateSocial: [4, 60], clanMinLevel: [1, 50], slide: 'bool',
 };
 // libellés lisibles de la configuration (historique des modifications)
 const CONFIG_LABELS = {
@@ -62,7 +64,7 @@ const CONFIG_LABELS = {
   autoMuteMinutes: 'Durée du silence auto.', warnBanAt: 'Ban après avertissements', anticheat: 'Anti-triche', acStrikes: 'Seuil anti-triche', discordWebhook: 'Webhook Discord',
   discordCheat: 'Discord : triche', discordReports: 'Discord : signalements', discordBans: 'Discord : bans', discordTournaments: 'Discord : tournois', alertSuspectLogin: 'Alerte compte surveillé',
   maxAccountsPerIp: 'Comptes par IP', weekendXp: 'XP du week-end', perfAlerts: 'Alertes de lenteur', perfTickMs: 'Seuil de lenteur (ms)', discordPerf: 'Discord : lenteur',
-  autoBackup: 'Sauvegarde automatique', backupKeep: 'Sauvegardes conservées', rateChat: 'Limite du chat', rateSocial: 'Limite des actions sociales', clanMinLevel: 'Niveau requis pour créer un clan',
+  autoBackup: 'Sauvegarde automatique', backupKeep: 'Sauvegardes conservées', rateChat: 'Limite du chat', rateSocial: 'Limite des actions sociales', clanMinLevel: 'Niveau requis pour créer un clan', slide: 'Glissade',
 };
 const BACKUP_RE = /^eclipse-\d{4}-\d{2}-\d{2}(-\d{6})?\.json$/;
 const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul']);

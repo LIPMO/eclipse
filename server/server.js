@@ -320,6 +320,7 @@ function startMatch(r) {
     onEvent: (type, data) => admin.matchEvent(type, { room: r, ...data }),
     rewardMul: () => admin.mul().eclats,
     weaponUnlocks: () => admin.state.config.weaponUnlocks,
+    slideEnabled: () => admin.state.config.slide !== false,
     onOver: () => {
       if (r.tournament) return;
       const pool = mapsForMode(r.mode).filter(id => id !== r.mapId);

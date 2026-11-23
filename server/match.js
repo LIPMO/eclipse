@@ -114,7 +114,7 @@ export class Match {
 
   startMsg(id) {
     const p = this.players.get(id);
-    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty };
+    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty, slide: this.slideOn() };
   }
 
   // déblocage des armes par niveau (désactivable dans l'administration)
@@ -410,6 +410,7 @@ export class Match {
     if (!p) return;
     switch (msg.type) {
       case 'input': return this.handleInput(p, msg);
+      case 'slide': return this.handleSlide(p);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'buy': return this.handleBuy(p, msg.item);
@@ -483,10 +484,24 @@ export class Match {
     this.applyLook(p, m);
   }
 
+  // glissade : le client prévient au départ ; le serveur limite la fréquence et accorde un peu de distance
+  // en plus à l'anti-triche (l'élan dépasse brièvement la vitesse de course)
+  slideOn() { return this.io.slideEnabled ? this.io.slideEnabled() !== false : true; }
+  handleSlide(p) {
+    const T = this.time;
+    if (!p.alive || !this.slideOn() || T < (p.slideNext || 0) || this.phase === 'warmup' || this.phase === 'over') return;
+    p.slideNext = T + MOVE.slideCooldown - 0.2; // marge pour la gigue réseau
+    p.slideUntil = T + MOVE.slideTime + 0.4;
+    p.slides = (p.slides || 0) + 1;
+    p.moveBonus = (p.moveBonus || 0) + MOVE.slideSpeed * 0.3;
+    p.moveBonusEnd = Math.max(p.moveBonusEnd || 0, T + MOVE.slideTime + 1);
+  }
+
   applyLook(p, m) {
     if (finite(m.y)) p.yaw = m.y;
     if (finite(m.pt)) p.pitch = Math.max(-1.55, Math.min(1.55, m.pt));
     p.crouch = !!m.c;
+    p.sliding = !!m.sl && p.crouch && (p.slideUntil || 0) > this.time;
     if ([1, 2, 3].includes(m.s) && p.weapons[m.s] && m.s !== p.slot) { p.slot = m.s; p.reloadEnd = 0; }
     if (p.interact && p.interactPos && Math.hypot(p.pos[0] - p.interactPos[0], p.pos[2] - p.interactPos[2]) > 0.6) { p.prog = 0; p.interactPos = p.pos.slice(); }
   }
@@ -1159,6 +1174,7 @@ export class Match {
         pl: p.prog > 0 ? 1 : 0, gl: p.gun, lv: p.lives, st: p.streak, k: p.kills, d: p.deaths, a: p.assists, sc: p.score, pg: p.ping || 0, dm: Math.round(p.dmg),
       };
       if (p.protEnd > T) base.sp = 1;
+      if (p.sliding && p.alive && (p.slideUntil || 0) > T) base.sd = 1;
       pub.set(p.id, JSON.stringify(base));
       // santé, argent et porteur du Noyau : réservés aux alliés
       priv.set(p.id, JSON.stringify({ ...base, hp: Math.ceil(p.hp), ar: Math.ceil(p.armor), pw: p.weapons[1]?.id || p.weapons[2]?.id || null, cr: this.core.carrier === p.id ? 1 : 0, $: p.money, rd: p.ready ? 1 : 0 }));

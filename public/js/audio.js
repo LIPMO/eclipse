@@ -148,6 +148,13 @@ export function playStreak(n) {
 export function playEmpty() { if (!ctx) return; const t = ctx.currentTime; noise(C('weapons'), t, 0.025, 5000, 6, 'bandpass', 0.3); noise(C('weapons'), t + 0.05, 0.02, 3500, 6, 'bandpass', 0.2); }
 export function playSwitch() { if (!ctx) return; const t = ctx.currentTime; noise(C('weapons'), t, 0.04, 2200, 3, 'bandpass', 0.22); noise(C('weapons'), t + 0.08, 0.05, 1400, 3, 'bandpass', 0.18); }
 export function playJump(self = true) { if (!ctx) return; noise(C('steps'), ctx.currentTime, 0.08, 400, 1, 'lowpass', self ? 0.18 : 0.1); }
+// glissade : frottement au sol (le sien, ou celui d'un autre joueur à sa position)
+export function playSlide(pos = null) {
+  if (!ctx) return;
+  const t = ctx.currentTime, o = pos ? out(pos, 30, 'steps') : C('steps');
+  noise(o, t, 0.55, 700, 0.6, 'bandpass', pos ? 0.35 : 0.3, 2.5);
+  noise(o, t, 0.4, 2400, 0.8, 'highpass', pos ? 0.12 : 0.1, 3);
+}
 export function playLand(hard = false) { if (!ctx) return; const t = ctx.currentTime; noise(C('steps'), t, hard ? 0.18 : 0.1, 260, 1, 'lowpass', hard ? 0.55 : 0.28); }
 export function playHeartbeat() { if (!ctx) return; const t = ctx.currentTime; tone(C('ui'), t, 0.12, 60, 40, 'sine', 0.5); tone(C('ui'), t + 0.18, 0.12, 55, 38, 'sine', 0.35); }
 export function playLevelUp() { if (!ctx) return; const t = ctx.currentTime; [523, 659, 784, 1047].forEach((f, i) => tone(C('ui'), t + i * 0.09, 0.35, f, f, 'triangle', 0.22)); tone(C('ui'), t + 0.36, 0.6, 1568, 1568, 'sine', 0.12); }

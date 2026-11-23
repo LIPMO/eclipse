@@ -420,6 +420,7 @@ const VIEWS = {
           <h3 style="margin-top:22px">Durées des manches (secondes)</h3>
           <div class="row">${num('buyTime', 'Achat (Assaut)', 5, 120)}${num('roundTime', 'Manche (Assaut)', 20, 600)}${num('fuseTime', 'Noyau posé', 10, 180)}</div>
           <div class="row">${num('duelBuyTime', 'Achat (Duel)', 3, 60)}${num('duelRoundTime', 'Manche (Duel)', 15, 600)}</div>
+          ${chk('slide', 'Glissade autorisée (s\'accroupir en courant)', 'Décoche pour la désactiver dans les nouvelles parties.')}
           <p class="muted small">S'applique aux nouvelles manches, sans redémarrage.</p>
           <button class="btn primary" data-act="cfgSave" data-section="eco">Enregistrer</button></div>
         <div class="card" style="grid-column:1/-1"><h3>Équilibrage des armes</h3>

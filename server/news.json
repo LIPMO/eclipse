@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.13.0",
+    "date": "2026-11-23",
+    "title": "Glissades",
+    "items": [
+      "Glissade : en courant, appuie sur S'ACCROUPIR (C par défaut, B à la manette) pour glisser. Tu pars avec un élan rapide et deviens plus petit, donc plus difficile à toucher.",
+      "Pendant la glissade, tu tires moins précisément (pas de bonus accroupi). Saute pendant la glissade pour garder ton élan. Une glissade toutes les 1,1 seconde au maximum.",
+      "La caméra s'incline légèrement pendant la glissade (désactivé avec « Réduire les mouvements »). Les autres joueurs voient ta posture et entendent le frottement.",
+      "Option PARAMÈTRES → Souris → Glissade pour la désactiver. Les administrateurs peuvent aussi la désactiver pour tout le serveur (Configuration → Économie)."
+    ]
+  },
+  {
     "version": "1.12.0",
     "date": "2026-11-23",
     "title": "26 nouveaux skins et regarder la partie d'un ami",

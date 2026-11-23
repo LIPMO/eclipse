@@ -23,6 +23,8 @@ const TIPS = [
   'Clic molette : marque une position pour ton équipe. Vise un ennemi pour une alerte rouge.',
   'Marcher (Maj) rend tes pas silencieux : les ennemis ne t\'entendent plus.',
   'Accroupi, ta précision augmente de 25 %.',
+  'En courant, appuie sur S\'ACCROUPIR pour glisser : tu deviens petit et rapide, mais tu tires moins précisément.',
+  'Saute pendant une glissade pour garder ton élan.',
   'Le Longbow tue en un tir à la tête… mais il faut viser avec la lunette.',
   'Après ta mort, la killcam te montre d\'où venait le tir.',
   'Tes capacités se rechargent en Mêlée : utilise-les souvent !',
@@ -95,6 +97,7 @@ export class Game {
     this.bubbles = [];
     this.spec = start.spectate ? { xray: false, third: false, buf: [], info: null, ghost: null, friend: !!start.friendSpec, delay: start.delay || 0, name: start.watchName || '' } : null;
     this.range = start.diff === 'cible'; // champ de tir (défi de visée)
+    this.slideOn = start.slide !== false; // glissade autorisée sur ce serveur (désactivable dans l'administration)
     this.muted = new Set(); this.dropMeshes = new Map(); this.allyDeaths = []; this.prevSlot = null; this.lastLoadout = null; this.bought = {}; this.readyN = null;
 
     this.initRenderer();
@@ -194,6 +197,7 @@ export class Game {
     const hfov = profile.settings.fov * Math.PI / 180;
     let v = 2 * Math.atan(Math.tan(hfov / 2) / (this.aspect || 1.7)) * 180 / Math.PI;
     if (this.scoped) v /= WEAPONS.longbow.scope;
+    else v *= this.fovKick || 1; // léger élargissement du champ de vision pendant une glissade
     this.camera.fov = v;
     this.camera.updateProjectionMatrix();
   }
@@ -1192,7 +1196,7 @@ export class Game {
     if (def.type !== 'melee') {
       if (hs > 2.2) spread += def.moveSpread * Math.min(1, hs / 6);
       if (!L.onGround) spread += def.airSpread;
-      if (L.crouch) spread *= 0.75;
+      if (L.crouch && !(L.slideT > 0)) spread *= 0.75; // la glissade ne donne pas le bonus de précision accroupi
       if (def.auto) spread += Math.min(L.burst, 14) * def.recoil * 0.3;
     }
     const dirs = [];
@@ -1279,6 +1283,7 @@ export class Game {
     on('roster', m => this.applyRoster(m.players));
     on('teleport', m => {
       const L = this.local;
+      L.slideT = 0; // réapparition / téléportation : la glissade s'arrête
       L.pos = m.p.slice(); L.vel = [0, 0, 0]; L.yaw = m.y; L.pitch = 0; L.recoil = 0; L.burst = 0; L.reloadEnd = 0; L.dashT = 0;
       this.syncSlot = true;
       this.killedBy = null;
@@ -1407,7 +1412,7 @@ export class Game {
       if (wid && this.vmWeaponId !== wid) this.setViewmodel(wid);
       if (this.spec.friend && !this.spec.started) { this.spec.started = true; $('sp-wait')?.remove(); }
       const selfP = s.players.find(p => p.i === this.myId);
-      if (selfP && selfP.p) { this.spec.buf.push({ t: s.t, p: selfP.p, y: selfP.y, pt: selfP.pt, c: selfP.c, al: selfP.al }); if (this.spec.buf.length > 30) this.spec.buf.shift(); }
+      if (selfP && selfP.p) { this.spec.buf.push({ t: s.t, p: selfP.p, y: selfP.y, pt: selfP.pt, c: selfP.c, al: selfP.al, sd: selfP.sd }); if (this.spec.buf.length > 30) this.spec.buf.shift(); }
     }
     if (this.syncSlot && me.wp[me.sl]) {
       this.syncSlot = false;
@@ -1651,17 +1656,36 @@ export class Game {
     if (wl > 0) { wx /= wl; wz /= wl; }
     const walking = H.has('walk') || (stickMag > 0.15 && stickMag < 0.55);
     let speed = MOVE.run * (def.speed || 1) * (this.me.sm || 1);
+    // glissade : s'accroupir en courant (au sol, ni en marche lente, ni en visée à la lunette)
+    const runSpeed = speed;
+    if (L.crouch && !L.crouchPrev && !(L.slideT > 0) && !(L.dashT > 0) && this.slideOn && ST().slide !== false && L.onGround && !walking && !this.scoped
+      && Math.hypot(L.vel[0], L.vel[2]) >= runSpeed * MOVE.slideStart && now >= (L.slideReady || 0)) this.startSlide(now, runSpeed);
+    L.crouchPrev = L.crouch;
     if (walking) speed *= MOVE.walkMul;
     if (L.crouch) speed *= MOVE.crouchMul;
     if (this.scoped) speed *= 0.6;
     if (L.dashT > 0) L.dashT -= dt;
-    else {
+    else if (L.slideT > 0) {
+      // la vitesse de la glissade diminue avec le frottement ; on peut légèrement l'orienter
+      L.slideT -= dt;
+      const hv = Math.hypot(L.vel[0], L.vel[2]);
+      const nv = hv * Math.exp(-MOVE.slideFriction * dt);
+      let dx = hv > 0.01 ? L.vel[0] / hv : 0, dz = hv > 0.01 ? L.vel[2] / hv : 0;
+      if (wl > 0 && hv > 0.01) { const k = Math.min(1, MOVE.slideSteer * dt); dx += (wx - dx) * k; dz += (wz - dz) * k; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl; }
+      L.vel[0] = dx * nv; L.vel[2] = dz * nv;
+      // fin : durée écoulée, trop lent (mur, frottement), accroupi relâché ou en l'air
+      if (L.slideT <= 0 || nv < runSpeed * MOVE.crouchMul || !L.crouch || !L.onGround || frozen) L.slideT = 0;
+    } else {
       const rate = L.onGround ? 15 : 2.2;
       const k = Math.min(1, rate * dt);
       L.vel[0] += (wx * speed - L.vel[0]) * k;
       L.vel[2] += (wz * speed - L.vel[2]) * k;
     }
-    if (H.has('jump') && L.onGround && !frozen) { L.vel[1] = MOVE.jump; L.onGround = false; SFX.playJump(); }
+    if (H.has('jump') && L.onGround && !frozen) {
+      // saut pendant une glissade : on garde une bonne partie de l'élan
+      if (L.slideT > 0) { L.slideT = 0; const hv = Math.hypot(L.vel[0], L.vel[2]), cap = MOVE.slideSpeed * MOVE.slideJumpKeep * (def.speed || 1) * (this.me.sm || 1); if (hv > cap) { L.vel[0] *= cap / hv; L.vel[2] *= cap / hv; } }
+      L.vel[1] = MOVE.jump; L.onGround = false; SFX.playJump();
+    }
     L.vel[1] -= MOVE.gravity * (this.opts.lowGrav ? 0.45 : 1) * dt;
     const prev = L.pos.slice();
     const wasGround = L.onGround, fallV = L.vel[1];
@@ -1698,9 +1722,22 @@ export class Game {
     // envoi des entrées (30 Hz)
     if (now - this.lastInput > 1 / 30) {
       this.lastInput = now;
-      this.net.send('input', { p: L.pos.map(v => Math.round(v * 100) / 100), y: Math.round(L.yaw * 1000) / 1000, pt: Math.round((L.pitch + L.recoil) * 1000) / 1000, c: L.crouch ? 1 : 0, s: L.slot });
+      this.net.send('input', { p: L.pos.map(v => Math.round(v * 100) / 100), y: Math.round(L.yaw * 1000) / 1000, pt: Math.round((L.pitch + L.recoil) * 1000) / 1000, c: L.crouch ? 1 : 0, s: L.slot, ...(L.slideT > 0 ? { sl: 1 } : {}) });
     }
     SFX.setListener(this.eyePos(), L.yaw);
+  }
+
+  // glissade : élan vers l'avant dans la direction du déplacement
+  startSlide(now, runSpeed) {
+    const L = this.local;
+    const hv = Math.hypot(L.vel[0], L.vel[2]) || 1;
+    const v0 = Math.max(hv, MOVE.slideSpeed * (runSpeed / MOVE.run));
+    L.vel[0] *= v0 / hv; L.vel[2] *= v0 / hv;
+    L.slideT = MOVE.slideTime;
+    L.slideReady = now + MOVE.slideCooldown;
+    this.toggleBuy(false);
+    SFX.playSlide();
+    this.net.send('slide');
   }
 
   interpState(o, renderT) {
@@ -1742,7 +1779,11 @@ export class Game {
       ch.root.position.set(st.p[0], st.p[1], st.p[2]);
       ch.root.rotation.y = st.y;
       const crouch = st.c ? 1 : 0;
-      ch.upper.position.y += ((crouch ? 0.5 : 0.9) - ch.upper.position.y) * Math.min(1, dt * 12);
+      const slid = st.sd && st.al ? 1 : 0;
+      if (slid && !o.slid) { SFX.playSlide(st.p); if (this.isEnemyId(o.id)) this.caption('Glissade ennemie', st.p, 'slide', 30); }
+      o.slid = slid;
+      ch.upper.position.y += ((slid ? 0.42 : crouch ? 0.5 : 0.9) - ch.upper.position.y) * Math.min(1, dt * 12);
+      ch.upper.rotation.x += ((slid ? -0.45 : 0) - ch.upper.rotation.x) * Math.min(1, dt * 12);
       ch.lower.scale.y += ((crouch ? 0.58 : 1) - ch.lower.scale.y) * Math.min(1, dt * 12);
       ch.head.rotation.x = st.pt * 0.6;
       ch.arms[0].rotation.x = -1.2 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
@@ -1755,12 +1796,13 @@ export class Game {
       if (o.lastPos) speed = Math.hypot(st.p[0] - o.lastPos[0], st.p[2] - o.lastPos[2]) / Math.max(dt, 1e-3);
       o.lastPos = st.p.slice();
       o.speedS = (o.speedS || 0) * 0.85 + speed * 0.15;
-      if (st.al && o.speedS > 0.5) {
+      if (slid) { ch.legs[0].rotation.x += (-1.25 - ch.legs[0].rotation.x) * Math.min(1, dt * 14); ch.legs[1].rotation.x += (-1.05 - ch.legs[1].rotation.x) * Math.min(1, dt * 14); }
+      else if (st.al && o.speedS > 0.5) {
         o.walkPhase += dt * o.speedS * 1.6;
         const sw = Math.sin(o.walkPhase) * Math.min(0.7, o.speedS * 0.1);
         ch.legs[0].rotation.x = sw; ch.legs[1].rotation.x = -sw;
       } else { ch.legs[0].rotation.x *= 0.8; ch.legs[1].rotation.x *= 0.8; }
-      if (st.al && o.speedS > 4.3 && Math.abs(st.p[1] - (o.prevY ?? st.p[1])) < 0.02) {
+      if (st.al && !slid && o.speedS > 4.3 && Math.abs(st.p[1] - (o.prevY ?? st.p[1])) < 0.02) {
         o.stepT -= dt;
         if (o.stepT <= 0) { SFX.playStep(st.p); o.stepT = 0.36; if (this.isEnemyId(o.id)) this.caption('Pas ennemis', st.p, 'step', 22); }
       }
@@ -1866,12 +1908,18 @@ export class Game {
         const back = 3.2, cp = Math.cos(L.pitch);
         cam.position.set(e[0] + Math.sin(L.yaw) * cp * back, e[1] + 0.6 - Math.sin(L.pitch) * back * 0.5, e[2] + Math.cos(L.yaw) * cp * back);
       } else cam.position.set(e[0], e[1], e[2]);
-      cam.rotation.set(L.pitch, L.yaw, 0);
+      // le joueur observé glisse : même inclinaison de caméra que lui
+      L.slideRoll = (L.slideRoll || 0) + ((L.specSlide && !this.spec.third && !ST().reduceMotion ? 0.075 : 0) - (L.slideRoll || 0)) * Math.min(1, dt * 10);
+      cam.rotation.set(L.pitch, L.yaw, L.slideRoll);
       $('death-info').innerHTML = this.me && !this.me.al ? `${esc(this.nameOf(this.myId))} est mort${this.me.rs ? ` · réapparition dans ${Math.ceil(this.me.rs)} s` : ''}` : '';
     } else if (this.me?.al || !this.me) {
       const e = this.eyePos();
       cam.position.set(e[0], e[1], e[2]);
-      cam.rotation.set(L.pitch + L.recoil + (Math.random() - 0.5) * shake, L.yaw + (Math.random() - 0.5) * shake, 0);
+      const sliding = L.slideT > 0 && !ST().reduceMotion;
+      L.slideRoll = (L.slideRoll || 0) + ((sliding ? 0.075 : 0) - (L.slideRoll || 0)) * Math.min(1, dt * 10);
+      const kick = sliding && !this.scoped ? 1.07 : 1;
+      if (Math.abs((this.fovKick || 1) - kick) > 0.002) { this.fovKick = (this.fovKick || 1) + (kick - (this.fovKick || 1)) * Math.min(1, dt * 8); this.updateFov(); }
+      cam.rotation.set(L.pitch + L.recoil + (Math.random() - 0.5) * shake, L.yaw + (Math.random() - 0.5) * shake, L.slideRoll);
       this.specTarget = null;
     } else {
       // mode spectateur
@@ -1909,11 +1957,11 @@ export class Game {
     const melee = WEAPONS[this.curWeaponId()].type === 'melee';
     this.vm.position.set(
       base[0] * (ST().leftHand ? -1 : 1) + Math.cos(this.vmBob) * 0.012 * bobA - this.vmSwayX,
-      base[1] + Math.abs(Math.sin(this.vmBob)) * 0.014 * bobA + this.vmSwayY - reloadK * 0.12 - sw * 0.25 - (L.crouch ? 0.01 : 0),
+      base[1] + Math.abs(Math.sin(this.vmBob)) * 0.014 * bobA + this.vmSwayY - reloadK * 0.12 - sw * 0.25 - (L.crouch ? 0.01 : 0) - (L.slideRoll || 0) * 0.5,
       base[2] + this.vmKick * (melee ? -0.15 : 0.06));
     let insp = 0;
     if (this.inspectT > 0) { this.inspectT -= dt; if (this.local.lastShot > now - 0.2 || L.reloadEnd > now) this.inspectT = 0; insp = Math.sin(Math.min(1, (1.8 - this.inspectT) / 1.8) * Math.PI); }
-    this.vm.rotation.set(this.vmKick * (melee ? -0.6 : 0.12) - reloadK * 0.6 + sw * 0.6 + insp * 0.35, this.vmSwayX * 2 + (melee ? this.vmKick * 0.8 : 0) + insp * 1.1, reloadK * 0.4 + insp * 0.5);
+    this.vm.rotation.set(this.vmKick * (melee ? -0.6 : 0.12) - reloadK * 0.6 + sw * 0.6 + insp * 0.35, this.vmSwayX * 2 + (melee ? this.vmKick * 0.8 : 0) + insp * 1.1, reloadK * 0.4 + insp * 0.5 + (L.slideRoll || 0) * 2.5);
   }
 
   // ======================= HUD (mise à jour) =======================
@@ -2332,7 +2380,7 @@ export class Game {
     const renderT = Date.now() + (this.offset || 0) - 120;
     const st = this.interpState({ buf: sp.buf }, renderT);
     if (st) {
-      L.pos = st.p.slice(); L.yaw = st.y; L.pitch = st.pt; L.crouch = !!st.c;
+      L.pos = st.p.slice(); L.yaw = st.y; L.pitch = st.pt; L.crouch = !!st.c; L.specSlide = !!st.sd;
       L.eyeH += ((L.crouch ? PLAYER.eyeCrouch : PLAYER.eye) - L.eyeH) * Math.min(1, dt * 14);
       // vue à la 3e personne : modèle du joueur observé et caméra derrière lui
       if (sp.third) {
