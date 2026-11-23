@@ -194,6 +194,9 @@ else
   fi
   verify_integrity "$NEW_DIR" || { rm -rf "$NEW_DIR"; die "Fichiers installés non conformes : rien n'a été modifié."; }
   chown -R root:root "$NEW_DIR"
+  # le code appartient à root mais doit rester LISIBLE par l'utilisateur du service : tar recopie les droits
+  # du dossier source (ex. /opt/eclipse-git en 700), ce qui empêchait le jeu de démarrer après la bascule
+  chmod -R u+rwX,go+rX,go-w "$NEW_DIR"
   OLD_DIR="$APP_DIR.ancien-$OLD_VERSION-$STAMP"
   log "Bascule vers la version $NEW_VERSION…"
   systemctl stop "$SERVICE"

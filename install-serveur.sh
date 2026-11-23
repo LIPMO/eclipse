@@ -224,6 +224,8 @@ if [ -f "$APP_DIR/integrity.json" ]; then
   ok "Intégrité des fichiers vérifiée."
 fi
 chown -R root:root "$APP_DIR"
+# code lisible par le service (même si le dossier source était en 700), modifiable seulement par root
+chmod -R u+rwX,go+rX,go-w "$APP_DIR"
 chown -R "$APP_USER:$APP_USER" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 find "$DATA_DIR" -type f -exec chmod 600 {} + 2>/dev/null || true
