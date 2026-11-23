@@ -502,6 +502,61 @@ export class Game {
     if (this.hudAgent !== me?.agent) this.buildAbilityHUD();
   }
 
+  // ---------- réactions rapides (👏 à un coéquipier qui vient d'éliminer quelqu'un) ----------
+  offerReaction(id) {
+    this.reactTarget = { id, until: performance.now() / 1000 + 5 };
+    let h = $('react-hint');
+    if (!h) { h = document.createElement('div'); h.id = 'react-hint'; $('hud').appendChild(h); }
+    h.classList.remove('sent');
+    h.innerHTML = `<kbd>${esc(keyName(ST().keys.react))}</kbd> 👏 Bravo à <b>${esc(this.nameOf(id))}</b>`;
+    h.classList.add('show');
+    clearTimeout(this.reactHT); this.reactHT = setTimeout(() => h.classList.remove('show'), 5000);
+  }
+  sendReaction() {
+    const t = this.reactTarget;
+    if (!t || performance.now() / 1000 > t.until) return;
+    this.reactTarget = null;
+    this.net.send('react', { id: t.id, e: 0 });
+  }
+  showReaction(m) {
+    let box = $('react-recv');
+    if (!box) { box = document.createElement('div'); box.id = 'react-recv'; $('hud').appendChild(box); }
+    const el = document.createElement('div'); el.className = 'rr';
+    el.innerHTML = `<span class="re">${['👏', '🔥', '😮', 'GG'][m.e] || '👏'}</span> <b>${esc(this.nameOf(m.from) === '???' ? m.name : this.nameOf(m.from))}</b> te félicite !`;
+    box.appendChild(el); while (box.children.length > 3) box.firstChild.remove();
+    SFX.playNotify?.();
+    setTimeout(() => el.remove(), 3500);
+  }
+  // ---------- résumé de fin de manche ----------
+  roundSummary(m, win) {
+    if (isFfa(this.mode)) return;
+    let el = $('round-sum');
+    if (!el) { el = document.createElement('div'); el.id = 'round-sum'; $('hud').appendChild(el); }
+    const myTeam = this.roster.get(this.myId)?.team;
+    const sc = m.score || this.snap?.sc || {};
+    const mine = sc[myTeam] ?? 0, theirs = sc[myTeam === 'alpha' ? 'beta' : 'alpha'] ?? 0;
+    el.className = 'show ' + (m.winner ? (win ? 'win' : 'lose') : '');
+    el.innerHTML = `<div class="rs-score"><span class="ally">${mine}</span><i>–</i><span class="enemy">${theirs}</span></div>
+      <div class="rs-me"><div><b>${this.roundKills || 0}</b><span>élimination${(this.roundKills || 0) > 1 ? 's' : ''}</span></div><div><b>${Math.round(this.roundDmg || 0)}</b><span>dégâts</span></div><div><b>${this.self?.$ ?? '—'}</b><span>crédits</span></div></div>
+      <div class="rs-goal muted">Objectif : ${this.target} manches${mine === this.target - 1 ? ' · <b class="gold">balle de match !</b>' : ''}</div>`;
+    clearTimeout(this.rsT); this.rsT = setTimeout(() => { el.className = ''; }, 4200);
+  }
+  // ---------- barre de progression du match (sous le chrono) ----------
+  updateProgress(s, myTeam) {
+    let el = $('match-prog');
+    if (!el) { el = document.createElement('div'); el.id = 'match-prog'; el.innerHTML = '<i class="mp-a"></i><i class="mp-b"></i>'; document.querySelector('#hud .mid')?.appendChild(el); }
+    if (!el.isConnected) return;
+    let a = 0, b = 0;
+    if (this.mode === 'gungame') { a = ((this.self?.gl || 0)) / (GUN_LADDER.length - 1); b = Math.max(0, ...s.players.filter(p => p.i !== this.myId).map(p => p.gl || 0)) / (GUN_LADDER.length - 1); }
+    else if (this.mode === 'lives') { el.style.display = 'none'; return; }
+    else if (isFfa(this.mode)) { a = (this.self?.k ?? 0) / this.target; b = Math.max(0, ...s.players.filter(p => p.i !== this.myId).map(p => p.k)) / this.target; }
+    else { a = (s.sc[myTeam] ?? 0) / this.target; b = (s.sc[myTeam === 'alpha' ? 'beta' : 'alpha'] ?? 0) / this.target; }
+    el.style.display = '';
+    el.firstChild.style.width = Math.min(100, a * 100) + '%';
+    el.lastChild.style.width = Math.min(100, b * 100) + '%';
+    el.title = isFfa(this.mode) ? 'Toi (à gauche) et le meilleur adversaire (à droite)' : 'Progression vers l\'objectif : ton équipe à gauche, l\'adversaire à droite';
+  }
+
   banner(title, sub = '', cls = '', dur = 2.5) {
     const b = $('banner');
     b.querySelector('.b-title').textContent = title;
@@ -547,7 +602,7 @@ export class Game {
     if (!sys && ST().chatMode === 'team' && !m.teamOnly && !m.radio) return;
     if (!sys && ST().streamer) m = { ...m, from: [...this.roster.values()].find(r => r.name === m.from && r.id !== this.myId) ? this.nameOf([...this.roster.values()].find(r => r.name === m.from).id) : m.from };
     const color = m.from === 'SYSTÈME' ? '#ffcf5a' : isFfa(this.mode) ? '#c4b0ff' : m.team === myTeam ? ALLY : ENEMY;
-    const tag = m.radio ? '<span class="tag radio">RADIO</span>' : m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : '';
+    const tag = m.party ? '<span class="tag party">GROUPE</span>' : m.radio ? '<span class="tag radio">RADIO</span>' : m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : '';
     d.className = m.radio ? 'radio' : m.teamOnly ? 'team' : '';
     d.innerHTML = `${tag}<b style="color:${color}">${esc(m.from)}</b> : ${esc(emojify(m.text))}`;
     log.appendChild(d);
@@ -633,6 +688,7 @@ export class Game {
       case 'mark': if (this.me?.al && !this.ended) this.net.send('mark', { d: this.aimDir() }); break;
       case 'emote': this.toggleEmote(); break;
       case 'inspect': if (this.me?.al) this.inspectT = 1.8; break;
+      case 'react': this.sendReaction(); break;
       case 'fire': if (!this.me?.al && !isFfa(this.mode)) this.specIdx++; break;
     }
   }
@@ -1023,6 +1079,7 @@ export class Game {
     });
     on('shot', m => this.onRemoteShot(m));
     on('hit', m => {
+      if (m.d > 0) this.roundDmg = (this.roundDmg || 0) + m.d;
       if (ST().damageNumbers && m.d > 0) this.damageNumber(m.d, m.h, m.k);
       if (ST().hitmarker) {
         const hm = $('hitmarker');
@@ -1035,6 +1092,9 @@ export class Game {
     on('hurt', m => { this.local.hurtT = 0.4; SFX.playHurt(); if (m.from) this.showDamageDir(m.from); });
     on('kill', m => {
       this.addKillfeed(m);
+      if (m.k === this.myId && m.v !== this.myId) this.roundKills = (this.roundKills || 0) + 1;
+      const kr = m.k && m.k !== this.myId && m.v !== this.myId && this.roster.get(m.k);
+      if (kr && !kr.bot && !this.isEnemyId(m.k)) this.offerReaction(m.k);
       if (m.k === this.myId && m.v !== this.myId) {
         const now = performance.now() / 1000;
         this.streak = now - (this.streakT || 0) < 4 ? (this.streak || 0) + 1 : 1;
@@ -1057,13 +1117,17 @@ export class Game {
       for (const o of this.others.values()) { o.deadT = 0; o.ch.root.rotation.x = 0; }
       for (const t of this.tracers) this.scene.remove(t.mesh);
       this.tracers = [];
+      this.roundKills = 0; this.roundDmg = 0;
     });
+    on('reaction', m => this.showReaction(m));
+    on('reactSent', m => { const h = $('react-hint'); if (h) { h.textContent = `${['👏', '🔥', '😮', 'GG'][m.e]} envoyé à ${m.to}`; h.classList.add('show', 'sent'); clearTimeout(this.reactHT); this.reactHT = setTimeout(() => h.classList.remove('show', 'sent'), 1500); } });
     on('phase', m => { if (m.phase === 'live') { this.centerMsg('ENGAGEZ !', 1.5); SFX.playUI('roundStart'); this.toggleBuy(false); } });
     on('roundEnd', m => {
       const me = this.roster.get(this.myId);
       const win = me && m.winner === me.team;
       if (m.history) this.roundHistory = m.history;
       const mvpTxt = m.mvp ? ` · MVP de la manche : ${this.nameOf(m.mvp.id)} (${m.mvp.kills} élim., ${m.mvp.dmg} dégâts)` : '';
+      this.roundSummary(m, win);
       if (!m.winner) { this.banner('ÉGALITÉ', (REASONS[m.reason] || '') + mvpTxt, '', 4); return; }
       this.banner(win ? 'MANCHE GAGNÉE' : 'MANCHE PERDUE', (REASONS[m.reason] || '') + mvpTxt, win ? 'win' : 'lose', 4);
       SFX.playUI(win ? 'win' : 'lose');
@@ -1651,6 +1715,7 @@ export class Game {
       $('score-right').textContent = s.sc[myTeam === 'alpha' ? 'beta' : 'alpha'] ?? 0;
       $('round-label').textContent = s.ph === 'buy' ? 'PHASE D\'ACHAT' : this.mode === 'duel' ? `DUEL · MANCHE ${s.rd} · OBJ. ${this.target}` : `MANCHE ${s.rd} · ${me.side === 'atk' ? 'ATTAQUE' : 'DÉFENSE'}`;
     }
+    this.updateProgress(s, myTeam);
     const timer = $('timer');
     if (s.ph === 'planted') { timer.textContent = '◆ ' + fmtTime(s.core.f); timer.classList.add('planted'); }
     else { timer.textContent = fmtTime(s.tm); timer.classList.remove('planted'); }
@@ -2065,6 +2130,16 @@ export class Game {
     for (const sm of this.smokeMeshes.values()) { const [x, y] = P(sm.position.x, sm.position.z); g.fillStyle = 'rgba(200,205,230,.75)'; g.beginPath(); g.arc(x, y, (sm.userData.r / CELL) * s, 0, 7); g.fill(); }
     for (const f of this.fireMeshes.values()) { const [x, y] = P(f.position.x, f.position.z); g.fillStyle = f.userData.kind === 'shock' ? 'rgba(63,208,255,.5)' : f.userData.kind === 'frost' ? 'rgba(158,231,255,.45)' : 'rgba(255,110,40,.5)'; g.beginPath(); g.arc(x, y, (f.userData.disc.geometry.parameters.radius / CELL) * s, 0, 7); g.fill(); }
     for (const w of this.wallMeshes.values()) { const b = w.userData.box; const [x1, y1] = P(b.min[0], b.min[2]); const [x2, y2] = P(b.max[0], b.max[2]); g.fillStyle = '#9ef0ff'; g.fillRect(x1, y1, Math.max(2, x2 - x1), Math.max(2, y2 - y1)); }
+    if (snap.ph === 'planted' && snap.core.p) {
+      // zone de danger du Noyau : cercle de l'explosion, l'anneau intérieur se resserre jusqu'à l'explosion
+      const [x, y] = P(snap.core.p[0], snap.core.p[2]), R = (ROUND.explosionRadius / CELL) * s;
+      const left = Math.max(0, Math.min(1, snap.core.f / (ROUND.fuseTime || 40)));
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (snap.core.f < 10 ? 80 : 200));
+      g.fillStyle = `rgba(255,47,109,${0.10 + 0.08 * pulse})`; g.beginPath(); g.arc(x, y, R, 0, 7); g.fill();
+      g.strokeStyle = 'rgba(255,47,109,.85)'; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, R, 0, 7); g.stroke();
+      g.strokeStyle = '#ffcf5a'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, Math.max(3, R * left), 0, 7); g.stroke();
+    }
+    for (const pm of this.projMeshes.values()) { const [x, y] = P(pm.position.x, pm.position.z); g.fillStyle = '#ff9a3d'; g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,154,61,.5)'; g.lineWidth = 1; g.beginPath(); g.arc(x, y, 7, 0, 7); g.stroke(); }
     if (snap.core.p) { const [x, y] = P(snap.core.p[0], snap.core.p[2]); g.fillStyle = '#ff2f6d'; g.save(); g.translate(x, y); g.rotate(Math.PI / 4); g.fillRect(-4, -4, 8, 8); g.restore(); }
     const tnow = performance.now() / 1000;
     const me = this.roster.get(this.myId);

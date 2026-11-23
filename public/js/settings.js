@@ -27,7 +27,7 @@ export const ACTIONS = [
   ['slot1', 'Arme principale'], ['slot2', 'Arme secondaire'], ['slot3', 'Couteau'],
   ['abilityQ', 'Capacité 1'], ['abilityE', 'Capacité 2'], ['ult', 'Ultime'],
   ['interact', 'Poser / désamorcer'], ['buy', 'Menu d\'achat'], ['scoreboard', 'Tableau des scores'], ['chat', 'Chat (tous)'],
-  ['teamChat', 'Chat d\'équipe'], ['radio', 'Messages radio'], ['mark', 'Marquer une position (ping)'], ['emote', 'Émotes'], ['inspect', 'Inspecter l\'arme'],
+  ['teamChat', 'Chat d\'équipe'], ['radio', 'Messages radio'], ['mark', 'Marquer une position (ping)'], ['emote', 'Émotes'], ['inspect', 'Inspecter l\'arme'], ['react', 'Féliciter un coéquipier (👏)'],
 ];
 
 // ---------- viseur ----------
@@ -129,6 +129,8 @@ const SECTIONS = [
     { k: 'colorblind', t: 'select', label: 'Filtre daltonien', opts: [['none', 'Aucun'], ['protan', 'Protanopie (rouge)'], ['deutan', 'Deutéranopie (vert)'], ['tritan', 'Tritanopie (bleu)']], hint: 'Corrige les couleurs du jeu pour mieux distinguer alliés et ennemis' },
     { k: 'reduceMotion', t: 'toggle', label: 'Réduire les mouvements', hint: 'Sans secousses de caméra, sans balancement de l\'arme et avec moins d\'animations' },
     { k: 'uiFont', t: 'range', label: 'Taille du texte des menus', min: 0.85, max: 1.4, step: 0.05, pct: true, hint: 'Agrandit tous les textes et boutons du menu principal' },
+    { k: 'readableFont', t: 'toggle', label: 'Lecture simple', hint: 'Police plus lisible, lettres et lignes plus espacées (aide à la lecture, dyslexie)' },
+    { k: 'menuTheme', t: 'select', label: 'Thème du menu', opts: [['dark', 'Sombre'], ['light', 'Clair']], hint: 'Le jeu lui-même reste sombre' },
     { k: 'highContrast', t: 'toggle', label: 'Contraste élevé', hint: 'Textes plus clairs, bordures plus visibles et image de jeu plus contrastée' },
     { k: 'subtitles', t: 'toggle', label: 'Sous-titres des sons importants', hint: 'Affiche « Pas ennemis → », « Tir ennemi ← », explosions, capacités… avec leur direction' },
     { k: 'shakeAmount', t: 'range', label: 'Intensité des secousses de caméra', min: 0, max: 1, step: 0.05, pct: true, hint: '0 % = aucune secousse' },

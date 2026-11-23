@@ -10,7 +10,7 @@ import * as SFX from './audio.js';
 import { mountSettings, keyName, sanitizeSettings, applyPreset } from './settings.js';
 import { initClans, openClanTab } from './clans.js';
 import { initTournaments, openTournamentsTab } from './tournaments.js';
-import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub, emojify } from './hub.js';
+import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub, emojify, renderPartyBar, startTour } from './hub.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -46,13 +46,32 @@ function showTab(name) {
   if (name === 'agents') renderAgents();
   if (name === 'collection') renderCollection();
   if (name === 'settings') mountSettings($('settings-root'));
-  if (name === 'play') { net.send('listRooms'); renderMeCard(); renderQuests(); renderEvent(); }
+  if (name === 'play') { net.send('listRooms'); renderMeCard(); renderQuests(); renderEvent(); renderPartyBar(); }
   if (name === 'profile') { net.send('myProfile'); renderProfile(); }
   if (name === 'leaderboard') { renderLeaderboard(); loadLeaderboard(); }
   if (name === 'friends') { net.send('friends'); renderFriends(); }
   if (name === 'clan') openClanTab();
   if (name === 'tournaments') openTournamentsTab();
   previews.active = name === 'agents' ? 'agent' : name === 'collection' ? 'coll' : null;
+}
+
+// raccourcis du menu : chiffres 1 à 9 pour les onglets, ? pour la liste des raccourcis
+const TAB_KEYS = ['play', 'agents', 'collection', 'profile', 'leaderboard', 'friends', 'clan', 'tournaments', 'settings'];
+document.querySelectorAll('.nav button').forEach(b => { const i = TAB_KEYS.indexOf(b.dataset.tab); if (i >= 0) b.title = `Raccourci : touche ${i + 1}`; });
+document.addEventListener('keydown', e => {
+  if (state.game || e.ctrlKey || e.metaKey || e.altKey || !state.myId || $('nav').classList.contains('locked')) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '') || document.getElementById('tour') || $('mmodal').classList.contains('show')) return;
+  if (state.tab === 'settings' && /^[1-9]$/.test(e.key) && document.querySelector('.keybtn.wait')) return;
+  if (/^[1-9]$/.test(e.key)) { const t = TAB_KEYS[+e.key - 1]; if (t && !(t === 'play' && state.room)) { e.preventDefault(); showTab(t); } else if (t === 'play' && state.room) showTab('room'); return; }
+  if (e.key === '?') { e.preventDefault(); openShortcuts(); }
+});
+function openShortcuts() {
+  const names = ['Jouer', 'Agents', 'Collection', 'Profil', 'Classement', 'Amis', 'Clan', 'Tournois', 'Paramètres'];
+  $('mmodal-in').innerHTML = `<button class="mx" data-close>✕</button><h2>RACCOURCIS CLAVIER</h2><div class="g-keys">${names.map((n, i) => `<div><kbd>${i + 1}</kbd> ${n}</div>`).join('')}<div><kbd>?</kbd> cette liste</div><div><kbd>/</kbd> chercher un réglage (Paramètres)</div><div><kbd>Entrée</kbd> écrire dans le chat (salon)</div><div><kbd>Échap</kbd> fermer une fenêtre</div></div>
+    <p class="muted small">En partie, toutes les touches se règlent dans PARAMÈTRES → Touches.</p><button class="btn ghost" id="sc-tour">LANCER LA VISITE GUIDÉE</button>`;
+  $('mmodal').classList.add('show');
+  $('mmodal-in').querySelector('[data-close]').onclick = () => $('mmodal').classList.remove('show');
+  $('sc-tour').onclick = () => { $('mmodal').classList.remove('show'); startTour(); };
 }
 
 function refreshProfileUI() {
@@ -161,16 +180,25 @@ function renderMeCard() {
     <div class="st">${st && !state.guest ? `${st.matches} parties · ${st.wins} victoires · ${st.duelWins}/${st.duels} duels gagnés · K/D ${kd}` : 'Crée un compte pour suivre tes statistiques'}</div></div>`;
 }
 
+// salons favoris (gardés sur cet appareil, par nom de salon)
+const favRooms = (() => { try { return new Set(JSON.parse(localStorage.getItem('eclipse_fav_rooms') || '[]')); } catch { return new Set(); } })();
+const saveFav = () => { try { localStorage.setItem('eclipse_fav_rooms', JSON.stringify([...favRooms].slice(-30))); } catch { /* */ } };
 function renderRooms() {
   const list = $('room-list');
   if (!state.rooms.length) { list.innerHTML = '<div class="empty">Aucun salon pour le moment. Crée le tien ou lance un duel rapide !</div>'; return; }
-  list.innerHTML = state.rooms.map(r => `<div class="room-item" data-id="${r.id}">
+  const rows = state.rooms.slice().sort((a, b) => favRooms.has(b.name) - favRooms.has(a.name));
+  list.innerHTML = rows.map(r => `<div class="room-item ${favRooms.has(r.name) ? 'fav' : ''}" data-id="${r.id}">
+    <button class="fav-star ${favRooms.has(r.name) ? 'on' : ''}" data-fav="${esc(r.name)}" title="${favRooms.has(r.name) ? 'Retirer des favoris' : 'Ajouter aux favoris'}">★</button>
     <div><div class="rn">${esc(r.name)}</div><div class="muted">${esc(MAP_INFO[r.mapId]?.name || r.mapId)} · ${r.humans} joueur(s)</div></div>
     <span class="pill ${r.mode === 'duel' ? 'duel' : ''}">${MODE_LABEL[r.mode]}</span>
     <span class="pill ${r.state === 'playing' ? 'playing' : ''}">${r.state === 'playing' ? 'EN JEU' : 'LOBBY'}</span>
     <span>${r.players}/${r.max}</span></div>`).join('');
 }
-$('room-list').onclick = e => { const it = e.target.closest('.room-item'); if (it) net.send('joinRoom', { id: it.dataset.id }); };
+$('room-list').onclick = e => {
+  const star = e.target.closest('[data-fav]');
+  if (star) { const n = star.dataset.fav; if (favRooms.has(n)) favRooms.delete(n); else favRooms.add(n); saveFav(); renderRooms(); toast(favRooms.has(n) ? `« ${n} » ajouté à tes favoris.` : 'Retiré des favoris.'); return; }
+  const it = e.target.closest('.room-item'); if (it) net.send('joinRoom', { id: it.dataset.id });
+};
 $('refresh-rooms').onclick = () => net.send('listRooms');
 net.on('rooms', m => { state.rooms = m.rooms; renderRooms(); });
 $('quick-duel').onclick = () => { SFX.initAudio(); net.send('quickDuel'); };
@@ -213,8 +241,27 @@ net.on('chat', m => {
   if (m.from === 'SYSTÈME') d.className = 'sys';
   if (m.from !== 'SYSTÈME' && profile.settings.chatMode === 'off') return;
   const from = profile.settings.streamer && m.from !== 'SYSTÈME' && m.from !== profile.name ? 'Joueur' : m.from;
-  d.innerHTML = `${m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : ''}<b>${esc(from)}</b>${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''} : ${esc(emojify(m.text))}`;
+  const clickable = m.from !== 'SYSTÈME' && m.from !== 'GROUPE' && m.from !== profile.name && from === m.from && !String(m.from).startsWith('ADMIN');
+  d.innerHTML = `${m.party ? '<span class="tag party">GROUPE</span>' : ''}${m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : ''}<b ${clickable ? `class="cn" data-cn="${esc(m.from)}" title="Profil, message, signaler…"` : ''}>${esc(from)}</b>${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''} : ${esc(emojify(m.text))}`;
   log.appendChild(d); log.scrollTop = log.scrollHeight;
+});
+// clic sur un pseudo du chat : petit menu (profil, message privé, signalement, blocage)
+$('chat-log').addEventListener('click', e => {
+  const b = e.target.closest('[data-cn]'); document.getElementById('name-menu')?.remove();
+  if (!b) return;
+  const n = b.dataset.cn, r = b.getBoundingClientRect();
+  const menu = document.createElement('div'); menu.id = 'name-menu';
+  menu.style.left = Math.min(innerWidth - 200, r.left) + 'px'; menu.style.top = (r.bottom + 4) + 'px';
+  menu.innerHTML = `<b>${esc(n)}</b>${state.guest ? '' : '<button data-nm="profile">Voir le profil</button><button data-nm="mp">Message privé</button>'}<button data-nm="report">⚑ Signaler</button>${state.guest ? '' : '<button data-nm="block">Bloquer</button>'}`;
+  document.body.appendChild(menu);
+  menu.onclick = ev => {
+    const a = ev.target.closest('[data-nm]')?.dataset.nm; if (!a) return; menu.remove();
+    if (a === 'profile') viewProfile(n);
+    if (a === 'mp') { $('chat-input').value = `/mp ${n} `; $('chat-input').focus(); }
+    if (a === 'report') openReport(n);
+    if (a === 'block' && confirm(`Bloquer ${n} ? Tu ne verras plus ses messages.`)) net.send('block', { name: n });
+  };
+  setTimeout(() => document.addEventListener('click', function off(ev) { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', off); } }), 0);
 });
 $('chat-input').onkeydown = e => {
   if (e.key !== 'Enter') return;
@@ -469,6 +516,8 @@ function applyGlobalSettings() {
   b.style.setProperty('--uif', st.uiFont || 1);
   b.classList.toggle('hi-contrast', !!st.highContrast);
   b.classList.toggle('no-flash', !!st.noFlash);
+  b.classList.toggle('readable', !!st.readableFont);
+  b.classList.toggle('theme-light', st.menuTheme === 'light');
   for (const [k, c] of [['volWeapons', 'weapons'], ['volSteps', 'steps'], ['volAbilities', 'abilities'], ['volUi', 'ui'], ['volNotif', 'notif']]) SFX.setCategoryVolume(c, st[k] ?? 1);
 }
 applyGlobalSettings();

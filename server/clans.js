@@ -69,7 +69,7 @@ export class Clans {
     const wk = this.week(cl);
     const out = { tag: cl.tag, name: cl.name, desc: cl.desc || '', motd: cl.motd || '', created: cl.created, xp: cl.xp || 0, wins: cl.wins || 0, matches: cl.matches || 0, members, max: CLAN.maxMembers, rank: this.rankOf(cl),
       week: { xp: wk.xp, kills: wk.kills, goal: this.missionGoal(cl), done: wk.done } };
-    if (me) { out.myRole = this.roleOf(cl, viewerKey); if (out.myRole !== 'member') out.invites = cl.invites.map(k => this.A.get(k)?.name).filter(Boolean); }
+    if (me) { out.myRole = this.roleOf(cl, viewerKey); if (out.myRole !== 'member') { out.invites = cl.invites.map(k => this.A.get(k)?.name).filter(Boolean); out.welcome = cl.welcome || ''; } }
     return out;
   }
   payload(u) {
@@ -140,6 +140,15 @@ export class Clans {
     if (this.badWord(motd)) return this.err(c, 'Ce message contient un mot interdit.');
     cl.motd = motd; this.save(); this.pushAll(cl);
   }
+  // message de bienvenue envoyé à chaque nouveau membre
+  m_clanWelcome(c, u, msg) {
+    const cl = this.clanOf(u); const key = this.A.key(u.name);
+    if (!cl || this.roleOf(cl, key) === 'member') return this.err(c, 'Seuls le chef et les officiers peuvent écrire le message de bienvenue.');
+    const w = clean(msg.text, 200);
+    if (this.badWord(w)) return this.err(c, 'Ce message contient un mot interdit.');
+    cl.welcome = w; this.save(); this.pushAll(cl);
+    this.ok(c, w ? 'Message de bienvenue enregistré.' : 'Message de bienvenue supprimé.');
+  }
   onLogin(c, u) {
     const cl = this.clanOf(u);
     if (cl?.motd) setTimeout(() => this.send(c, { type: 'clanChat', from: null, tag: cl.tag, text: `Message du jour : ${cl.motd}` }), 1500);
@@ -183,6 +192,7 @@ export class Clans {
     this.refreshTag(key);
     this.pushAll(cl);
     this.systemMsg(cl, `${u.name} a rejoint le clan.`);
+    if (cl.welcome) setTimeout(() => this.systemMsg(cl, `Bienvenue ${u.name} ! ${cl.welcome}`), 300);
   }
 
   m_clanDecline(c, u, msg) {

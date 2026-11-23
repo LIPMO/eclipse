@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.9.0",
+    "date": "2026-11-23",
+    "title": "Groupes entre amis, réactions et menu plus pratique",
+    "items": [
+      "Groupes : forme un groupe avec jusqu'à 3 amis (onglet AMIS, bouton ＋ GROUPE). Quand le chef rejoint ou lance une partie, tout le groupe le suit, dans la même équipe. Chat de groupe avec /g message.",
+      "Réactions : quand un coéquipier élimine un adversaire, appuie sur H pour lui envoyer un 👏.",
+      "Fin de manche plus lisible : score, tes éliminations et tes dégâts de la manche. Barre de progression du match sous le chrono.",
+      "Mini-carte : zone d'explosion du Noyau qui se resserre jusqu'à l'explosion, grenades en vol.",
+      "Amis : messages privés non lus signalés, invitation dans ton salon ou ton groupe depuis un profil, notifications de connexion regroupées.",
+      "Salons favoris (★), clic sur un pseudo du chat pour voir son profil, lui écrire ou le signaler, message de bienvenue pour les nouveaux membres d'un clan.",
+      "Menu : raccourcis 1 à 9 pour les onglets (? pour la liste), visite guidée au premier lancement, thème clair et option « lecture simple »."
+    ]
+  },
+  {
     "version": "1.8.0",
     "date": "2026-11-23",
     "title": "Accessibilité et outils d'administration",

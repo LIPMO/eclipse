@@ -64,7 +64,8 @@ export function renderClan() {
       ${staff ? `<div class="panel"><h3>INVITER UN JOUEUR</h3><form id="cl-inv" class="fr-add"><input id="cl-inv-name" maxlength="16" placeholder="Pseudo"><button class="btn primary" type="submit">INVITER</button></form>
         ${cl.invites?.length ? `<p class="muted small" style="margin-top:8px">En attente : ${cl.invites.map(n => `${esc(n)} <a href="#" data-c="uninvite" data-n="${esc(n)}" title="Annuler">✕</a>`).join(' · ')}</p>` : ''}
         <form id="cl-desc" class="fr-add"><input id="cl-desc-in" maxlength="140" placeholder="Description du clan" value="${esc(cl.desc)}"><button class="btn ghost" type="submit">MODIFIER</button></form>
-        <form id="cl-motd" class="fr-add"><input id="cl-motd-in" maxlength="140" placeholder="Message du jour (affiché aux membres à la connexion)" value="${esc(cl.motd || '')}"><button class="btn ghost" type="submit">PUBLIER</button></form></div>` : ''}
+        <form id="cl-motd" class="fr-add"><input id="cl-motd-in" maxlength="140" placeholder="Message du jour (affiché aux membres à la connexion)" value="${esc(cl.motd || '')}"><button class="btn ghost" type="submit">PUBLIER</button></form>
+        <form id="cl-welcome" class="fr-add"><input id="cl-welcome-in" maxlength="200" placeholder="Message de bienvenue (envoyé à chaque nouveau membre)" value="${esc(cl.welcome || '')}"><button class="btn ghost" type="submit">ENREGISTRER</button></form></div>` : ''}
       <div class="panel"><h3>MEMBRES</h3>
         ${cl.members.map(m => `<div class="fr-row ${m.online ? 'on' : ''}"><span class="dot ${m.online ? 'on' : ''}"></span><div class="fr-who"><b class="link" data-c="profile" data-n="${esc(m.name)}">${ROLE_ICON[m.role]} ${esc(m.name)}</b> <span class="muted small">niv. ${m.level} · ${ROLE[m.role]} · ${m.xp.toLocaleString('fr-FR')} XP apportée</span></div><span class="grow"></span>
           ${owner && m.role !== 'owner' ? `${m.role === 'member' ? `<button class="btn small ghost" data-c="role" data-r="officer" data-n="${esc(m.name)}">PROMOUVOIR</button>` : `<button class="btn small ghost" data-c="role" data-r="member" data-n="${esc(m.name)}">RÉTROGRADER</button>`}<button class="btn small ghost" data-c="role" data-r="owner" data-n="${esc(m.name)}" title="Donner le rôle de chef">★</button>` : ''}
@@ -82,6 +83,7 @@ export function renderClan() {
   if (f('cl-inv')) f('cl-inv').onsubmit = e => { e.preventDefault(); const n = f('cl-inv-name').value.trim(); if (n) net.send('clanInvite', { name: n }); f('cl-inv-name').value = ''; };
   if (f('cl-desc')) f('cl-desc').onsubmit = e => { e.preventDefault(); net.send('clanDesc', { desc: f('cl-desc-in').value }); };
   if (f('cl-motd')) f('cl-motd').onsubmit = e => { e.preventDefault(); net.send('clanMotd', { motd: f('cl-motd-in').value }); };
+  if (f('cl-welcome')) f('cl-welcome').onsubmit = e => { e.preventDefault(); net.send('clanWelcome', { text: f('cl-welcome-in').value }); };
   if (f('cl-chat')) f('cl-chat').onsubmit = e => { e.preventDefault(); const t = f('cl-text').value.trim(); if (t) net.send('clanChat', { text: t }); f('cl-text').value = ''; };
   root.onclick = e => {
     const b = e.target.closest('[data-c]'); if (!b) return;

@@ -26,7 +26,7 @@ const kd = (k, d) => d ? (k / d).toFixed(2) : String(k || 0);
 const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
 
 let net, state, toast, showTab;
-const H = { friends: { friends: [], incoming: [], blocked: [] }, whispers: [], lb: { kind: 'level', scope: 'all', data: null }, mpTo: null };
+const H = { friends: { friends: [], incoming: [], blocked: [] }, whispers: [], lb: { kind: 'level', scope: 'all', data: null }, mpTo: null, party: null, unread: {} };
 export const hub = H;
 
 export function initHub(ctx) {
@@ -41,15 +41,21 @@ export function initHub(ctx) {
   net.on('whisper', m => {
     H.whispers.push({ ...m, t: Date.now() });
     if (H.whispers.length > 200) H.whispers.shift();
+    if (m.from && !(state.tab === 'friends' && H.mpTo === m.from)) { H.unread[m.from] = (H.unread[m.from] || 0) + 1; updateFriendsBadge(); if (state.tab === 'friends') renderFriends(); }
     if (m.from && !state.game) notify({ kind: 'MESSAGE PRIVÉ', type: 'friend', text: `${m.from} : ${m.text}`, ms: 9000, actions: [['Répondre', () => { H.mpTo = m.from; showTab('friends'); }]] });
     if (state.tab === 'friends') renderWhispers();
     const log = $('chat-log');
     if (log && !state.game) { const d = document.createElement('div'); d.className = 'whisper'; d.innerHTML = m.to ? `<i>MP à <b>${esc(m.to)}</b></i> : ${esc(m.text)}` : `<i>MP de <b>${esc(m.from)}</b></i> : ${esc(m.text)}`; log.appendChild(d); log.scrollTop = log.scrollHeight; }
   });
   net.on('playerProfile', m => showPlayerProfile(m.profile));
+  net.on('party', m => { H.party = m.party; renderPartyBar(); if (state.tab === 'friends') renderFriends(); });
+  net.on('partyInvite', m => notify({ kind: 'GROUPE', type: 'invite', text: `${m.from} t'invite dans son groupe (${m.size}/4). Vous jouerez ensemble : tu suivras ${m.from} dans ses parties.`, ms: 30000,
+    actions: [['Rejoindre', () => net.send('partyAccept', { id: m.id })], ['Refuser', () => net.send('partyDecline', { id: m.id })]] }));
+  net.on('partyFollow', m => notify({ kind: 'GROUPE', text: `${m.from} (chef du groupe) a rejoint « ${m.roomName} ». Rejoins-le quand ta partie est finie.`, ms: 30000,
+    actions: [['Rejoindre', () => { if (state.game) { toast('Termine ta partie d\'abord.'); return; } net.send('joinRoom', { id: m.roomId }); }], ['Plus tard', null]] }));
   net.on('recent', m => { H.recent = m; renderRecent(); });
   net.on('gift', m => notify({ kind: 'CADEAU', type: 'friend', text: `${m.from} t'a offert ${m.amount} Éclats !`, cls: 'gold' }));
-  net.on('friendOnline', m => { if (profile.settings.notifFriendOnline !== false) notify({ kind: 'AMI EN LIGNE', type: 'friend', text: `${m.name} vient de se connecter.`, ms: 5000 }); });
+  net.on('friendOnline', m => { if (profile.settings.notifFriendOnline !== false) notify({ kind: 'AMI EN LIGNE', type: 'friend', text: m.name, ms: 6000, group: 'online', fmt: names => names.length === 1 ? `${names[0]} vient de se connecter.` : `${names.slice(0, -1).join(', ')} et ${names[names.length - 1]} viennent de se connecter.` }); });
   net.on('endorsed', m => toast(`Tu as recommandé ${m.name} (${ENDORSE[m.kind]}).`));
   net.on('leaderboard', m => { H.lb.data = m; renderLeaderboard(); });
   net.on('dailyBonus', m => {
@@ -75,8 +81,18 @@ export function initHub(ctx) {
 
 // ---------- notifications ----------
 const NOTIF_PREF = { friend: 'notifFriends', invite: 'notifInvite', clan: 'notifClan', tour: 'notifTour' };
-export function notify({ kind, text, ms = 8000, actions = [], cls = '', type = null }) {
+const groups = new Map(); // notifications regroupées : même catégorie sans bouton, rapprochées dans le temps
+export function notify({ kind, text, ms = 8000, actions = [], cls = '', type = null, group = null }) {
   if (type && NOTIF_PREF[type] && profile.settings[NOTIF_PREF[type]] === false) return;
+  const gk = group || (!actions.length ? kind : null);
+  const prev = gk && groups.get(gk);
+  if (prev && prev.el.isConnected) {
+    prev.items.push(text); prev.n++;
+    prev.el.querySelector('.nk').textContent = `${kind} · ${prev.n}`;
+    prev.el.querySelector('.nt').textContent = group && prev.fmt ? prev.fmt(prev.items) : prev.items.slice(-3).join(' · ') + (prev.items.length > 3 ? ` (+${prev.items.length - 3})` : '');
+    clearTimeout(prev.t); if (ms) prev.t = setTimeout(() => prev.el.remove(), ms);
+    return;
+  }
   const el = document.createElement('div');
   el.className = 'notif ' + cls;
   if (profile.settings.notifSound !== false) playNotify();
@@ -88,7 +104,9 @@ export function notify({ kind, text, ms = 8000, actions = [], cls = '', type = n
   };
   $('notifs').appendChild(el);
   while ($('notifs').children.length > 5) $('notifs').firstChild.remove();
-  if (ms) setTimeout(() => el.remove(), ms);
+  const g = gk ? { el, items: [text], n: 1, t: null, fmt: arguments[0].fmt } : null;
+  if (ms) { const t = setTimeout(() => el.remove(), ms); if (g) g.t = t; }
+  if (g) groups.set(gk, g);
 }
 
 // ---------- fenêtre modale du menu ----------
@@ -138,12 +156,49 @@ export function openGuide() {
       <h3>KILLCAM, CLANS ET TOURNOIS</h3>
       <p>Après ta mort, la <b>killcam</b> rejoue les 3 dernières secondes vues par ton adversaire (désactivable dans PARAMÈTRES → Interface). Rejoins ou crée un <b>clan</b> (onglet CLAN, niveau 3) : son tag s'affiche devant ton pseudo et l'XP de ses membres le fait monter au classement. Les <b>tournois</b> (onglet TOURNOIS) sont des duels à élimination directe : le vainqueur gagne des Éclats et le titre Champion.</p>
       <h3>ENTRE AMIS</h3>
-      <p>Ajoute tes amis dans l'onglet AMIS, invite-les dans ton salon ou rejoins le leur en un clic. Un <b>salon privé</b> n'est accessible que par invitation ou avec son code. Commandes de chat : <b>/aide</b>, <b>/mp pseudo message</b>, <b>/r</b>, <b>/ami</b>, <b>/stats</b>.</p>
+      <p>Ajoute tes amis dans l'onglet AMIS, invite-les dans ton salon ou rejoins le leur en un clic. Forme un <b>groupe</b> (jusqu'à 4) : tout le groupe suit le chef dans ses parties, et <b>/g message</b> écrit au groupe. Un <b>salon privé</b> n'est accessible que par invitation ou avec son code. Commandes de chat : <b>/aide</b>, <b>/mp pseudo message</b>, <b>/r</b>, <b>/ami</b>, <b>/stats</b>.</p>
       <p class="muted small">Un problème avec un joueur ? Bouton ⚑ dans le salon, sur son profil ou dans le menu pause : l'équipe de modération reçoit ton signalement.</p>
     </div>
-    <button class="btn primary wide" data-close-guide>C'EST PARTI !</button>`);
-  $('mmodal-in').querySelector('[data-close-guide]').onclick = closeModal;
+    <div class="row"><button class="btn primary grow" data-close-guide>C'EST PARTI !</button><button class="btn ghost" data-tour>VISITE GUIDÉE DU MENU</button></div>`);
+  let first = false; try { first = localStorage.getItem('eclipse_tour_vu') !== '1'; } catch { /* */ }
+  $('mmodal-in').querySelector('[data-close-guide]').onclick = () => { closeModal(); if (first) startTour(); };
+  $('mmodal-in').querySelector('[data-tour]').onclick = () => { closeModal(); startTour(); };
   try { localStorage.setItem('eclipse_guide_vu', '1'); } catch { /* indisponible */ }
+}
+
+// ---------- visite guidée interactive : met en lumière chaque élément du menu, étape par étape ----------
+const TOUR = [
+  ['#quick-duel', 'DUEL RAPIDE', 'Un 1 contre 1 contre un autre joueur. Entre deux comptes, il compte pour ton rang Elo.'],
+  ['#quick-ffa', 'MÊLÉE ET GUN GAME', 'Chacun pour soi, réapparition immédiate : parfait pour s\'échauffer.'],
+  ['#quick-bots', 'ENTRAÎNEMENT', 'Une partie immédiate contre des bots, du niveau Facile à Expert, ou le champ de tir.'],
+  ['#quests', 'QUÊTES', 'Des objectifs du jour et de la semaine qui rapportent de l\'XP et des Éclats.'],
+  ['#room-list', 'SALONS', 'Les parties ouvertes par les autres joueurs. ★ pour garder un salon en favori.'],
+  ['[data-tab="agents"]', 'AGENTS', 'Choisis ton agent et découvre ses capacités. Raccourci : touche 2.'],
+  ['[data-tab="collection"]', 'COLLECTION', 'Les skins de tes armes et la boutique du jour.'],
+  ['[data-tab="friends"]', 'AMIS ET GROUPE', 'Ajoute des amis, écris-leur et forme un groupe de 4 pour jouer ensemble.'],
+  ['[data-tab="clan"]', 'CLAN', 'Rejoins ou crée un clan dès le niveau 3.'],
+  ['[data-tab="settings"]', 'PARAMÈTRES', 'Touches, viseur, graphismes, accessibilité… Touche / pour chercher un réglage.'],
+];
+export function startTour(i = 0) {
+  try { localStorage.setItem('eclipse_tour_vu', '1'); } catch { /* */ }
+  document.getElementById('tour')?.remove();
+  if (i === 0 && state.tab !== 'play') showTab('play');
+  const steps = TOUR.filter(([sel]) => { const e = document.querySelector(sel); return e && e.offsetParent; });
+  const st = steps[i]; if (!st) return;
+  const target = document.querySelector(st[0]);
+  target.scrollIntoView({ block: 'center', behavior: 'instant' });
+  const r = target.getBoundingClientRect();
+  const el = document.createElement('div'); el.id = 'tour';
+  const below = r.bottom + 170 < innerHeight;
+  el.innerHTML = `<div class="tour-spot" style="left:${r.left - 6}px;top:${r.top - 6}px;width:${r.width + 12}px;height:${r.height + 12}px"></div>
+    <div class="tour-box" style="left:${Math.max(12, Math.min(innerWidth - 352, r.left))}px;top:${below ? r.bottom + 14 : Math.max(12, r.top - 164)}px">
+      <div class="muted small">ÉTAPE ${i + 1} / ${steps.length}</div><h3>${esc(st[1])}</h3><p>${esc(st[2])}</p>
+      <div class="row"><button class="btn ghost small" data-t="skip">PASSER</button><span class="grow"></span>${i ? '<button class="btn ghost small" data-t="prev">← PRÉCÉDENT</button>' : ''}<button class="btn primary small" data-t="next">${i === steps.length - 1 ? 'TERMINER' : 'SUIVANT →'}</button></div></div>`;
+  document.body.appendChild(el);
+  const end = () => { el.remove(); document.removeEventListener('keydown', key, true); };
+  const key = e => { if (e.key === 'Escape') { e.stopPropagation(); end(); } if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); end(); startTour(i + 1); } if (e.key === 'ArrowLeft' && i) { end(); startTour(i - 1); } };
+  document.addEventListener('keydown', key, true);
+  el.onclick = e => { const a = e.target.closest('[data-t]')?.dataset.t; if (!a) return; end(); if (a === 'next') startTour(i + 1); if (a === 'prev') startTour(i - 1); };
 }
 export function maybeShowGuide() {
   let seen = false; try { seen = localStorage.getItem('eclipse_guide_vu') === '1'; } catch { seen = true; }
@@ -163,6 +218,8 @@ function showPlayerProfile(p) {
   if (rel !== 'self' && rel !== 'guest' && !p.clan && H.clanStaff?.()) btns.push(`<button class="btn small" data-pa="clan">INVITER DANS MON CLAN</button>`);
   if (rel !== 'self' && rel !== 'guest') {
     if (p.online) btns.push(`<button class="btn small" data-pa="mp">MESSAGE</button>`);
+    if (p.online && rel === 'friend' && state.room) btns.push(`<button class="btn small" data-pa="invite">INVITER DANS MON SALON</button>`);
+    if (p.online && rel === 'friend' && !(H.party?.members || []).some(m => m.name === p.name) && (!H.party || H.party.lead)) btns.push(`<button class="btn small" data-pa="party">＋ MON GROUPE</button>`);
     btns.push(rel === 'blocked' ? `<button class="btn small" data-pa="unblock">DÉBLOQUER</button>` : `<button class="btn ghost small" data-pa="block">BLOQUER</button>`);
   }
   if (rel !== 'self') btns.push(`<button class="btn ghost small" data-pa="report">⚑ SIGNALER</button>`);
@@ -193,6 +250,8 @@ function showPlayerProfile(p) {
     if (a === 'block') { if (confirm(`Bloquer ${p.name} ? Tu ne verras plus ses messages.`)) { net.send('block', { name: p.name }); closeModal(); } }
     if (a === 'unblock') { net.send('unblock', { name: p.name }); closeModal(); }
     if (a === 'mp') { H.mpTo = p.name; closeModal(); showTab('friends'); }
+    if (a === 'invite') { net.send('invite', { name: p.name }); closeModal(); }
+    if (a === 'party') { net.send('partyInvite', { name: p.name }); closeModal(); }
     if (a === 'report') openReport(p.name);
     if (a === 'share') { const url = `${location.origin}/#profil=${encodeURIComponent(p.name)}`; (navigator.clipboard?.writeText(url) || Promise.reject()).then(() => toast('Lien copié !'), () => toast(url, 6000)); }
     if (a === 'gift') { const n = Math.round(Number(prompt(`Combien d'Éclats offrir à ${p.name} ? (10 à 100, 100 par jour au maximum)`, '50'))); if (n) net.send('gift', { name: p.name, amount: n }); }
@@ -327,7 +386,7 @@ export function renderLeaderboard() {
 
 // ---------- amis ----------
 function updateFriendsBadge() {
-  const n = H.friends.incoming.length, on = H.friends.friends.filter(f => f.online).length;
+  const n = H.friends.incoming.length + Object.values(H.unread).reduce((a, b) => a + b, 0), on = H.friends.friends.filter(f => f.online).length;
   $('friends-badge').textContent = n ? n : on ? on : '';
   $('friends-badge').className = 'nav-badge' + (n ? ' warn' : '');
 }
@@ -345,6 +404,7 @@ export function renderFriends() {
   const inRoom = !!state.room;
   root.innerHTML = `<div class="fr-grid">
     <div>
+      ${partyPanel()}
       <div class="panel"><h3>AJOUTER UN AMI</h3><form id="fr-add" class="fr-add"><input id="fr-name" maxlength="16" placeholder="Pseudo du joueur"><button class="btn primary" type="submit">AJOUTER</button></form></div>
       ${F.incoming.length ? `<div class="panel"><h3>DEMANDES REÇUES (${F.incoming.length})</h3>${F.incoming.map(n => `<div class="fr-row"><b>${esc(n)}</b><span class="grow"></span><button class="btn primary small" data-f="accept" data-n="${esc(n)}">ACCEPTER</button><button class="btn ghost small" data-f="decline" data-n="${esc(n)}">REFUSER</button></div>`).join('')}</div>` : ''}
       <div class="panel"><h3>MES AMIS (${F.friends.filter(f => f.online).length} en ligne / ${F.friends.length})</h3>
@@ -352,7 +412,8 @@ export function renderFriends() {
           <span class="grow"></span>
           ${f.roomId && !f.full ? `<button class="btn small" data-f="join" data-n="${esc(f.name)}">REJOINDRE</button>` : ''}
           ${f.online && inRoom && f.roomId !== state.room?.id ? `<button class="btn small" data-f="invite" data-n="${esc(f.name)}">INVITER</button>` : ''}
-          ${f.online ? `<button class="btn ghost small" data-f="mp" data-n="${esc(f.name)}">MP</button>` : ''}
+          ${f.online && (!H.party || H.party.lead) && !(H.party?.members || []).some(m => m.name === f.name) ? `<button class="btn ghost small" data-f="party" data-n="${esc(f.name)}" title="Inviter dans mon groupe (jusqu'à 4 joueurs)">＋ GROUPE</button>` : ''}
+          ${f.online || H.unread[f.name] ? `<button class="btn ghost small ${H.unread[f.name] ? 'unread' : ''}" data-f="mp" data-n="${esc(f.name)}">MP${H.unread[f.name] ? ` <b class="nav-badge warn">${H.unread[f.name]}</b>` : ''}</button>` : ''}
           ${H.clanStaff?.() && !f.clan ? `<button class="btn ghost small" data-f="clan" data-n="${esc(f.name)}" title="Inviter dans mon clan">CLAN</button>` : ''}
           <button class="btn ghost small" data-f="remove" data-n="${esc(f.name)}" title="Retirer de mes amis">✕</button></div>`).join('') || '<p class="muted">Ajoute des amis avec leur pseudo, ou depuis le classement et les salons.</p>'}
       </div>
@@ -369,7 +430,8 @@ export function renderFriends() {
   net.send('recent');
   renderRecent();
   $('fr-add').onsubmit = e => { e.preventDefault(); const n = $('fr-name').value.trim(); if (n) net.send('friendAdd', { name: n }); $('fr-name').value = ''; };
-  $('mp-to').onchange = e => { H.mpTo = e.target.value || null; renderWhispers(); };
+  $('mp-to').onchange = e => { H.mpTo = e.target.value || null; if (H.mpTo) { delete H.unread[H.mpTo]; updateFriendsBadge(); } renderWhispers(); };
+  if ($('party-chat')) $('party-chat').onsubmit = e => { e.preventDefault(); const t = $('party-chat-in').value.trim(); if (t) net.send('partyChat', { text: t }); $('party-chat-in').value = ''; };
   $('mp-form').onsubmit = e => { e.preventDefault(); const t = $('mp-text').value.trim(); if (!H.mpTo) { toast('Choisis un destinataire.'); return; } if (t) net.send('whisper', { name: H.mpTo, text: t }); $('mp-text').value = ''; };
   root.onclick = e => {
     const b = e.target.closest('[data-f]'); if (!b) return;
@@ -380,7 +442,11 @@ export function renderFriends() {
     if (f === 'unblock') net.send('unblock', { name: n });
     if (f === 'join') net.send('joinFriend', { name: n });
     if (f === 'invite') net.send('invite', { name: n });
-    if (f === 'mp') { H.mpTo = n; renderFriends(); $('mp-text')?.focus(); }
+    if (f === 'mp') { H.mpTo = n; delete H.unread[n]; updateFriendsBadge(); renderFriends(); $('mp-text')?.focus(); }
+    if (f === 'party') net.send('partyInvite', { name: n });
+    if (f === 'pleave' && confirm('Quitter le groupe ?')) net.send('partyLeave');
+    if (f === 'pkick') net.send('partyKick', { name: n });
+    if (f === 'plead') net.send('partyPromote', { name: n });
     if (f === 'profile') viewProfile(n);
     if (f === 'pin') net.send('pinFriend', { name: n });
     if (f === 'clan') net.send('clanInvite', { name: n });
@@ -394,6 +460,28 @@ function renderWhispers() {
   const msgs = H.whispers.filter(m => !who || m.from === who || m.to === who);
   log.innerHTML = msgs.map(m => `<div class="${m.to ? 'out' : 'in'}"><span class="muted small">${fmtDate(m.t)}</span> <b>${esc(m.to ? 'Moi' : m.from)}</b> : ${esc(m.text)}</div>`).join('') || '<div class="muted">Aucun message.</div>';
   log.scrollTop = log.scrollHeight;
+}
+
+// ---------- groupe (jusqu'à 4 amis) ----------
+function partyPanel() {
+  const p = H.party;
+  if (!p) return `<div class="panel party-panel"><h3>GROUPE</h3><p class="muted small">Forme un groupe avec jusqu'à 3 amis (bouton <b>＋ GROUPE</b> ci-dessous) : quand le chef rejoint ou lance une partie, tout le groupe le suit, dans la même équipe.</p></div>`;
+  return `<div class="panel party-panel"><h3>MON GROUPE (${p.members.length}/${p.max})</h3>
+    ${p.members.map(m => `<div class="fr-row on"><span class="dot on"></span><div class="fr-who"><b>${m.leader ? '👑 ' : ''}${esc(m.name)}</b>${m.me ? ' <span class="muted small">(toi)</span>' : ''}<div class="muted small">${esc(m.status)}${m.roomName ? ' · ' + esc(m.roomName) : ''}</div></div><span class="grow"></span>
+      ${p.lead && !m.me ? `<button class="btn ghost small" data-f="plead" data-n="${esc(m.name)}" title="Nommer chef">👑</button><button class="btn ghost small" data-f="pkick" data-n="${esc(m.name)}" title="Retirer du groupe">✕</button>` : ''}</div>`).join('')}
+    <form id="party-chat" class="fr-add"><input id="party-chat-in" maxlength="140" placeholder="Message au groupe (ou /g message)"><button class="btn ghost" type="submit">ENVOYER</button></form>
+    <p class="muted small">${p.lead ? 'Tu es le chef : lance une partie (Mêlée, Entraînement, salon…), ton groupe te suit.' : `Tu suis <b>${esc(p.leader)}</b> dans ses parties.`}</p>
+    <button class="btn ghost small" data-f="pleave">QUITTER LE GROUPE</button></div>`;
+}
+// petit encadré du groupe sur l'écran Jouer
+export function renderPartyBar() {
+  let el = $('party-bar');
+  const host = document.querySelector('#tab-play .quick-actions');
+  if (!host) return;
+  if (!el) { el = document.createElement('div'); el.id = 'party-bar'; host.parentNode.insertBefore(el, host.nextSibling); el.onclick = e => { if (e.target.closest('[data-pb]')) showTab('friends'); }; }
+  const p = H.party;
+  el.classList.toggle('hidden', !p);
+  if (p) el.innerHTML = `<b>GROUPE ${p.members.length}/${p.max}</b> ${p.members.map(m => `<span class="pb-m ${m.leader ? 'lead' : ''}">${m.leader ? '👑 ' : ''}${esc(m.name)}</span>`).join('')}<span class="grow"></span><span class="muted small">${p.lead ? 'ton groupe te suivra' : `tu suis ${esc(p.leader)}`}</span><button class="btn ghost small" data-pb>GÉRER</button>`;
 }
 
 // invitation depuis le salon

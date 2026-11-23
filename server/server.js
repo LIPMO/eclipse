@@ -8,6 +8,7 @@ import { WebSocketServer } from 'ws';
 import { Match } from './match.js';
 import { Accounts } from './accounts.js';
 import { Admin } from './admin.js';
+import { Parties } from './party.js';
 import { Bucket, Strikes, baseHeaders, gameCsp, originAllowed } from './security.js';
 import crypto from 'node:crypto';
 import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE, isFfa, GUN_LADDER } from '../shared/data.js';
@@ -256,6 +257,7 @@ function leaveRoom(c) {
   c.roomId = null;
   if (!r) return;
   social.pushFriendsOf(c.account);
+  parties.push(parties.partyOf(c));
   const leaver = r.members.get(c.id);
   r.members.delete(c.id);
   if (r.match) r.match.removePlayer(c.id);
@@ -296,6 +298,8 @@ function joinRoom(c, r) {
   pushRoom(r);
   if (r.match) r.match.addPlayer(m);
   if (r.tournament) tournaments.onJoin(r);
+  parties.follow(c, r);
+  parties.push(parties.partyOf(c));
   // duel rapide : lancement automatique quand deux joueurs sont présents
   if (r.quick && r.state === 'lobby' && [...r.members.values()].filter(x => !x.isBot).length >= 2) {
     for (const o of r.members.values()) if (!o.isBot) send(o.id, { type: 'chat', from: 'SYSTÈME', text: 'Adversaire trouvé ! Lancement dans 3 secondes…' });
@@ -638,6 +642,18 @@ function handleLobby(c, msg) {
       break;
     }
     case 'clientError': admin.clientError(c, msg); break;
+    // réaction rapide envoyée à un coéquipier ou un ami de la même partie (👏 🔥 😮 GG)
+    case 'react': {
+      if (!r || !r.match) break;
+      const e = Math.round(Number(msg.e)); if (!(e >= 0 && e < 4)) break;
+      const tm = r.members.get(String(msg.id || ''));
+      if (!tm || tm.isBot || tm.id === c.id) break;
+      const now = Date.now(); if (now - (c.lastReact || 0) < 2000) break; c.lastReact = now;
+      if (tm.account && social.blocks(tm.account, c.account)) break;
+      send(tm.id, { type: 'reaction', from: c.id, name: c.name, e });
+      send(c.id, { type: 'reactSent', to: tm.name, e });
+      break;
+    }
     case 'leaveMatch': if (r) leaveRoom(c); stopSpectating(c); send(c.id, { type: 'left' }); break;
     // ---------- spectateur staff (invisible) ----------
     case 'spectateList': {
@@ -675,8 +691,9 @@ function handleLobby(c, msg) {
       break;
     }
     default:
-      if (typeof msg.type === 'string' && /^(clan|tour|gift$|endorse$|setProfile$|buyShop$|pinFriend$|recent$|shop$)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
+      if (typeof msg.type === 'string' && /^(party|clan|tour|gift$|endorse$|setProfile$|buyShop$|pinFriend$|recent$|shop$)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
       if (social.handle(c, msg)) break;
+      if (parties.handle(c, msg)) break;
       if (clans.handle(c, msg) || tournaments.handle(c, msg)) break;
       if (r && r.match) r.match.handle(c.id, msg);
   }
@@ -728,6 +745,8 @@ const social = new Social({ accounts, clients, rooms, send, joinRoom, admin, cha
 admin.ctx.social = social;
 const clans = new Clans({ accounts, clients, send, admin, chatLimit, social, onTagChange: c => { const r = c.roomId && rooms.get(c.roomId); const m = r && r.members.get(c.id); if (m) { m.clan = c.clanTag || null; pushRoom(r); r.match?.updateMember(m); } } });
 admin.ctx.clans = clans; social.clans = clans;
+const parties = new Parties({ accounts, clients, rooms, send, joinRoom, pushRoom, social, admin, chatLimit, isFfa });
+social.parties = parties;
 // salon d'un match de tournoi : privé, sans bots, réservé aux deux joueurs du match
 function createTourRoom(t, m, name) {
   const maps = mapsForMode('duel');
@@ -780,6 +799,7 @@ wss.on('connection', (ws, req) => {
     const n = (connPerIp.get(c.ip) || 1) - 1; if (n > 0) connPerIp.set(c.ip, n); else connPerIp.delete(c.ip);
     if (c.roomId) leaveRoom(c);
     stopSpectating(c);
+    parties.onDisconnect(c);
     clients.delete(id);
     if (c.name) admin.log('connexion', `Déconnexion : ${c.name}`);
     if (c.account) { const u = accounts.get(c.account); if (u) { u.stats.online = (u.stats.online || 0) + Math.round((Date.now() - c.since) / 1000); accounts.touch(u); } social.pushFriendsOf(c.account); }

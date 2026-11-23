@@ -148,6 +148,11 @@ Variable facultative : `MAX_ACCOUNTS_PER_IP` (3 par défaut) fixe la limite d'in
 - **Erreurs des navigateurs** et **latence par pays** (pays fourni par Cloudflare) dans Système & métriques.
 - Limites du chat et des actions sociales réglables dans Configuration.
 
+### Groupes et social (1.9)
+- **Groupes** de 4 amis maximum : le chef choisit la partie, les membres le suivent automatiquement dans la même équipe. Chat de groupe : `/g message`, invitation : `/groupe pseudo`.
+- **Réactions** (touche H) pour féliciter un coéquipier, **salons favoris**, **menu sur les pseudos du chat**, **message de bienvenue** de clan.
+- Menu : raccourcis clavier 1 à 9 (et `?`), visite guidée, thème clair, lecture simple, notifications regroupées.
+
 ### Tests
 `npm test` démarre le serveur sur un port libre avec des données temporaires et vérifie l'essentiel (santé, version, sécurité de base, partie contre des bots). GitHub Actions lance ce test, la vérification de la syntaxe et celle d'`integrity.json` à chaque envoi.
 

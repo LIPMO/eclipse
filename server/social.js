@@ -367,7 +367,7 @@ export class Social {
     const [first, ...rest] = arg.split(/\s+/);
     switch (cmd) {
       case 'aide': case 'help':
-        this.info(c, 'Commandes : /mp pseudo message · /r message (répondre) · /ami pseudo · /inviter pseudo · /bloquer pseudo · /debloquer pseudo · /stats [pseudo] · /c message (chat de clan) · /signaler pseudo raison');
+        this.info(c, 'Commandes : /mp pseudo message · /r message (répondre) · /ami pseudo · /inviter pseudo · /bloquer pseudo · /debloquer pseudo · /stats [pseudo] · /c message (chat de clan) · /g message (chat de groupe) · /groupe pseudo (inviter dans ton groupe) · /signaler pseudo raison');
         return true;
       case 'mp': case 'w': case 'msg': if (!first || !rest.length) this.info(c, 'Utilisation : /mp pseudo message'); else this.whisper(c, first, rest.join(' ')); return true;
       case 'r': if (!c.lastWhisper) this.info(c, 'Personne ne t\'a encore écrit.'); else if (arg) this.whisper(c, c.lastWhisper, arg); return true;
@@ -376,6 +376,10 @@ export class Social {
       case 'bloquer': case 'block': if (first) this.m_block(c, { name: first }); return true;
       case 'debloquer': case 'unblock': if (first) { this.m_unblock(c, { name: first }); this.info(c, `${first} est débloqué.`); } return true;
       case 'c': case 'clan': if (!this.userOf(c)) this.info(c, 'Les clans sont réservés aux comptes.'); else if (arg) this.clans?.chat(c, arg, false); return true;
+      case 'g': case 'groupe': case 'party':
+        if (!this.userOf(c)) { this.info(c, 'Les groupes sont réservés aux comptes.'); return true; }
+        if (cmd === 'g') { if (arg) this.parties?.chat(c, { text: arg }); } else if (first) this.parties?.invite(c, { name: first }); else this.info(c, 'Utilisation : /groupe pseudo');
+        return true;
       case 'stats': {
         const t = first ? this.A.get(first) : this.userOf(c);
         if (!t) { this.info(c, first ? 'Joueur introuvable.' : 'Les statistiques sont réservées aux comptes.'); return true; }
