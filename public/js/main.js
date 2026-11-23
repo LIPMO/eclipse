@@ -1,4 +1,5 @@
 // Interface hors-jeu : connexion, salons, agents, collection, paramètres.
+import './i18n.js';
 import * as THREE from 'three';
 import { Net } from './net.js';
 import { Game } from './game.js';

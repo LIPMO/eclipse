@@ -26,7 +26,7 @@ export class Match {
     this.round = 0;
     this.half = 0;
     this.score = { alpha: 0, beta: 0 };
-    this.projectiles = []; this.smokes = []; this.fires = []; this.walls = [];
+    this.projectiles = []; this.smokes = []; this.fires = []; this.walls = []; this.drops = [];
     this.nextId = 1;
     this.core = { status: 'none', carrier: null, pos: null, site: null, plantedAt: 0 };
     this.overAt = 0;
@@ -66,7 +66,7 @@ export class Match {
 
   newWeapon(id) {
     const d = WEAPONS[id];
-    return { id, mag: d.mag || 0, reserve: d.reserve || 0, boughtRound: -1 };
+    return { id, mag: d.mag || 0, reserve: d.reserve || 0, boughtRound: -1, buyer: null };
   }
 
   refillCharges(p) {
@@ -110,7 +110,7 @@ export class Match {
 
   startMsg(id) {
     const p = this.players.get(id);
-    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts };
+    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty };
   }
 
   // déblocage des armes par niveau (désactivable dans l'administration)
@@ -206,7 +206,7 @@ export class Match {
     this.round++;
     this.phase = 'buy';
     this.phaseEnd = this.time + (this.mode === 'duel' ? DUEL.buyTime : ROUND.buyTime);
-    this.projectiles = []; this.smokes = []; this.fires = []; this.walls = []; this.wallBoxesCache = null;
+    this.projectiles = []; this.smokes = []; this.fires = []; this.walls = []; this.wallBoxesCache = null; this.drops = []; this.readyDone = false;
     this.core = { status: 'carried', carrier: null, pos: null, site: null, plantedAt: 0 };
     this.botSite = Math.random() < 0.5 ? 'A' : 'B';
     const spawnSets = { atk: shuffle(this.map.spawns.atk.slice()), def: shuffle(this.map.spawns.def.slice()) };
@@ -226,7 +226,7 @@ export class Match {
       }
       p.alive = true; p.hp = 100; p.slot = p.weapons[1] ? 1 : 2; p.reloadEnd = 0;
       p.healEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.invisEnd = 0; p.revealEnd = 0; p.blindEnd = 0;
-      p.interact = false; p.prog = 0; p.damagedBy = new Map(); p.joinedMidRound = false; p.roundKills = 0; p.roundDmg = 0;
+      p.interact = false; p.prog = 0; p.damagedBy = new Map(); p.joinedMidRound = false; p.roundKills = 0; p.roundDmg = 0; p.ready = false; p.armorBought = null;
       this.refillCharges(p);
       const list = spawnSets[side];
       const sp = list[idx[side]++ % list.length];
@@ -260,6 +260,7 @@ export class Match {
     }
     this.phase = 'end';
     this.phaseEnd = this.time + ROUND.endTime;
+    for (const p of this.players.values()) if (p.alive) this.sendDmgReport(p);
     this.roundHistory.push(winTeam || '');
     let mvp = null;
     for (const p of this.players.values()) if (p.roundKills > 0 || p.roundDmg > 0) if (!mvp || p.roundKills > mvp.roundKills || (p.roundKills === mvp.roundKills && p.roundDmg > mvp.roundDmg)) mvp = p;
@@ -330,6 +331,7 @@ export class Match {
       p.slot = p.weapons[1] ? 1 : 2;
     }
     p.reloadEnd = 0; p.damagedBy = new Map(); p.invisEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.blindEnd = 0;
+    p.protEnd = this.time + 1.5; // protection de réapparition : annulée dès que le joueur tire ou utilise une capacité
     const [mw, mh] = this.map.size;
     this.teleport(p, best, Math.atan2(-(mw / 2 - best[0]), -(mh / 2 - best[2])));
     if (p.brain) p.brain.onRoundStart();
@@ -366,6 +368,9 @@ export class Match {
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'buy': return this.handleBuy(p, msg.item);
+      case 'sell': return this.handleSell(p, msg);
+      case 'drop': return this.handleDrop(p);
+      case 'ready': return this.handleReady(p);
       case 'ability': return this.handleAbility(p, msg);
       case 'interact': p.interact = !!msg.on; if (p.interact) p.interactPos = p.pos.slice(); return;
       case 'mark': return this.handleMark(p, msg);
@@ -458,20 +463,123 @@ export class Match {
       if (cur && cur.id === item) return;
       if (this.weaponLocked(p, item)) { this.send(p, { type: 'notice', text: `${d.name.toUpperCase()} : DÉBLOQUÉ AU NIVEAU ${WEAPON_UNLOCK[item]}` }); return; }
       let money = p.money;
-      if (cur && cur.boughtRound === this.round && !ffa) money += WEAPONS[cur.id].cost;
+      if (cur && cur.boughtRound === this.round && cur.buyer === p.id && !ffa) money += WEAPONS[cur.id].cost;
       if (!ffa && money < d.cost) return;
       if (!ffa) p.money = money - d.cost;
       p.weapons[d.slot] = this.newWeapon(item);
-      p.weapons[d.slot].boughtRound = this.round;
+      p.weapons[d.slot].boughtRound = this.round; p.weapons[d.slot].buyer = p.id;
       p.slot = d.slot; p.reloadEnd = 0;
       this.send(p, { type: 'bought', item, slot: d.slot });
     } else if (ARMOR[item]) {
       const a = ARMOR[item];
       if (p.armor >= a.value) return;
-      if (!ffa) { if (p.money < a.cost) return; p.money -= a.cost; }
+      let money = p.money;
+      const prev = p.armorBought && p.armorBought.round === this.round ? ARMOR[p.armorBought.item] : null;
+      if (prev && !ffa) money += prev.cost; // passer du gilet léger au lourd rembourse le léger acheté cette manche
+      if (!ffa) { if (money < a.cost) return; p.money = money - a.cost; }
       p.armor = a.value;
+      p.armorBought = { item, round: this.round };
       this.send(p, { type: 'bought', item });
     }
+  }
+
+  // ---------- revente pendant la phase d'achat ----------
+  // prix complet pour ce que le joueur a acheté lui-même pendant la manche, moitié du prix sinon (arme gardée ou ramassée)
+  sellValue(p, w) {
+    if (!w || !WEAPONS[w.id] || w.id === 'knife') return 0;
+    const cost = WEAPONS[w.id].cost || 0;
+    return w.boughtRound === this.round && w.buyer === p.id ? cost : Math.floor(cost / 2 / 50) * 50;
+  }
+  handleSell(p, msg) {
+    if (!p.alive || this.mode === 'gungame' || isFfa(this.mode) || this.phase !== 'buy') return;
+    if (msg.item === 'armor') {
+      const b = p.armorBought;
+      if (!b || b.round !== this.round || p.armor <= 0) { this.send(p, { type: 'notice', text: 'SEUL UN GILET ACHETÉ CETTE MANCHE PEUT ÊTRE REVENDU' }); return; }
+      const refund = ARMOR[b.item].cost;
+      p.money = Math.min(ROUND.maxMoney, p.money + refund); p.armor = 0; p.armorBought = null;
+      this.send(p, { type: 'sold', item: b.item, refund });
+      return;
+    }
+    const slot = Number(msg.slot);
+    if (slot !== 1 && slot !== 2) return;
+    const w = p.weapons[slot];
+    if (!w || (slot === 2 && w.id === 'spark')) return;
+    const refund = this.sellValue(p, w);
+    p.money = Math.min(ROUND.maxMoney, p.money + refund);
+    // l'arme secondaire vendue est remplacée par le pistolet gratuit
+    p.weapons[slot] = slot === 2 ? this.newWeapon('spark') : null;
+    if (!p.weapons[p.slot]) p.slot = p.weapons[1] ? 1 : 2;
+    p.reloadEnd = 0;
+    this.send(p, { type: 'sold', item: w.id, refund, slot });
+  }
+
+  // ---------- armes au sol ----------
+  dropsOn() { return !isFfa(this.mode); }
+  spawnDrop(p, w, throwIt) {
+    if (!w || w.id === 'knife' || !this.dropsOn()) return;
+    let pos = [p.pos[0], 0, p.pos[2]];
+    if (throwIt) {
+      const dir = norm([-Math.sin(p.yaw), 0, -Math.cos(p.yaw)]);
+      const eye = [p.pos[0], p.pos[1] + 1, p.pos[2]];
+      const t = Math.max(0, Math.min(1.8, raycastBoxes(eye, dir, 1.8, this.allBoxes()).t - 0.5));
+      pos = [p.pos[0] + dir[0] * t, 0, p.pos[2] + dir[2] * t];
+    }
+    pos[1] = groundHeight(pos[0], pos[2], p.pos[1] + 0.5, this.map.boxes);
+    this.drops.push({ id: this.nextId++, w: { ...w }, pos, from: p.id, noPick: this.time + (throwIt ? 3 : 0) });
+    if (this.drops.length > 24) this.drops.shift();
+  }
+  handleDrop(p) {
+    if (!p.alive || !this.dropsOn() || this.phase === 'over') return;
+    const slot = p.slot;
+    const w = p.weapons[slot];
+    if (!w || slot === 3) return;
+    p.weapons[slot] = null;
+    p.slot = p.weapons[1] ? 1 : p.weapons[2] ? 2 : 3;
+    p.reloadEnd = 0;
+    this.spawnDrop(p, w, true);
+    this.send(p, { type: 'dropped', item: w.id });
+  }
+  pickupDrops() {
+    if (!this.drops.length) return;
+    const T = this.time;
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      for (let i = 0; i < this.drops.length; i++) {
+        const d = this.drops[i];
+        const slot = WEAPONS[d.w.id]?.slot;
+        if (!slot || p.weapons[slot] || (d.from === p.id && T < d.noPick)) continue;
+        if (Math.hypot(p.pos[0] - d.pos[0], p.pos[2] - d.pos[2]) > 1.4 || Math.abs(p.pos[1] - d.pos[1]) > 1.8) continue;
+        p.weapons[slot] = d.w;
+        this.drops.splice(i, 1); i--;
+        this.send(p, { type: 'picked', item: d.w.id, slot });
+      }
+    }
+  }
+
+  // ---------- « prêt » : la phase d'achat se termine plus tôt quand tous les joueurs humains sont prêts ----------
+  handleReady(p) {
+    if (isFfa(this.mode) || this.phase !== 'buy' || p.isBot || p.ready) return;
+    p.ready = true;
+    const humans = [...this.players.values()].filter(q => !q.isBot && !q.joinedMidRound);
+    const n = humans.filter(q => q.ready).length;
+    this.broadcast({ type: 'readyState', n, total: humans.length, name: p.name });
+    if (n >= humans.length && !this.readyDone) {
+      this.readyDone = true;
+      this.phaseEnd = Math.min(this.phaseEnd, this.time + 3);
+      this.broadcast({ type: 'notice', text: 'TOUT LE MONDE EST PRÊT : DÉPART DANS 3 S' });
+    }
+  }
+
+  // ---------- rapport des dégâts de la manche (donnés et reçus, par adversaire) ----------
+  sendDmgReport(p) {
+    if (p.isBot) return;
+    const rows = [];
+    for (const q of this.players.values()) {
+      if (q === p || !this.isEnemy(p, q)) continue;
+      const dealt = Math.round(q.damagedBy.get(p.id) || 0), recv = Math.round(p.damagedBy.get(q.id) || 0);
+      if (dealt || recv) rows.push({ i: q.id, n: q.name, dealt, recv, dead: !q.alive });
+    }
+    if (rows.length) this.send(p, { type: 'dmgReport', rows: rows.sort((a, b) => b.dealt + b.recv - a.dealt - a.recv).slice(0, 8) });
   }
 
   handleShoot(p, msg) {
@@ -485,7 +593,7 @@ export class Match {
       if (p.reloadEnd > this.time || w.mag <= 0) return;
       if (!this.opts.infAmmo) w.mag--;
     }
-    p.lastShot = this.time;
+    p.lastShot = this.time; p.protEnd = 0;
     if (d.type !== 'melee') p.shots++;
     p.invisEnd = Math.min(p.invisEnd, this.time);
     const origin = this.eye(p);
@@ -531,8 +639,9 @@ export class Match {
 
   damage(q, amount, attacker, wpn, head, silent = false) {
     if (!q.alive || amount <= 0) return;
+    if (attacker && attacker !== q && q.protEnd > this.time) return; // protection de réapparition
     if (attacker && attacker !== q) {
-      q.damagedBy.set(attacker.id, (q.damagedBy.get(attacker.id) || 0) + amount);
+      q.damagedBy.set(attacker.id, (q.damagedBy.get(attacker.id) || 0) + Math.min(amount, Math.max(0, q.hp) + Math.max(0, q.armor)));
       q.lastDamagedBy = attacker.id; q.lastDamagedAt = this.time;
     }
     if (attacker && attacker !== q && this.isEnemy(attacker, q)) { const real = Math.min(amount, q.hp + q.armor); attacker.dmg += real; attacker.roundDmg = (attacker.roundDmg || 0) + real; }
@@ -548,6 +657,8 @@ export class Match {
   kill(v, a, wpn, head) {
     v.alive = false; v.hp = 0; v.deaths++; v.diedAt = this.time; v.interact = false; v.prog = 0;
     if (this.core.carrier === v.id) this.dropCore(v);
+    // l'arme principale (sinon le pistolet acheté) tombe au sol et peut être ramassée
+    if (this.dropsOn()) { const s = v.weapons[1] ? 1 : v.weapons[2] && v.weapons[2].id !== 'spark' ? 2 : 0; if (s) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = s === 2 ? this.newWeapon('spark') : null; } }
     const vStreak = v.streak; v.streak = 0;
     if (a && a !== v) {
       a.kills++; a.score += 200 + (head ? 50 : 0);
@@ -575,6 +686,7 @@ export class Match {
       if (ass) { ass.assists++; ass.score += 50; }
     }
     this.broadcast({ type: 'kill', k: a ? a.id : null, v: v.id, w: wpn, h: head ? 1 : 0 });
+    this.sendDmgReport(v);
     if (a && a !== v && !v.isBot) {
       this.sendKillcam(v, a, wpn, head);
       // rapport de combat : dégâts échangés avec le tueur
@@ -658,6 +770,7 @@ export class Match {
       p.charges[key]--; p.abilities++;
       if (isFfa(this.mode) && !p.recharge[key]) p.recharge[key] = this.time + FFA.abilityRecharge;
     }
+    p.protEnd = 0;
     const dir = Array.isArray(m.d) && m.d.length === 3 && m.d.every(finite) ? norm(m.d) : [0, 0, -1];
     const eye = this.eye(p);
     const T = this.time;
@@ -838,6 +951,7 @@ export class Match {
       }
     }
 
+    this.pickupDrops();
     if (assault) this.tickAssault(dt);
     else if (this.phase === 'live' && T >= this.phaseEnd) {
       let best = null;
@@ -970,6 +1084,19 @@ export class Match {
     return 'hidden';
   }
 
+  // temps restant des effets en cours (affiché sous les capacités)
+  buffTimers(p, T) {
+    const o = {};
+    if (p.buffEnd > T) o[p.invisEnd > T && p.buffSpeed < 1.2 ? 'ph' : 'od'] = r2(p.buffEnd - T);
+    if (p.hasteEnd > T) o.hs = r2(p.hasteEnd - T);
+    if (p.invisEnd > T && !(p.buffEnd > T)) o.iv = r2(p.invisEnd - T);
+    if (p.slowEnd > T + 0.05) o.sl = 1;
+    if (p.healEnd > T) o.hl = r2(p.healEnd - T);
+    if (p.protEnd > T) o.pr = r2(p.protEnd - T);
+    if (p.revealEnd > T) o.rv = r2(p.revealEnd - T);
+    return o;
+  }
+
   sendSnapshots() {
     const T = this.time;
     const dtS = 2 / TICK_RATE;
@@ -986,9 +1113,10 @@ export class Match {
         w: w ? w.id : 'knife', iv: p.invisEnd > T ? 1 : 0, rv: p.revealEnd > T ? 1 : 0,
         pl: p.prog > 0 ? 1 : 0, gl: p.gun, lv: p.lives, st: p.streak, k: p.kills, d: p.deaths, a: p.assists, sc: p.score, pg: p.ping || 0, dm: Math.round(p.dmg),
       };
+      if (p.protEnd > T) base.sp = 1;
       pub.set(p.id, JSON.stringify(base));
       // santé, argent et porteur du Noyau : réservés aux alliés
-      priv.set(p.id, JSON.stringify({ ...base, hp: Math.ceil(p.hp), cr: this.core.carrier === p.id ? 1 : 0, $: p.money }));
+      priv.set(p.id, JSON.stringify({ ...base, hp: Math.ceil(p.hp), ar: Math.ceil(p.armor), pw: p.weapons[1]?.id || p.weapons[2]?.id || null, cr: this.core.carrier === p.id ? 1 : 0, $: p.money, rd: p.ready ? 1 : 0 }));
     }
     const common = {
       t: Date.now(), ph: this.phase, tm: Math.max(0, r2(this.phaseEnd - T)), rd: this.round, hf: this.half, sc: this.score,
@@ -996,6 +1124,7 @@ export class Match {
       smokes: this.smokes.map(s => ({ i: s.id, p: s.pos.map(r2), r: s.r, u: r2(s.end - T) })),
       fires: this.fires.map(f => ({ i: f.id, p: f.pos.map(r2), r: f.r, k: f.kind, u: r2(f.end - T) })),
       walls: this.walls.map(w => ({ i: w.wallId, min: w.min.map(r2), max: w.max.map(r2), hp: w.hp })),
+      drops: this.drops.map(d => ({ i: d.id, w: d.w.id, p: d.pos.map(r2) })),
     };
     const commonStr = JSON.stringify(common).slice(1);
     const meCache = new Map();
@@ -1023,7 +1152,7 @@ export class Match {
         pr: p.prog > 0 ? [p.progKind, r2(p.prog / (p.progKind === 'plant' ? ROUND.plantTime : ROUND.defuseTime))] : null,
         sm: p.speedMul, rm: p.rateMul, rs: p.respawnAt ? r2(Math.max(0, p.respawnAt - T)) : 0,
         rc: { q: p.recharge.q ? r2(p.recharge.q - T) : 0, e: p.recharge.e ? r2(p.recharge.e - T) : 0 },
-        iv: p.invisEnd > T ? 1 : 0, bf: p.buffEnd > T ? 1 : 0,
+        iv: p.invisEnd > T ? 1 : 0, bf: p.buffEnd > T ? 1 : 0, bt: this.buffTimers(p, T),
       };
       const meStr = JSON.stringify(me);
       meCache.set(p.id, { meStr, core: JSON.stringify(core) });

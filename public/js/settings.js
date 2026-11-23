@@ -28,6 +28,7 @@ export const ACTIONS = [
   ['abilityQ', 'Capacité 1'], ['abilityE', 'Capacité 2'], ['ult', 'Ultime'],
   ['interact', 'Poser / désamorcer'], ['buy', 'Menu d\'achat'], ['scoreboard', 'Tableau des scores'], ['chat', 'Chat (tous)'],
   ['teamChat', 'Chat d\'équipe'], ['radio', 'Messages radio'], ['mark', 'Marquer une position (ping)'], ['emote', 'Émotes'], ['inspect', 'Inspecter l\'arme'], ['react', 'Féliciter un coéquipier (👏)'],
+  ['drop', 'Lâcher l\'arme en main'], ['lastWeapon', 'Arme précédente'], ['bigMap', 'Grande carte (maintenir)'], ['ready', 'Prêt (phase d\'achat) / défi de visée'], ['rebuy', 'Racheter l\'équipement précédent'],
 ];
 
 // ---------- viseur ----------
@@ -75,11 +76,26 @@ function importCode(code) {
 
 // ---------- description des sections ----------
 const SECTIONS = [
+  { id: 'lang', title: 'Langue', items: [
+    { k: 'lang', t: 'select', label: 'Langue du jeu', opts: [['fr', 'Français'], ['en', 'English']], hint: 'Menus, partie, messages du serveur. Change aussitôt, sans recharger.' },
+  ] },
   { id: 'mouse', title: 'Souris', items: [
     { k: 'sens', t: 'range', label: 'Sensibilité', min: 0.05, max: 5, step: 0.01, num: true },
     { k: 'sensY', t: 'range', label: 'Multiplicateur vertical', min: 0.3, max: 2, step: 0.05, num: true, hint: '1 = même vitesse à la verticale qu\'à l\'horizontale' },
     { k: 'scopeSens', t: 'range', label: 'Multiplicateur en lunette', min: 0.2, max: 2, step: 0.05, num: true, hint: '1 = même vitesse de visée qu\'en vue normale (corrigée du zoom)' },
     { k: 'invertY', t: 'toggle', label: 'Inverser l\'axe vertical' },
+    { k: 'crouchToggle', t: 'toggle', label: 'Accroupi en mode bascule', hint: 'Un appui pour s\'accroupir, un autre pour se relever' },
+    { k: 'walkToggle', t: 'toggle', label: 'Marche silencieuse en mode bascule' },
+    { k: 'scopeHold', t: 'toggle', label: 'Lunette : maintenir le bouton', hint: 'Désactivé : un clic ouvre la lunette, un autre la ferme' },
+    { k: 'autoReload', t: 'toggle', label: 'Rechargement automatique quand le chargeur est vide' },
+  ] },
+  { id: 'pad', title: 'Manette', custom: 'pad', items: [
+    { k: 'gpSens', t: 'range', label: 'Sensibilité de la visée', min: 0.2, max: 3, step: 0.05, num: true },
+    { k: 'gpSensY', t: 'range', label: 'Multiplicateur vertical', min: 0.3, max: 2, step: 0.05, num: true },
+    { k: 'gpInvert', t: 'toggle', label: 'Inverser l\'axe vertical' },
+    { k: 'gpDeadzone', t: 'range', label: 'Zone morte des sticks', min: 0.05, max: 0.4, step: 0.01, pct: true, hint: 'Augmente-la si la visée bouge toute seule' },
+    { k: 'gpAimAssist', t: 'toggle', label: 'Aide à la visée légère', hint: 'Ralentit un peu la visée quand le viseur passe sur un ennemi visible' },
+    { k: 'gpVibration', t: 'toggle', label: 'Vibrations', hint: 'Quand tu tires, touches ou reçois des dégâts (si la manette le permet)' },
   ] },
   { id: 'keys', title: 'Touches', custom: 'keys' },
   { id: 'crosshair', title: 'Viseur', custom: 'crosshair', items: [
@@ -123,6 +139,13 @@ const SECTIONS = [
     { k: 'damageNumbers', t: 'toggle', label: 'Afficher les dégâts infligés (chiffres)' },
     { k: 'netGraph', t: 'toggle', label: 'Graphique réseau (ping et FPS)' },
     { k: 'confirmQuit', t: 'toggle', label: 'Demander confirmation avant de quitter une partie' },
+    { k: 'minimapRotate', t: 'toggle', label: 'Mini-carte qui tourne avec toi' },
+    { k: 'minimapZoom', t: 'range', label: 'Zoom de la mini-carte', min: 1, max: 2.5, step: 0.1, pct: true },
+    { k: 'heardOnMap', t: 'toggle', label: 'Ennemis entendus sur la mini-carte', hint: 'Les pas ennemis proches apparaissent en cercles pâles' },
+    { k: 'chEnemy', t: 'toggle', label: 'Viseur rouge sur un ennemi', hint: 'Le viseur change de couleur quand il passe sur un ennemi visible' },
+    { k: 'lowAmmoWarn', t: 'toggle', label: 'Alerte de munitions faibles' },
+    { k: 'roundBeeps', t: 'toggle', label: 'Bips des 10 dernières secondes de la manche' },
+    { k: 'dmgReport', t: 'toggle', label: 'Rapport des dégâts de la manche', hint: 'Dégâts donnés et reçus par adversaire, à ta mort et en fin de manche' },
   ] },
   { id: 'chat', title: 'Chat', items: [
     { k: 'chatMode', t: 'select', label: 'Messages affichés en partie', opts: [['all', 'Tous'], ['team', 'Mon équipe uniquement'], ['off', 'Aucun (chat masqué)']], hint: 'Les messages du système et de la modération restent affichés' },
@@ -255,6 +278,7 @@ function render() {
   else if (sec.custom === 'keys') body = keysHTML();
   else if (sec.custom === 'profiles') body = profilesHTML(sec);
   else if (sec.custom === 'crosshair') body = crosshairHTML(sec);
+  else if (sec.custom === 'pad') body = padHTML(sec);
   else body = sec.items.map(itemHTML).join('');
   root.innerHTML = `<nav class="set-nav"><input class="set-search" id="set-search" placeholder="🔍 Rechercher… (touche /)" title="Raccourci : / ou Ctrl+F pour chercher, Échap pour effacer" value="${esc(search)}" maxlength="30">${SECTIONS.map(s => `<button data-sec="${s.id}" class="${s.id === current && !search ? 'active' : ''}">${s.title.toUpperCase()}</button>`).join('')}</nav>
     <div class="set-body"><div class="set-head"><h2>${search ? 'RÉSULTATS' : sec.title.toUpperCase()}</h2>${search ? '' : `<button class="btn ghost small" data-reset="${sec.id}">RÉINITIALISER</button>`}</div>${body}</div>`;
@@ -280,6 +304,21 @@ function profilesHTML(sec) {
     <div class="set-label" style="margin-top:18px">Code de tous mes réglages</div>
     <div class="ch-code"><input id="set-code" value="${settingsCode()}" spellcheck="false"><button class="btn small" data-scopy>COPIER</button><button class="btn small" data-simport>IMPORTER</button></div>
     <p class="set-note">Partage ce code ou colle celui d'un ami pour reprendre ses réglages (touches, viseur, sensibilité, graphismes…).</p>
+    ${sec.items.map(itemHTML).join('')}`;
+}
+
+export const PAD_LAYOUT = [
+  ['Stick gauche', 'Se déplacer (pousser à fond pour courir)'], ['Stick droit', 'Viser'], ['Gâchette droite (RT / R2)', 'Tirer'], ['Gâchette gauche (LT / L2)', 'Lunette'],
+  ['A / Croix', 'Sauter'], ['B / Rond', 'S\'accroupir'], ['X / Carré', 'Recharger'], ['Y / Triangle', 'Arme suivante'],
+  ['LB / L1', 'Capacité 1'], ['RB / R1', 'Capacité 2'], ['Croix haut', 'Ultime'], ['Croix bas (maintenir)', 'Poser / désamorcer le Noyau'],
+  ['Croix gauche', 'Lâcher l\'arme'], ['Croix droite', 'Menu d\'achat'], ['Clic stick gauche', 'Marcher (silencieux)'], ['Clic stick droit', 'Marquer une position'],
+  ['Vue / Select (maintenir)', 'Tableau des scores'], ['Menu / Start', 'Pause'],
+];
+function padHTML(sec) {
+  const pads = [...(navigator.getGamepads?.() || [])].filter(Boolean);
+  return `<p class="set-note">${pads.length ? `🎮 Manette détectée : <b>${esc(pads[0].id.replace(/\(.*\)/, '').trim() || 'manette')}</b>` : '🎮 Aucune manette détectée : branche-la (ou connecte-la en Bluetooth) puis appuie sur un bouton.'}</p>
+    <p class="set-note">Dans les menus : croix directionnelle ou stick gauche pour choisir, A pour valider, B pour revenir. Dans le menu d'achat, X revend l'objet choisi.</p>
+    <div class="pad-grid">${PAD_LAYOUT.map(([b, a]) => `<div class="set-row"><div class="set-label">${esc(b)}</div><div class="set-ctrl"><span class="val">${esc(a)}</span></div></div>`).join('')}</div>
     ${sec.items.map(itemHTML).join('')}`;
 }
 

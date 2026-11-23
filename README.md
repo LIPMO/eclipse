@@ -153,6 +153,13 @@ Variable facultative : `MAX_ACCOUNTS_PER_IP` (3 par défaut) fixe la limite d'in
 - **Réactions** (touche H) pour féliciter un coéquipier, **salons favoris**, **menu sur les pseudos du chat**, **message de bienvenue** de clan.
 - Menu : raccourcis clavier 1 à 9 (et `?`), visite guidée, thème clair, lecture simple, notifications regroupées.
 
+### Boutique, manette et langue (1.11)
+- **Revente** pendant la phase d'achat : prix complet pour ce que tu as acheté pendant la manche, moitié du prix sinon (clic droit sur l'objet ou bouton VENDRE). **Racheter** (N), **3 favoris**, **Prêt** (P) : quand tous les joueurs humains sont prêts, la manche part 3 s plus tard.
+- **Armes au sol** : J lâche l'arme en main, les joueurs éliminés laissent tomber leur arme principale ; on ramasse en marchant dessus si l'emplacement est libre (Assaut et Duel).
+- **Manette** (API Gamepad, disposition standard) : stick gauche déplacement, stick droit visée, RT tir, LT lunette, A saut, B accroupi, X recharger, Y arme suivante, LB/RB capacités, croix haut ultime, croix bas poser/désamorcer, croix gauche lâcher, croix droite achat, Vue scores, Menu pause. Menus navigables (A valider, B retour, X revendre). Réglages : sensibilité, zone morte, aide à la visée, vibrations.
+- **Langue** : PARAMÈTRES → Langue (français ou anglais). La traduction (`public/i18n/en.json`, chargé seulement en anglais) s'applique à tout l'affichage du jeu, y compris aux messages du serveur. Le panneau d'administration, les notes de mise à jour et les pages légales restent en français.
+- **En partie** : compteur de joueurs en vie, barres de vie des coéquipiers, temps restant des effets, alerte de munitions, viseur rouge sur un ennemi, rapport de dégâts, bips de fin de manche, alerte de désamorçage impossible, mini-carte tournante/zoomée, grande carte (M), arme précédente (Z), modes bascule, rechargement automatique, couper le chat d'un joueur, défi de visée de 60 s au champ de tir, protection de réapparition de 1,5 s en Mêlée.
+
 ### Tests
 `npm test` démarre le serveur sur un port libre avec des données temporaires et vérifie l'essentiel (santé, version, sécurité de base, partie contre des bots). GitHub Actions lance ce test, la vérification de la syntaxe et celle d'`integrity.json` à chaque envoi.
 
@@ -297,6 +304,8 @@ Commandes par défaut, modifiables dans PARAMÈTRES > TOUCHES :
 | Clic molette | Marquer une position pour l'équipe |
 | Espace (après la mort) | Passer la killcam |
 | V · G | Émotes · inspecter l'arme |
+| J · Z · M | Lâcher l'arme · arme précédente · grande carte (maintenir) |
+| N · P | Racheter l'équipement précédent · prêt (phase d'achat) / défi de visée (champ de tir) |
 
 Sur téléphone : joystick à gauche, glisser à droite pour viser, boutons d'action à l'écran (Paramètres → Tactile pour la taille, l'opacité et la sensibilité).
 

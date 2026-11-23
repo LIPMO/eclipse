@@ -8,6 +8,7 @@ import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, d
 import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
 import * as SFX from './audio.js';
 import { TouchControls, isTouchDevice } from './touch.js';
+import { pad } from './gamepad.js';
 import { emojify } from './hub.js';
 import { profile, save } from './store.js';
 import { mountSettings, isRebinding, applyCrosshair, keyName } from './settings.js';
@@ -93,6 +94,8 @@ export class Game {
     this.roundHistory = [];
     this.bubbles = [];
     this.spec = start.spectate ? { xray: false, third: false, buf: [], info: null, ghost: null } : null;
+    this.range = start.diff === 'cible'; // champ de tir (défi de visée)
+    this.muted = new Set(); this.dropMeshes = new Map(); this.allyDeaths = []; this.prevSlot = null; this.lastLoadout = null; this.bought = {}; this.readyN = null;
 
     this.initRenderer();
     this.buildMap();
@@ -103,6 +106,7 @@ export class Game {
     this.bindNet();
     if (isTouchDevice() && !this.spec) this.touch = new TouchControls(this);
     if (this.spec) this.initSpectator();
+    pad.attach(this);
     this.applyRoster(start.players);
     $('game').classList.add('active');
     this.onResize();
@@ -500,7 +504,7 @@ export class Game {
     document.querySelectorAll('.end-endorse').forEach(x => x.remove());
     $('p-tacpause').style.display = this.isHost ? '' : 'none';
     $('p-tacpause').onclick = () => { this.net.send('tacPause'); $('p-tacpause').style.display = 'none'; this.lock(); };
-    if (!this.spec) { const tip = $('tip'); tip.textContent = '💡 ' + TIPS[(Math.random() * TIPS.length) | 0]; tip.classList.add('show'); clearTimeout(this.tipT); this.tipT = setTimeout(() => tip.classList.remove('show'), 9000); }
+    if (!this.spec) { const tip = $('tip'); tip.textContent = '💡 ' + (this.range ? `Champ de tir : appuie sur ${KB('ready')} pour lancer le défi de visée de 60 secondes.` : TIPS[(Math.random() * TIPS.length) | 0]); tip.classList.add('show'); clearTimeout(this.tipT); this.tipT = setTimeout(() => tip.classList.remove('show'), 9000); }
     $('netgraph').style.display = ST().netGraph ? 'block' : 'none';
     $('fps').style.display = ST().fps ? 'block' : 'none';
     $('minimap').style.display = ST().minimap ? 'block' : 'none';
@@ -552,6 +556,92 @@ export class Game {
       this.net.send('buy', { item: it.dataset.item });
       SFX.playUI('buy');
     };
+    // clic droit sur un objet possédé : revente
+    $('buy-cols').oncontextmenu = e => { const it = e.target.closest('.buy-item'); if (it?.classList.contains('owned')) this.sellItem(it.dataset.item); };
+    let extra = $('buy-extra');
+    if (!extra) { extra = document.createElement('div'); extra.id = 'buy-extra'; $('buy-cols').after(extra); }
+    const roundMode = !isFfa(this.mode);
+    extra.innerHTML = `<div class="buy-row">
+        <div class="buy-gear">${roundMode ? '<h4>TON ÉQUIPEMENT <span class="muted">(clic droit sur un objet pour le revendre)</span></h4><div id="buy-gear"></div>' : ''}</div>
+        <div class="buy-acts">
+          <button class="btn small" data-bact="rebuy" title="Rachète l'équipement de la manche précédente">⟲ RACHETER <kbd>${esc(KB('rebuy'))}</kbd></button>
+          <span class="buy-favs">${[0, 1, 2].map(i => `<span class="bfav"><button class="btn small ghost" data-fav="${i}"></button><button class="btn small ghost" data-favsave="${i}" title="Enregistrer l'équipement actuel dans ce favori">💾</button></span>`).join('')}</span>
+          ${roundMode && this.mode !== 'duel' ? '<button class="btn small" data-bact="request">🙋 DEMANDER UNE ARME</button>' : ''}
+          ${roundMode ? `<button class="btn small primary" data-bact="ready">✔ PRÊT <kbd>${esc(KB('ready'))}</kbd></button>` : ''}
+        </div>
+      </div>
+      <div class="buy-row"><div class="buy-eco muted" id="buy-eco"></div><div class="buy-team" id="buy-team"></div></div>`;
+    extra.onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.bact === 'rebuy') this.rebuy();
+      else if (b.dataset.bact === 'request') this.requestWeapon();
+      else if (b.dataset.bact === 'ready') this.sendReady();
+      else if (b.dataset.sell) this.sellItem(b.dataset.sell);
+      else if (b.dataset.fav !== undefined) { const l = this.favs()[+b.dataset.fav]; if (l) this.buyLoadout(l); else this.centerMsg('FAVORI VIDE : CLIQUE SUR 💾 POUR L\'ENREGISTRER', 2); }
+      else if (b.dataset.favsave !== undefined) { const l = this.currentLoadout(); if (!l) { this.centerMsg('ACHÈTE D\'ABORD UNE ARME OU UN GILET', 2); return; } this.favs()[+b.dataset.favsave] = l; save(); this.renderFavs(); this.centerMsg(`FAVORI ${+b.dataset.favsave + 1} ENREGISTRÉ`, 1.5); }
+    };
+    this.renderFavs();
+    this.buyCache = {};
+  }
+
+  // ---------- équipements : revente, rachat, favoris ----------
+  favs() { if (!Array.isArray(profile.loadouts) || profile.loadouts.length !== 3) profile.loadouts = [null, null, null]; return profile.loadouts; }
+  loadoutLabel(l) { return [l.w1, l.w2, l.armor].filter(Boolean).map(id => WEAPONS[id]?.name || ARMOR[id]?.name || id).join(' + '); }
+  renderFavs() {
+    document.querySelectorAll('#buy-extra [data-fav]').forEach(b => { const l = this.favs()[+b.dataset.fav]; b.textContent = `★${+b.dataset.fav + 1} ${l ? this.loadoutLabel(l) : '(vide)'}`; b.classList.toggle('empty', !l); });
+  }
+  currentLoadout() {
+    const me = this.me; if (!me) return null;
+    const l = { w1: me.wp[1]?.[0] || null, w2: me.wp[2] && me.wp[2][0] !== 'spark' ? me.wp[2][0] : null, armor: me.ar >= 50 ? 'heavy' : me.ar >= 25 ? 'light' : null };
+    return l.w1 || l.w2 || l.armor ? l : null;
+  }
+  buyLoadout(l) {
+    const me = this.me; if (!me?.al) return;
+    if (!isFfa(this.mode) && this.snap?.ph !== 'buy') { this.centerMsg('ACHAT POSSIBLE SEULEMENT PENDANT LA PHASE D\'ACHAT', 2); return; }
+    let n = 0;
+    for (const id of [l.w1, l.w2]) if (id && WEAPONS[id] && me.wp[WEAPONS[id].slot]?.[0] !== id) { this.net.send('buy', { item: id }); n++; }
+    if (l.armor && ARMOR[l.armor] && me.ar < ARMOR[l.armor].value) { this.net.send('buy', { item: l.armor }); n++; }
+    if (n) SFX.playUI('buy'); else this.centerMsg('TU AS DÉJÀ CET ÉQUIPEMENT', 1.5);
+  }
+  rebuy() { if (this.lastLoadout) this.buyLoadout(this.lastLoadout); else this.centerMsg('RIEN À RACHETER POUR L\'INSTANT', 1.5); }
+  sellValue(item) {
+    if (ARMOR[item]) return this.bought.armor === item ? ARMOR[item].cost : 0;
+    const d = WEAPONS[item]; if (!d) return 0;
+    return this.bought['s' + d.slot] === item ? d.cost : Math.floor(d.cost / 2 / 50) * 50;
+  }
+  sellItem(item) {
+    if (ARMOR[item] || item === 'armor') { this.net.send('sell', { item: 'armor' }); return; }
+    const d = WEAPONS[item]; if (!d || d.slot === 3) return;
+    this.net.send('sell', { slot: d.slot });
+  }
+  requestWeapon() {
+    const now = performance.now() / 1000; if (now - (this.reqT || 0) < 5) return; this.reqT = now;
+    this.net.send('chat', { text: `🙋 J'ai besoin d'une arme ! (${this.me?.$ ?? 0} crédits)`, teamOnly: true });
+    this.centerMsg('DEMANDE ENVOYÉE À TON ÉQUIPE', 1.5);
+  }
+  sendReady() {
+    if (this.range) { this.startChallenge(); return; }
+    if (isFfa(this.mode) || this.snap?.ph !== 'buy') return;
+    this.net.send('ready');
+  }
+  // contenu dynamique du menu d'achat (équipement, équipe, prévision des crédits)
+  updateBuyExtra(s, me) {
+    const set = (id, html) => { if (this.buyCache[id] !== html) { this.buyCache[id] = html; const el = $(id); if (el) el.innerHTML = html; } };
+    if (!isFfa(this.mode)) {
+      const rows = [];
+      for (const sl of [1, 2]) { const w = me.wp[sl]; if (w && !(sl === 2 && w[0] === 'spark')) rows.push(`<div class="bg-row"><span>${esc(WEAPONS[w[0]].name)}</span><button class="btn small ghost" data-sell="${w[0]}" ${s.ph === 'buy' ? '' : 'disabled'}>VENDRE +${this.sellValue(w[0])}</button></div>`); }
+      if (me.ar > 0) { const it = this.bought.armor; rows.push(`<div class="bg-row"><span>Gilet (${me.ar})</span>${it ? `<button class="btn small ghost" data-sell="${it}" ${s.ph === 'buy' ? '' : 'disabled'}>VENDRE +${ARMOR[it].cost}</button>` : '<span class="muted small">gardé de la manche précédente</span>'}</div>`); }
+      set('buy-gear', rows.join('') || '<span class="muted small">Rien à revendre : le pistolet Spark et le couteau sont gratuits.</span>');
+    }
+    if (this.mode === 'assault') {
+      const loss = Math.min(ROUND.maxMoney, me.$ + ROUND.lossMoney), win = Math.min(ROUND.maxMoney, me.$ + ROUND.winMoney);
+      set('buy-eco', `Manche suivante, si tu gardes tes crédits : <b>${loss}</b> en cas de défaite · <b>${win}</b> en cas de victoire <span class="muted">(+${ROUND.killMoney} par élimination)</span>`);
+      const myTeam = this.roster.get(this.myId)?.team;
+      const mates = s.players.filter(p => p.i !== this.myId && this.roster.get(p.i)?.team === myTeam);
+      set('buy-team', mates.length ? `<h4>TON ÉQUIPE</h4>${mates.map(p => `<div class="bt-row ${p.al ? '' : 'dead'}"><span>${esc(this.nameOf(p.i))}${p.rd ? ' <b class="ok">✔</b>' : ''}</span><span class="gold">${p.$ ?? '—'}</span><span>${esc(WEAPONS[p.pw]?.name || '—')}</span><span class="muted">${p.ar ? '⛉ ' + p.ar : ''}</span></div>`).join('')}` : '');
+    }
+    const rb = document.querySelector('#buy-extra [data-bact="ready"]');
+    if (rb) { rb.disabled = s.ph !== 'buy' || !!this.self?.rd; rb.innerHTML = `✔ PRÊT${this.readyN ? ` ${this.readyN.n}/${this.readyN.total}` : ''} <kbd>${esc(KB('ready'))}</kbd>`; }
   }
 
   buildTeamIcons() {
@@ -559,9 +649,9 @@ export class Game {
     const me = this.roster.get(this.myId);
     const allies = [], enemies = [];
     for (const p of this.roster.values()) (me && p.team === me.team ? allies : enemies).push(p);
-    const html = list => list.map(p => `<div data-id="${p.id}">${agentIconHTML(p.agent)}</div>`).join('');
-    $('icons-left').innerHTML = html(allies);
-    $('icons-right').innerHTML = html(enemies);
+    const html = (list, ally) => list.map(p => `<div data-id="${p.id}">${agentIconHTML(p.agent)}${ally && p.id !== this.myId ? '<i class="hpb"><b></b></i>' : ''}</div>`).join('');
+    $('icons-left').innerHTML = html(allies, true);
+    $('icons-right').innerHTML = html(enemies, false);
     if (this.hudAgent !== me?.agent) this.buildAbilityHUD();
   }
 
@@ -661,6 +751,7 @@ export class Game {
     const d = document.createElement('div');
     const myTeam = this.roster.get(this.myId)?.team;
     const sys = m.from === 'SYSTÈME' || m.system;
+    if (!sys && this.muted.has(m.from)) return;
     if (!sys && ST().chatMode === 'off') return;
     if (!sys && ST().chatMode === 'team' && !m.teamOnly && !m.radio) return;
     if (!sys && ST().streamer) m = { ...m, from: [...this.roster.values()].find(r => r.name === m.from && r.id !== this.myId) ? this.nameOf([...this.roster.values()].find(r => r.name === m.from).id) : m.from };
@@ -707,6 +798,7 @@ export class Game {
   // ---------- signalement en partie ----------
   openReport() {
     this.reportOpen = true;
+    $('report-inner').onclick = null;
     this.unlock(); // libère la souris pour pouvoir cliquer dans la fenêtre
     this.showPause(false);
     const list = [...this.roster.values()].filter(r => !r.bot && r.id !== this.myId);
@@ -730,7 +822,15 @@ export class Game {
 
   press(code) { this.pressAction(this.codeMap[code]); }
   pressAction(a) {
-    if (!a || this.held.has(a)) return;
+    if (!a) return;
+    // accroupi / marche en mode bascule : chaque appui inverse l'état
+    if ((a === 'crouch' && ST().crouchToggle) || (a === 'walk' && ST().walkToggle)) {
+      if (this.held.has(a + '_k')) return;
+      this.held.add(a + '_k');
+      if (this.held.has(a)) this.held.delete(a); else this.held.add(a);
+      return;
+    }
+    if (this.held.has(a)) return;
     this.held.add(a);
     if (this.kc && (a === 'jump' || a === 'fire')) { this.endKillcam(); return; }
     switch (a) {
@@ -747,7 +847,12 @@ export class Game {
       case 'ult': this.useAbility('x'); break;
       case 'interact': this.net.send('interact', { on: true }); this.interacting = true; break;
       case 'scoreboard': this.showScoreboard(true); break;
-      case 'scope': this.toggleScope(); break;
+      case 'scope': ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
+      case 'drop': if (this.me?.al && !this.ended) this.net.send('drop'); break;
+      case 'lastWeapon': if (this.prevSlot && this.me?.wp?.[this.prevSlot]) this.switchSlot(this.prevSlot); break;
+      case 'bigMap': $('minimap').classList.add('big'); break;
+      case 'ready': this.sendReady(); break;
+      case 'rebuy': this.rebuy(); break;
       case 'mark': if (this.me?.al && !this.ended) this.net.send('mark', { d: this.aimDir() }); break;
       case 'emote': this.toggleEmote(); break;
       case 'inspect': if (this.me?.al) this.inspectT = 1.8; break;
@@ -759,7 +864,10 @@ export class Game {
   release(code) { this.releaseAction(this.codeMap[code]); }
   releaseAction(a) {
     if (!a) return;
+    if ((a === 'crouch' && ST().crouchToggle) || (a === 'walk' && ST().walkToggle)) { this.held.delete(a + '_k'); return; }
     this.held.delete(a);
+    if (a === 'scope' && ST().scopeHold) this.toggleScope(false);
+    if (a === 'bigMap') $('minimap').classList.remove('big');
     if (a === 'fire') this.local.triggerHeld = false;
     if (a === 'scoreboard') this.showScoreboard(false);
     if (a === 'interact' && this.interacting) { this.net.send('interact', { on: false }); this.interacting = false; }
@@ -846,6 +954,9 @@ export class Game {
     $('sf-close').onclick = () => this.closeSettings();
     $('p-leave').onclick = () => { if (ST().confirmQuit && !this.ended && !this.spec && !confirm('Quitter la partie en cours ?')) return; this.leave(); };
     $('p-report').onclick = () => this.openReport();
+    $('p-mute').onclick = () => this.openMute();
+    $('p-challenge').style.display = this.range ? '' : 'none';
+    $('p-challenge').onclick = () => { this.lock(); this.startChallenge(); };
   }
 
   openSettings() {
@@ -904,8 +1015,35 @@ export class Game {
     this.vmSwayX += mx * 0.0003; this.vmSwayY += my * 0.0003;
   }
 
+  // visée à la manette (angles déjà calculés par gamepad.js)
+  padLook(dx, dy) {
+    if (!this.canAct() && !(this.me && !this.me.al)) return;
+    const L = this.local;
+    let k = 1; if (this.scoped) k = ST().scopeSens / WEAPONS.longbow.scope;
+    L.yaw -= dx * k;
+    L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - dy * k));
+    this.vmSwayX += dx * 0.05; this.vmSwayY += dy * 0.05;
+  }
+  // un ennemi visible est-il sous le viseur ? (viseur rouge, aide à la visée de la manette)
+  enemyUnderCrosshair() {
+    if (!this.me?.al) return false;
+    const now = performance.now();
+    if (this.ecT && now - this.ecT < 30) return this.ecV;
+    this.ecT = now;
+    const o = this.eyePos(), d = this.aimDir(), r = raycastBoxes(o, d, 200, this.boxes);
+    let on = false;
+    for (const ot of this.others.values()) {
+      if (!ot.cur?.al || !ot.ch.root.visible || !this.isEnemyId(ot.id) || ot.opacity < 0.3) continue;
+      for (const hb of hitboxes(ot.cur.p, ot.cur.c)) if (rayAABB(o, d, hb.min, hb.max) < r.t) { on = true; break; }
+      if (on) break;
+    }
+    this.ecV = on;
+    return on;
+  }
+
   lock() {
     SFX.initAudio();
+    if (this.padActive) { this.showPause(false); $('click-to-play').style.display = 'none'; }
     if (this.touch) {
       // pas de verrouillage du pointeur sur mobile : plein écran et paysage si possible
       this.showPause(false);
@@ -926,6 +1064,7 @@ export class Game {
     if (open === this.buyOpen) return;
     this.buyOpen = open;
     $('buy-menu').classList.toggle('show', open);
+    $('buy-close-hint').textContent = this.padActive ? 'Ⓑ fermer · Ⓐ acheter · Ⓧ revendre · Ⓨ racheter' : `${KB('buy')} pour fermer · clic droit pour revendre`;
     if (open) this.unlock(); else this.lock();
   }
 
@@ -993,6 +1132,7 @@ export class Game {
   switchSlot(s) {
     const L = this.local;
     if (!this.me?.wp?.[s] || L.slot === s) return;
+    if (L.slot && this.me.wp[L.slot]) this.prevSlot = L.slot;
     L.slot = s;
     SFX.playSwitch();
     L.reloadEnd = 0;
@@ -1029,7 +1169,7 @@ export class Game {
   eyePos() { const L = this.local; return [L.pos[0], L.pos[1] + L.eyeH, L.pos[2]]; }
 
   canAct() {
-    return !this.spec && this.me?.al && !this.chatOpen && !this.buyOpen && !this.paused && (!!this.touch || document.pointerLockElement === $('game-canvas'));
+    return !this.spec && this.me?.al && !this.chatOpen && !this.buyOpen && !this.paused && (!!this.touch || this.padActive || document.pointerLockElement === $('game-canvas'));
   }
 
   tryFire(now) {
@@ -1062,6 +1202,8 @@ export class Game {
       dirs.push(dirFromAngles(L.yaw + Math.cos(a) * r, L.pitch + L.recoil + Math.sin(a) * r));
     }
     this.net.send('shoot', { d: dirs.map(d => d.map(v => Math.round(v * 10000) / 10000)) });
+    if (this.chal && def.type !== 'melee') this.chal.shots++;
+    this.pad?.rumble(def.type === 'sniper' || def.type === 'shotgun' ? 0.5 : 0.18, 60);
     L.lastShot = now;
     if (def.type !== 'melee') {
       if (!this.opts.infAmmo) L.mag--;
@@ -1145,6 +1287,7 @@ export class Game {
     on('shot', m => this.onRemoteShot(m));
     on('hit', m => {
       if (m.d > 0) this.roundDmg = (this.roundDmg || 0) + m.d;
+      if (this.chal) this.chal.hits++;
       if (ST().damageNumbers && m.d > 0) this.damageNumber(m.d, m.h, m.k);
       if (ST().hitmarker) {
         const hm = $('hitmarker');
@@ -1154,10 +1297,11 @@ export class Game {
       }
       if (ST().hitSound || m.k) SFX.playHit(m.h, m.k);
     });
-    on('hurt', m => { this.local.hurtT = 0.4; SFX.playHurt(); if (m.from) this.showDamageDir(m.from); });
+    on('hurt', m => { this.local.hurtT = 0.4; SFX.playHurt(); if (m.from) this.showDamageDir(m.from); this.pad?.rumble(Math.min(1, 0.3 + (m.d || 0) / 100), 180); });
     on('kill', m => {
       this.addKillfeed(m);
-      if (m.k === this.myId && m.v !== this.myId) this.roundKills = (this.roundKills || 0) + 1;
+      if (m.k === this.myId && m.v !== this.myId) { this.roundKills = (this.roundKills || 0) + 1; if (this.chal) { this.chal.kills++; if (m.h) this.chal.hs++; } }
+      if (m.v !== this.myId && !isFfa(this.mode) && !this.isEnemyId(m.v)) { const p = this.others.get(m.v)?.cur?.p; if (p) this.allyDeaths.push({ p: p.slice(), t: performance.now() / 1000, n: this.nameOf(m.v) }); }
       const kr = m.k && m.k !== this.myId && m.v !== this.myId && this.roster.get(m.k);
       if (kr && !kr.bot && !this.isEnemyId(m.k)) this.offerReaction(m.k);
       if (m.k === this.myId && m.v !== this.myId) {
@@ -1182,11 +1326,11 @@ export class Game {
       for (const o of this.others.values()) { o.deadT = 0; o.ch.root.rotation.x = 0; }
       for (const t of this.tracers) this.scene.remove(t.mesh);
       this.tracers = [];
-      this.roundKills = 0; this.roundDmg = 0;
+      this.roundKills = 0; this.roundDmg = 0; this.bought = {}; this.readyN = null; this.allyDeaths = []; this.lastBeep = 0;
     });
     on('reaction', m => this.showReaction(m));
     on('reactSent', m => { const h = $('react-hint'); if (h) { h.textContent = `${['👏', '🔥', '😮', 'GG'][m.e]} envoyé à ${m.to}`; h.classList.add('show', 'sent'); clearTimeout(this.reactHT); this.reactHT = setTimeout(() => h.classList.remove('show', 'sent'), 1500); } });
-    on('phase', m => { if (m.phase === 'live') { this.centerMsg('ENGAGEZ !', 1.5); SFX.playUI('roundStart'); this.toggleBuy(false); } });
+    on('phase', m => { if (m.phase === 'live') { this.centerMsg('ENGAGEZ !', 1.5); SFX.playUI('roundStart'); this.toggleBuy(false); const l = this.currentLoadout(); if (l) this.lastLoadout = l; } });
     on('roundEnd', m => {
       const me = this.roster.get(this.myId);
       const win = me && m.winner === me.team;
@@ -1217,7 +1361,12 @@ export class Game {
       if (ULTS.has(m.k) && this.isEnemyId(m.i)) { const w = $('ult-warn'); w.textContent = `⚠ ULTIME ENNEMIE : ${this.nameOf(m.i)}`; clearTimeout(this.ultT); this.ultT = setTimeout(() => { w.textContent = ''; }, 2500); }
     });
     on('notice', m => this.centerMsg(m.text, 2.5));
-    on('bought', m => { if (m.slot) { this.pendingSwitch = m.slot; } });
+    on('bought', m => { if (m.slot) { this.pendingSwitch = m.slot; this.bought['s' + m.slot] = m.item; } else if (ARMOR[m.item]) this.bought.armor = m.item; });
+    on('sold', m => { const n = WEAPONS[m.item]?.name || ARMOR[m.item]?.name || ''; this.centerMsg(`${n.toUpperCase()} REVENDU · +${m.refund}`, 1.5); SFX.playUI('buy'); if (m.slot) delete this.bought['s' + m.slot]; else delete this.bought.armor; this.buyCache = {}; });
+    on('dropped', m => { this.centerMsg(`${(WEAPONS[m.item]?.name || '').toUpperCase()} LÂCHÉ`, 1.2); SFX.playSwitch(); });
+    on('picked', m => { this.centerMsg(`ARME RAMASSÉE : ${(WEAPONS[m.item]?.name || '').toUpperCase()}`, 1.5); SFX.playReload(); });
+    on('readyState', m => { this.readyN = m; if (m.name !== this.roster.get(this.myId)?.name) this.caption(`${m.name} est prêt (${m.n}/${m.total})`, null, 'ready', 0, 0.2); });
+    on('dmgReport', m => this.showDmgReport(m.rows));
     on('wallBreak', () => SFX.playAbility('wall', null));
     on('mark', m => this.addMark(m));
     on('killcam', m => this.startKillcam(m));
@@ -1369,6 +1518,18 @@ export class Game {
       m.userData.target = pr.p;
     }
     for (const [id, m] of this.projMeshes) if (!projIds.has(id)) { this.scene.remove(m); this.projMeshes.delete(id); }
+    // armes au sol
+    const dropIds = new Set((s.drops || []).map(d => d.i));
+    for (const d of s.drops || []) {
+      if (this.dropMeshes.has(d.i) || !WEAPONS[d.w]) continue;
+      const g = new THREE.Group();
+      const w = buildWeapon(WEAPONS[d.w].model, 'default'); w.scale.setScalar(1.5); w.rotation.set(0, 0, Math.PI / 2.2); w.position.y = 0.32; g.add(w);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.55, 24), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; g.add(ring);
+      g.position.set(...d.p); g.userData = { w: d.w, ring, wm: w };
+      this.scene.add(g); this.dropMeshes.set(d.i, g);
+    }
+    for (const [id, g] of this.dropMeshes) if (!dropIds.has(id)) { this.scene.remove(g); g.traverse(o => o.geometry?.dispose()); this.dropMeshes.delete(id); }
     // noyau
     const c = s.core;
     this.coreMesh.visible = !!c.p && (c.s === 'dropped' || c.s === 'planted' || c.s === 'defused');
@@ -1481,7 +1642,7 @@ export class Game {
     let f = 0, s = 0;
     if (!frozen) { f = (H.has('forward') ? 1 : 0) - (H.has('back') ? 1 : 0); s = (H.has('right') ? 1 : 0) - (H.has('left') ? 1 : 0); }
     // joystick tactile : petite inclinaison = marche silencieuse
-    const tm = this.touch?.move;
+    const tm = this.touch?.move || (this.padActive ? this.padMove : null);
     let stickMag = 0;
     if (tm && !frozen && !this.paused) { stickMag = Math.min(1, Math.hypot(tm.x, tm.y)); if (stickMag > 0.15) { f = -tm.y; s = tm.x; } }
     let wx = -Math.sin(L.yaw) * f + Math.cos(L.yaw) * s, wz = -Math.cos(L.yaw) * f - Math.sin(L.yaw) * s;
@@ -1519,6 +1680,8 @@ export class Game {
     // tir
     if (H.has('fire')) this.tryFire(now);
     else L.triggerHeld = false;
+    // rechargement automatique quand le chargeur est vide
+    if (ST().autoReload && def.mag && L.mag <= 0 && L.reserve > 0 && !(L.reloadEnd > now) && now - L.lastShot > 0.12 && this.snap?.ph !== 'buy') this.reload();
     // recul : récupération
     if (now - L.lastShot > 1 / (def.rate || 5) * 1.3) {
       L.recoil *= Math.exp(-dt * 9);
@@ -1615,7 +1778,7 @@ export class Game {
       }
       // invisibilité
       const enemy = this.isEnemyId(o.id);
-      const op = st.iv && st.al ? (enemy ? 0.05 : 0.35) : 1;
+      const op = st.iv && st.al ? (enemy ? 0.05 : 0.35) : st.sp && st.al ? (Math.sin(now * 14) > 0 ? 0.35 : 0.75) : 1;
       if (op !== o.opacity) { setCharacterOpacity(ch, op); o.opacity = op; }
       // spectateur : cacher la cible suivie
       if (this.specTarget === o.id && !this.me?.al) ch.root.visible = false;
@@ -1671,6 +1834,7 @@ export class Game {
       }
       g.userData.disc.material.opacity = 0.25 + Math.sin(now * 12) * 0.06;
     }
+    for (const g of this.dropMeshes.values()) { g.userData.wm.rotation.y += dt * 1.2; g.userData.ring.material.opacity = 0.35 + Math.sin(now * 4) * 0.2; }
     for (const m of this.projMeshes.values()) {
       const tg = m.userData.target;
       if (tg) m.position.lerp(new THREE.Vector3(...tg), Math.min(1, dt * 15));
@@ -1721,7 +1885,9 @@ export class Game {
         cam.position.set(st.p[0], st.p[1] + (st.c ? PLAYER.eyeCrouch : PLAYER.eye), st.p[2]);
         cam.rotation.set(st.pt, st.y, 0);
         this.specTarget = target.id;
-        $('death-info').innerHTML = `SPECTATEUR : <b style="color:${ALLY}">${esc(this.nameOf(target.id))}</b> <span class="muted">(clic pour changer)</span>`;
+        const tp = this.snap?.players.find(p => p.i === target.id);
+        const info = tp && tp.hp !== undefined ? ` · <span class="spec-hp">✚ ${tp.hp}</span>${tp.ar ? ` <span class="muted">⛉ ${tp.ar}</span>` : ''} · ${esc(WEAPONS[tp.w]?.name || '')}${tp.$ !== undefined ? ` · <span class="gold">${tp.$}</span>` : ''}` : '';
+        $('death-info').innerHTML = `SPECTATEUR : <b style="color:${ALLY}">${esc(this.nameOf(target.id))}</b>${info} <span class="muted">(clic pour changer)</span>`;
       } else {
         this.specTarget = null;
         const e = this.eyePos();
@@ -1789,7 +1955,22 @@ export class Game {
     for (const p of s.players) {
       const el = document.querySelector(`.team-icons [data-id="${p.i}"] .agent-icon`);
       if (el) el.classList.toggle('dead', !p.al);
+      const hb = p.hp !== undefined && document.querySelector(`#icons-left [data-id="${p.i}"] .hpb b`);
+      if (hb) { hb.style.width = (p.al ? Math.max(0, Math.min(100, p.hp)) : 0) + '%'; hb.parentElement.classList.toggle('low', p.hp <= 30); }
     }
+    // joueurs encore en vie : « 4 contre 3 »
+    let ac = $('alive-count');
+    if (!ac) { ac = document.createElement('div'); ac.id = 'alive-count'; document.querySelector('#hud .score-box .mid')?.appendChild(ac); }
+    if (!isFfa(this.mode)) {
+      const mine = s.players.filter(p => p.al && this.roster.get(p.i)?.team === myTeam).length, foes = s.players.filter(p => p.al && this.roster.get(p.i) && this.roster.get(p.i).team !== myTeam).length;
+      ac.innerHTML = `<span class="ally">${mine}</span> contre <span class="enemy">${foes}</span>`; ac.style.display = '';
+    } else ac.style.display = 'none';
+    // bips des 10 dernières secondes de la manche
+    if (ST().roundBeeps && !isFfa(this.mode) && s.ph === 'live' && s.tm > 0 && s.tm <= 10) {
+      const sec = Math.ceil(s.tm);
+      if (sec !== this.lastBeep) { this.lastBeep = sec; SFX.playTick(sec <= 3); if (sec === 10) this.caption('Fin de la manche dans 10 secondes', null, 'rbeep', 0, 5); }
+    }
+    this.renderBuffs(me.bt || {});
     // vie
     $('hp-val').textContent = me.hp;
     $('armor-val').textContent = me.ar;
@@ -1828,16 +2009,19 @@ export class Game {
         it.classList.toggle('owned', owned);
         it.classList.toggle('poor', !canBuy || (!isFfa(this.mode) && cost > me.$ && !owned));
       }
+      this.updateBuyExtra(s, me);
     }
     // indice noyau
     let hint = '';
     if (this.mode === 'assault' && me.al) {
       const cell = this.map.cellAt(this.local.pos[0], this.local.pos[2]);
       if (this.self?.cr) hint = (cell === 'A' || cell === 'B') && s.ph === 'live' ? `MAINTENEZ ${KB('interact')} POUR POSER LE NOYAU` : 'VOUS PORTEZ LE NOYAU — POSEZ-LE SUR UN SITE (A / B)';
+      else if (me.side === 'def' && s.ph === 'planted' && s.core.f < ROUND.defuseTime) hint = '⚠ PLUS ASSEZ DE TEMPS POUR DÉSAMORCER : METS-TOI À L\'ABRI !';
       else if (me.side === 'def' && s.ph === 'planted' && s.core.p && Math.hypot(s.core.p[0] - this.local.pos[0], s.core.p[2] - this.local.pos[2]) < 2.3) hint = `MAINTENEZ ${KB('interact')} POUR DÉSAMORCER`;
       else if (s.ph === 'buy') hint = `${KB('buy')} — MENU D'ACHAT`;
     }
     $('core-hint').textContent = hint;
+    $('core-hint').classList.toggle('warn', hint.startsWith('⚠'));
     const pr = $('progress');
     if (me.pr) {
       pr.style.display = 'block';
@@ -1867,6 +2051,15 @@ export class Game {
     $('weapon-name').textContent = def.name.toUpperCase() + (L.reloadEnd > now ? ' · RECHARGEMENT' : '');
     $('mag').textContent = def.mag ? L.mag : '—';
     $('reserve').textContent = def.mag ? '/ ' + L.reserve : '';
+    // alerte de munitions faibles
+    let aw = $('ammo-warn');
+    if (!aw) { aw = document.createElement('div'); aw.id = 'ammo-warn'; $('hud').appendChild(aw); }
+    const awT = !ST().lowAmmoWarn || !me.al || !def.mag || L.reloadEnd > now || this.ended ? '' : L.mag <= 0 && L.reserve <= 0 ? 'PLUS DE MUNITIONS' : L.mag <= Math.ceil(def.mag * 0.25) && L.reserve > 0 ? `${KB('reload')} — RECHARGE` : '';
+    if (aw.textContent !== awT) aw.textContent = awT;
+    // viseur rouge sur un ennemi visible
+    if (ST().chEnemy && me.al && !this.scoped) $('crosshair').classList.toggle('on-enemy', this.enemyUnderCrosshair());
+    else $('crosshair').classList.remove('on-enemy');
+    if (this.chal) this.updateChallenge(now);
     // viseur dynamique
     const hs = Math.hypot(L.vel[0], L.vel[2]);
     const extra = Math.round(Math.min(36, def.type !== 'melee' ? (hs > 2.2 ? def.moveSpread * 120 : 0) + (!L.onGround ? 12 : 0) + Math.min(L.burst, 10) * 1.2 : 0));
@@ -1910,6 +2103,7 @@ export class Game {
   // ---- émotes ----
   showEmote(m) {
     const text = EMOTES[m.e]; if (!text) return;
+    if (this.muted.has(this.roster.get(m.i)?.name)) return;
     this.addChat({ from: this.nameOf(m.i), text, team: this.roster.get(m.i)?.team, emote: true });
     if (m.i === this.myId) return;
     const el = document.createElement('div'); el.className = 'emote-bubble'; el.textContent = text;
@@ -1941,6 +2135,71 @@ export class Game {
       if (b.dataset.rematch !== undefined) { this.myRematch = true; this.net.send('rematch'); }
       this.renderVote(this.voteOptions, st);
     };
+  }
+
+  // ---- temps restant des effets (sous les capacités) ----
+  renderBuffs(bt) {
+    let el = $('buffs');
+    if (!el) { el = document.createElement('div'); el.id = 'buffs'; $('hud').appendChild(el); }
+    const L = { od: ['ϟ', 'Surchauffe'], ph: ['☾', 'Fantôme'], hs: ['»', 'Élan'], iv: ['◌', 'Invisible'], sl: ['❄', 'Ralenti'], hl: ['✚', 'Soin'], pr: ['⛨', 'Protégé'], rv: ['◉', 'Repéré !'] };
+    const html = Object.entries(bt).filter(([k]) => L[k]).map(([k, v]) => `<span class="buff b-${k}">${L[k][0]} ${L[k][1]}${v > 0 && k !== 'sl' ? ` <b>${Math.ceil(v)} s</b>` : ''}</span>`).join('');
+    if (this.buffHtml !== html) { this.buffHtml = html; el.innerHTML = html; }
+  }
+  // ---- rapport des dégâts de la manche ----
+  showDmgReport(rows) {
+    if (!ST().dmgReport || !rows?.length || this.spec) return;
+    let el = $('dmg-report');
+    if (!el) { el = document.createElement('div'); el.id = 'dmg-report'; $('hud').appendChild(el); }
+    el.innerHTML = `<h4>DÉGÂTS DE LA MANCHE</h4>${rows.map(r => `<div class="dr-row ${r.dead ? 'dead' : ''}"><span>${esc(this.nameOf(r.i) === '???' ? r.n : this.nameOf(r.i))}${r.dead ? ' ✝' : ''}</span><span class="dr-out" title="Dégâts infligés">→ ${r.dealt}</span><span class="dr-in" title="Dégâts reçus">← ${r.recv}</span></div>`).join('')}`;
+    el.classList.add('show');
+    clearTimeout(this.drT); this.drT = setTimeout(() => el.classList.remove('show'), 6500);
+  }
+  // ---- défi de visée de 60 s (champ de tir) ----
+  startChallenge() {
+    if (!this.range || this.chal) return;
+    const now = performance.now() / 1000;
+    this.chal = { end: now + 63, start: now + 3, shots: 0, hits: 0, kills: 0, hs: 0, cd: 3 };
+    this.centerMsg('DÉFI DE VISÉE : 3…', 1);
+    SFX.playTick();
+  }
+  updateChallenge(now) {
+    const c = this.chal;
+    let el = $('chal');
+    if (!el) { el = document.createElement('div'); el.id = 'chal'; $('hud').appendChild(el); }
+    if (now < c.start) { const n = Math.ceil(c.start - now); if (n !== c.cd) { c.cd = n; this.centerMsg(`DÉFI DE VISÉE : ${n}…`, 1); SFX.playTick(); } c.shots = c.hits = c.kills = c.hs = 0; el.innerHTML = ''; return; }
+    if (c.cd) { c.cd = 0; this.centerMsg('PARTEZ !', 1); SFX.playTick(true); }
+    const left = c.end - now;
+    if (left <= 0) { this.endChallenge(); return; }
+    const acc = c.shots ? Math.round(c.hits / c.shots * 100) : 0;
+    el.innerHTML = `<div class="ch-t">${Math.ceil(left)} s</div><div><b>${c.kills}</b> cibles · <b>${c.hs}</b> à la tête · <b>${acc} %</b> de précision</div>`;
+  }
+  endChallenge() {
+    const c = this.chal; this.chal = null;
+    const acc = c.shots ? c.hits / c.shots : 0;
+    const score = c.kills * 100 + c.hs * 50 + Math.round(acc * 300);
+    let best = 0; try { best = +localStorage.getItem('eclipse_aim_best') || 0; } catch { /* stockage indisponible */ }
+    const rec = score > best;
+    if (rec) try { localStorage.setItem('eclipse_aim_best', String(score)); } catch { /* stockage indisponible */ }
+    $('chal').innerHTML = `<div class="ch-t">${rec ? '🏆 NOUVEAU RECORD !' : 'DÉFI TERMINÉ'}</div><div>Score <b>${score}</b> · ${c.kills} cibles · ${c.hs} à la tête · ${Math.round(acc * 100)} % de précision</div><div class="muted">Record : ${Math.max(score, best)} · ${esc(KB('ready'))} pour recommencer</div>`;
+    this.banner(rec ? 'NOUVEAU RECORD' : 'DÉFI TERMINÉ', `Score : ${score}`, rec ? 'win' : '', 3);
+    SFX.playUI(rec ? 'win' : 'roundStart');
+    clearTimeout(this.chalT); this.chalT = setTimeout(() => { if (!this.chal && $('chal')) $('chal').innerHTML = ''; }, 12000);
+  }
+  // ---- couper le chat d'un joueur pendant la partie ----
+  openMute() {
+    this.reportOpen = true;
+    this.unlock();
+    this.showPause(false);
+    const list = [...this.roster.values()].filter(r => !r.bot && r.id !== this.myId);
+    const draw = () => {
+      $('report-inner').innerHTML = `<h2>COUPER LE CHAT</h2><p class="muted">Les messages et émotes des joueurs coupés ne s'affichent plus pour toi pendant cette partie.</p>
+        ${list.length ? list.map(r => `<div class="mute-row"><b>${esc(this.nameOf(r.id))}</b><button class="btn small ${this.muted.has(r.name) ? 'primary' : 'ghost'}" data-mute="${esc(r.name)}">${this.muted.has(r.name) ? '🔇 COUPÉ' : '🔊 AFFICHÉ'}</button></div>`).join('') : '<p class="muted">Aucun autre joueur humain dans la partie.</p>'}
+        <button class="btn ghost wide" id="rp-close">RETOUR</button>`;
+      $('rp-close').onclick = () => { this.reportOpen = false; $('report-overlay').classList.remove('show'); this.showPause(true); };
+    };
+    draw();
+    $('report-inner').onclick = e => { const b = e.target.closest('[data-mute]'); if (!b) return; const n = b.dataset.mute; if (this.muted.has(n)) this.muted.delete(n); else this.muted.add(n); draw(); };
+    $('report-overlay').classList.add('show');
   }
 
   // ---- chiffres de dégâts ----
@@ -2190,9 +2449,20 @@ export class Game {
     const { s, ox, oy } = this.miniXf;
     const P = (x, z) => [ox + (x / CELL) * s, oy + (z / CELL) * s];
     g.clearRect(0, 0, 220, 220);
+    // mini-carte tournante et zoomée autour du joueur (la grande carte montre toujours tout)
+    const big = c.classList.contains('big'), Lp = this.local.pos;
+    const rot = !big && ST().minimapRotate && this.me?.al, zoom = big ? 1 : (ST().minimapZoom || 1);
+    g.save();
+    if (rot || zoom > 1.01) { const [px, py] = P(Lp[0], Lp[2]); g.translate(110, 110); if (rot) g.rotate(this.local.yaw); g.scale(zoom, zoom); g.translate(-px, -py); }
     g.drawImage(this.miniBase, 0, 0);
     const snap = this.snap;
-    if (!snap) return;
+    if (!snap) { g.restore(); return; }
+    // coéquipiers éliminés pendant la manche (15 s)
+    const tn = performance.now() / 1000;
+    this.allyDeaths = this.allyDeaths.filter(d => tn - d.t < 15);
+    for (const d of this.allyDeaths) { const [x, y] = P(d.p[0], d.p[2]); g.strokeStyle = ALLY; g.globalAlpha = 0.9 - (tn - d.t) / 25; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 4, y - 4); g.lineTo(x + 4, y + 4); g.moveTo(x + 4, y - 4); g.lineTo(x - 4, y + 4); g.stroke(); g.globalAlpha = 1; }
+    // armes au sol
+    for (const d of this.dropMeshes.values()) { const [x, y] = P(d.position.x, d.position.z); g.fillStyle = '#ffd84a'; g.fillRect(x - 2, y - 2, 4, 4); }
     for (const sm of this.smokeMeshes.values()) { const [x, y] = P(sm.position.x, sm.position.z); g.fillStyle = 'rgba(200,205,230,.75)'; g.beginPath(); g.arc(x, y, (sm.userData.r / CELL) * s, 0, 7); g.fill(); }
     for (const f of this.fireMeshes.values()) { const [x, y] = P(f.position.x, f.position.z); g.fillStyle = f.userData.kind === 'shock' ? 'rgba(63,208,255,.5)' : f.userData.kind === 'frost' ? 'rgba(158,231,255,.45)' : 'rgba(255,110,40,.5)'; g.beginPath(); g.arc(x, y, (f.userData.disc.geometry.parameters.radius / CELL) * s, 0, 7); g.fill(); }
     for (const w of this.wallMeshes.values()) { const b = w.userData.box; const [x1, y1] = P(b.min[0], b.min[2]); const [x2, y2] = P(b.max[0], b.max[2]); g.fillStyle = '#9ef0ff'; g.fillRect(x1, y1, Math.max(2, x2 - x1), Math.max(2, y2 - y1)); }
@@ -2215,6 +2485,8 @@ export class Game {
       const st = o.cur;
       if (!st || !st.al) continue;
       const enemy = this.isEnemyId(o.id);
+      // ennemi seulement entendu (pas) : cercle pâle
+      if (st.au) { if (enemy && ST().heardOnMap) { const [x, y] = P(st.p[0], st.p[2]); g.strokeStyle = ST().enemyColor; g.globalAlpha = 0.55; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 6 + Math.sin(tn * 6) * 1.5, 0, 7); g.stroke(); g.globalAlpha = 1; } continue; }
       if (enemy && !this.visibleEnemies.has(o.id) && !(tnow - (this.shotSeen.get(o.id) || -9) < 0.8)) continue;
       const [x, y] = P(st.p[0], st.p[2]);
       g.fillStyle = enemy ? ST().enemyColor : ALLY;
@@ -2231,6 +2503,7 @@ export class Game {
       if (this.self?.cr) { g.strokeStyle = '#ff2f6d'; g.lineWidth = 2; g.stroke(); }
       g.restore();
     }
+    g.restore();
     void me;
   }
 
@@ -2309,9 +2582,12 @@ export class Game {
     document.removeEventListener('settings-changed', this._sc);
     for (const u of this.unsubs) u();
     this.touch?.destroy();
+    if (pad.game === this) pad.attach(null);
     while (this.marks?.length) this.removeMark(0);
     this.composer?.dispose?.(); this.composer = null;
     this.endKillcam();
+    for (const id of ['chal', 'dmg-report', 'buffs', 'ammo-warn', 'alive-count']) $(id)?.remove();
+    $('minimap').classList.remove('big'); $('crosshair').classList.remove('on-enemy');
     if (this.spec) { this.spec.ghost && this.scene.remove(this.spec.ghost.root); document.body.classList.remove('spectating'); $('spec-panel')?.remove(); }
     if (document.pointerLockElement) { this.expectUnlock = true; document.exitPointerLock(); }
     this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); });

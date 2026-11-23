@@ -31,6 +31,8 @@ try {
   const home = await fetch(B + '/');
   t(home.status === 200 && home.headers.get('x-frame-options') === 'DENY' && /ECLIPSE/.test(await home.text()), 'Page d\'accueil servie avec les en-têtes de sécurité');
   t((await fetch(B + '/js/main.js')).status === 200, 'Fichiers du jeu servis (vérifiés par l\'intégrité)');
+  { const en = await (await fetch(B + '/i18n/en.json')).json(); t(Object.keys(en.strings || {}).length > 1000 && (en.patterns || []).length > 20, 'Traduction anglaise servie', String(Object.keys(en.strings || {}).length)); }
+  t((await fetch(B + '/js/gamepad.js')).status === 200 && (await fetch(B + '/js/i18n.js')).status === 200, 'Modules manette et traduction servis');
   t(!/Fichier modifié|ne correspond pas|intégrité/i.test(log.replace(/Mode protégé[^\n]*/g, '')), 'Aucune alerte d\'intégrité au démarrage');
   t([403, 404].includes((await fetch(B + '/../data/accounts.json')).status) || (await fetch(B + '/%2e%2e/server/accounts.js')).status === 404, 'Fichiers du serveur inaccessibles');
   t((await fetch(B + '/admin/api/overview')).status === 401, 'Administration protégée');

@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.11.0",
+    "date": "2026-11-23",
+    "title": "Manette, jeu en anglais, revente d'armes et 27 nouveautés en partie",
+    "items": [
+      "Boutique : revends tes armes et ton gilet pendant la phase d'achat (prix complet pour ce que tu viens d'acheter, moitié sinon), bouton RACHETER (touche N), 3 équipements favoris, bouton PRÊT (touche P) pour lancer la manche plus tôt, demande d'arme à l'équipe, crédits et armes de tes coéquipiers, prévision des crédits de la manche suivante.",
+      "Armes au sol : lâche ton arme (touche J) pour la donner à un coéquipier ; les joueurs éliminés laissent tomber leur arme principale.",
+      "Manette (Xbox, PlayStation, Switch Pro) : déplacement, visée avec aide légère, tir, capacités, menus et boutique entièrement jouables, vibrations. Réglages dans PARAMÈTRES → Manette.",
+      "Le jeu est disponible en anglais : PARAMÈTRES → Langue, le changement est immédiat.",
+      "HUD : compteur « 4 contre 3 », barres de vie des coéquipiers, temps restant des effets (Surchauffe, Élan, invisibilité, « Repéré ! »), alerte de munitions faibles, viseur rouge sur un ennemi (option), rapport des dégâts de la manche, bips des 10 dernières secondes, alerte « plus assez de temps pour désamorcer ».",
+      "Mini-carte : coéquipiers éliminés, ennemis entendus, armes au sol, rotation et zoom (options), grande carte en maintenant M.",
+      "Commandes : arme précédente (touche Z), accroupi et marche en mode bascule, lunette à maintenir, rechargement automatique.",
+      "Champ de tir : défi de visée de 60 secondes avec ton record. Mêlée, Gun Game et Dernier debout : 1,5 s de protection à la réapparition. Menu pause : couper le chat d'un joueur. En spectateur, PV et arme du coéquipier suivi."
+    ]
+  },
+  {
     "version": "1.10.0",
     "date": "2026-11-23",
     "title": "Graphismes améliorés",
