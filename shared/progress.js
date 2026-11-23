@@ -18,6 +18,20 @@ export const levelReward = level => 50 + level * 10;
 export const WEAPON_UNLOCK = { spark: 1, hornet: 1, viper: 2, brute: 2, tempest: 3, lancer: 3, longbow: 5 };
 // Skins exclusifs de niveau (définis dans SKINS avec un champ level)
 export const LEVEL_SKINS = { 5: 'recrue', 10: 'veteran', 20: 'elite', 30: 'legende' };
+// bannières de profil : débloquées en montant de niveau
+export const BANNERS = {
+  nuit: { name: 'Nuit', level: 1, css: 'linear-gradient(135deg,#141a2e,#0b0f1b)' },
+  aube: { name: 'Aube', level: 3, css: 'linear-gradient(135deg,#ff8a5c,#8b5cff)' },
+  ocean: { name: 'Océan', level: 5, css: 'linear-gradient(135deg,#0f5e8c,#19e3c4)' },
+  braise: { name: 'Braise', level: 8, css: 'linear-gradient(135deg,#5a0f0f,#ff6a1f)' },
+  foret: { name: 'Forêt', level: 12, css: 'linear-gradient(135deg,#0d3b23,#7dff6b)' },
+  glace: { name: 'Glace', level: 16, css: 'linear-gradient(135deg,#bfefff,#3d8bff)' },
+  neon: { name: 'Néon', level: 20, css: 'linear-gradient(135deg,#ff2f9d,#3d00ff)' },
+  or: { name: 'Or', level: 30, css: 'linear-gradient(135deg,#7a5a00,#ffd23f)' },
+  eclipse: { name: 'Éclipse', level: 40, css: 'radial-gradient(circle at 30% 40%,#ffd23f 0 12%,#1a1030 13% 100%)' },
+};
+export const ENDORSE = { fairplay: 'Fair-play', leader: 'Meneur', equipier: 'Bon coéquipier' };
+export const CHAT_EMOJI = { ':gg:': '👍', ':lol:': '😂', ':feu:': '🔥', ':rip:': '💀', ':ok:': '👌', ':coeur:': '❤️', ':cool:': '😎', ':oups:': '😮', ':gg2:': '🏆', ':non:': '❌' };
 
 // XP gagnée en partie
 export const XP = { match: 100, kill: 20, assist: 8, roundWin: 15, win: 150, plant: 25, defuse: 35, mvp: 75 };

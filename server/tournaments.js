@@ -222,10 +222,17 @@ export class Tournaments {
       const c = this.online(key);
       if (c) { this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); this.ctx.send(c.id, { type: 'tourNotice', text: title ? `Tu remportes le tournoi « ${t.name} » ! +${amount} Éclats et le titre Champion.` : `Finaliste du tournoi « ${t.name} » : +${amount} Éclats.` }); }
     };
+    // historique des tournois sur le profil de chaque participant
+    const total = t.rounds.length;
+    const place = new Map();
+    t.rounds.forEach((rd, ri) => rd.forEach(m => { if (m.status === 'done' && !m.bye) { const loser = m.winner === m.p1 ? m.p2 : m.p1; if (loser) place.set(loser, ri === total - 1 ? 'Finaliste' : ROUND_NAME(ri, total)); } }));
+    place.set(champion, 'Vainqueur');
+    for (const k of t.players) { const u = this.A.get(k); if (!u) continue; u.tourHist ||= []; u.tourHist.unshift({ name: t.name, place: place.get(k) || 'Participant', t: Date.now() }); if (u.tourHist.length > 20) u.tourHist.length = 20; }
     pay(champion, t.prize, 'champion');
     pay(t.runnerUp, Math.round(t.prize / 2), null);
     this.A.save();
     this.log(`Tournoi « ${t.name} » remporté par ${this.nameOf(champion)}`);
+    this.ctx.admin.discord?.('tournament', `🏆 **${this.nameOf(champion)}** remporte le tournoi « ${t.name} » (finaliste : ${this.nameOf(t.runnerUp)})`);
     for (const c of this.ctx.clients.values()) if (c.name) this.ctx.send(c.id, { type: 'system', kind: 'notice', text: `🏆 ${this.nameOf(champion)} remporte le tournoi « ${t.name} » !` });
     this.prune();
   }

@@ -13,7 +13,7 @@ export function initTournaments(ctx) {
   net.on('tournaments', m => { T.list = m.list || []; updateBadge(); if (state.tab === 'tournaments') renderTournaments(); });
   net.on('tourNotice', m => toast(m.text, 5000));
   net.on('tourNew', m => {
-    notify({ kind: 'TOURNOI', text: `Nouveau tournoi « ${m.name} » : ${m.size} places, ${m.prize} Éclats pour le vainqueur.`, ms: 15000, actions: [['Voir', () => showTab('tournaments')], ['Plus tard', null]] });
+    notify({ kind: 'TOURNOI', type: 'tour', text: `Nouveau tournoi « ${m.name} » : ${m.size} places, ${m.prize} Éclats pour le vainqueur.`, ms: 15000, actions: [['Voir', () => showTab('tournaments')], ['Plus tard', null]] });
   });
   net.on('tourMatch', m => {
     notify({ kind: `TOURNOI · ${m.round.toUpperCase()}`, text: `Ton match contre ${m.opponent} est prêt (« ${m.name} »). Rejoins-le dans les ${m.minutes} minutes, sinon c'est un forfait.`, ms: 60000, cls: 'gold',

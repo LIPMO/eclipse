@@ -1,6 +1,15 @@
 // Social : amis, joueurs bloqués, messages privés, invitations, profils publics, classements, commandes de chat.
 import { publicCard, titlesOf, rerollQuest, ensureUser, weekKey, rankFor } from './progression.js';
-import { TITLES, levelOf } from '../shared/progress.js';
+import { TITLES, levelOf, BANNERS, ENDORSE } from '../shared/progress.js';
+import { SKINS } from '../shared/data.js';
+// boutique du jour : 3 skins à -40 %, renouvelés chaque jour (même sélection pour tout le monde)
+export function dailyShop(day = new Date().toISOString().slice(0, 10)) {
+  const pool = SKINS.filter(s => s.price > 0 && !s.level);
+  let h = 0; for (const ch of day) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const pick = [];
+  while (pick.length < Math.min(3, pool.length)) { h = (h * 1103515245 + 12345) >>> 0; const s = pool[h % pool.length]; if (!pick.includes(s)) pick.push(s); }
+  return pick.map(s => ({ id: s.id, name: s.name, old: s.price, price: Math.round(s.price * 0.6 / 10) * 10 }));
+}
 
 const MAX_FRIENDS = 100;
 const clean = (s, n) => String(s || '').replace(/[<>]/g, '').trim().slice(0, n);
@@ -33,9 +42,9 @@ export class Social {
     const row = key => {
       const f = this.A.get(key); if (!f) return null;
       ensureUser(f);
-      return { name: f.name, level: levelOf(f.xp), title: f.title ? TITLES[f.title] : null, ...this.status(this.clientOfKey(key)) };
+      return { name: f.name, level: levelOf(f.xp), title: f.title ? TITLES[f.title] : null, lastSeen: f.lastSeen || f.created, pinned: (u.pinned || []).includes(key), lfg: !!f.lfg, clan: f.clan ? this.A.data.clans?.[f.clan]?.tag || null : null, ...this.status(this.clientOfKey(key)) };
     };
-    const friends = u.friends.map(row).filter(Boolean).sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name));
+    const friends = u.friends.map(row).filter(Boolean).sort((a, b) => (b.pinned - a.pinned) || (b.online - a.online) || a.name.localeCompare(b.name));
     return { type: 'friends', friends, incoming: u.friendReq.map(k => this.A.get(k)?.name).filter(Boolean), blocked: u.blocked.map(k => this.A.get(k)?.name).filter(Boolean) };
   }
   sendFriends(c) { const u = this.userOf(c); if (u) this.ctx.send(c.id, this.friendsPayload(u)); }
@@ -138,6 +147,7 @@ export class Social {
     const t = this.target(c, msg.name); if (!t) return;
     const tk = this.A.key(t.name);
     if (!u.friends.includes(tk)) return this.err(c, 'Tu ne peux inviter que tes amis.');
+    if (t.blockInvites) return this.err(c, `${t.name} n'accepte pas les invitations pour le moment.`);
     const tc = this.clientOfKey(tk);
     if (!tc) return this.err(c, `${t.name} n'est pas connecté.`);
     if (tc.roomId === r.id) return this.err(c, `${t.name} est déjà dans ton salon.`);
@@ -247,6 +257,106 @@ export class Social {
     this.ctx.send(c.id, { type: 'passwordResult', ok: true, token, text: `${Math.max(0, n - 1)} autre(s) session(s) fermée(s).` });
   }
 
+  // réglages du joueur sauvegardés sur son compte (synchronisation entre appareils)
+  m_saveSettings(c, msg) {
+    const u = this.userOf(c); if (!u) return;
+    const now = Date.now();
+    if (now - (c.lastSettingsSave || 0) < 1500) return;
+    c.lastSettingsSave = now;
+    const st = msg.settings;
+    if (!st || typeof st !== 'object' || Array.isArray(st)) return;
+    const out = {};
+    let n = 0;
+    for (const [k, v] of Object.entries(st)) {
+      if (++n > 120 || !/^[A-Za-z0-9]{1,24}$/.test(k)) break;
+      if (k === 'keys' && v && typeof v === 'object') { out.keys = {}; for (const [a, code] of Object.entries(v).slice(0, 40)) if (/^[A-Za-z0-9]{1,24}$/.test(a) && typeof code === 'string' && /^[A-Za-z0-9]{0,24}$/.test(code)) out.keys[a] = code; continue; }
+      if (typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) out[k] = v;
+      else if (typeof v === 'string' && v.length <= 40 && !/[<>"'`]/.test(v)) out[k] = v;
+    }
+    u.settings = out; u.settingsAt = now;
+    this.A.save();
+  }
+  // ---------- profil : bannière, devise, vitrine, options ----------
+  m_setProfile(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    if (typeof msg.banner === 'string') {
+      const b = BANNERS[msg.banner];
+      if (!b) return this.err(c, 'Bannière inconnue.');
+      if (levelOf(u.xp) < b.level) return this.err(c, `Bannière débloquée au niveau ${b.level}.`);
+      u.banner = msg.banner;
+    }
+    if (typeof msg.motto === 'string') {
+      const m = msg.motto.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      const f = this.ctx.admin.filterText(m);
+      if (f.hits.length || f.link) return this.err(c, 'Ta devise contient un mot interdit ou un lien.');
+      u.motto = m;
+    }
+    if (Array.isArray(msg.showcase)) u.showcase = [...new Set(msg.showcase.filter(id => typeof id === 'string' && u.achievements.includes(id)))].slice(0, 3);
+    if (typeof msg.blockInvites === 'boolean') u.blockInvites = msg.blockInvites;
+    if (typeof msg.lfg === 'boolean') { u.lfg = msg.lfg; this.pushFriendsOf(c.account); }
+    this.A.save();
+    this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
+  }
+  // recommandations après une partie (une par joueur et par partie)
+  m_endorse(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const lm = c.lastMatch;
+    const t = this.A.get(String(msg.name || '').slice(0, 16)); if (!t) return;
+    const tk = this.A.key(t.name);
+    if (!lm || Date.now() - lm.t > 10 * 60000 || !lm.accounts.has(tk)) return this.err(c, 'Tu ne peux recommander que les joueurs de ta dernière partie.');
+    if (lm.done.has(tk)) return this.err(c, 'Tu as déjà recommandé ce joueur.');
+    if (!ENDORSE[msg.kind]) return;
+    lm.done.add(tk);
+    t.endorse ||= {}; t.endorse[msg.kind] = (t.endorse[msg.kind] || 0) + 1;
+    this.A.save();
+    this.ctx.send(c.id, { type: 'endorsed', name: t.name, kind: msg.kind });
+    const tc = this.clientOfKey(tk); if (tc) this.ctx.send(tc.id, { type: 'chat', from: 'SYSTÈME', text: `${u.name} t'a recommandé : ${ENDORSE[msg.kind]} !`, system: true });
+  }
+  m_recent(c) {
+    const u = this.needAccount(c); if (!u) return;
+    const rows = (u.recent || []).map(r => { const t = this.A.get(r.k); return t && { name: t.name, level: levelOf(t.xp), t: r.t, n: r.n, friend: u.friends.includes(r.k), online: !!this.clientOfKey(r.k) }; }).filter(Boolean);
+    this.ctx.send(c.id, { type: 'recent', rows, suggestions: rows.filter(r => !r.friend && r.n >= 2 && !(u.blocked || []).includes(this.A.key(r.name))).slice(0, 5) });
+  }
+  m_pinFriend(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const k = this.A.key(String(msg.name || '').slice(0, 16));
+    if (!u.friends.includes(k)) return;
+    u.pinned ||= [];
+    u.pinned = u.pinned.includes(k) ? u.pinned.filter(x => x !== k) : [...u.pinned, k].slice(-20);
+    this.A.save(); this.sendFriends(c);
+  }
+  // cadeau d'Éclats à un ami (niveau 5, 100 par jour au maximum)
+  m_gift(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const t = this.target(c, msg.name); if (!t) return;
+    const tk = this.A.key(t.name);
+    if (!u.friends.includes(tk)) return this.err(c, 'Tu ne peux offrir des Éclats qu\'à tes amis.');
+    if (levelOf(u.xp) < 5) return this.err(c, 'Il faut être niveau 5 pour offrir des Éclats.');
+    const amount = Math.round(Number(msg.amount));
+    if (!(amount >= 10 && amount <= 100)) return this.err(c, 'Montant : entre 10 et 100 Éclats.');
+    const day = new Date().toISOString().slice(0, 10);
+    u.giftDay = u.giftDay?.d === day ? u.giftDay : { d: day, sum: 0 };
+    if (u.giftDay.sum + amount > 100) return this.err(c, `Limite de 100 Éclats offerts par jour (encore ${100 - u.giftDay.sum} aujourd'hui).`);
+    if (u.eclats < amount) return this.err(c, 'Pas assez d\'Éclats.');
+    u.eclats -= amount; t.eclats = (t.eclats || 0) + amount; u.giftDay.sum += amount;
+    this.A.save();
+    this.ctx.admin.log('economie', `${u.name} offre ${amount} Éclats à ${t.name}`);
+    this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
+    this.info(c, `Tu as offert ${amount} Éclats à ${t.name}.`);
+    const tc = this.clientOfKey(tk); if (tc) { this.ctx.send(tc.id, { type: 'profile', profile: this.A.publicProfile(t) }); this.ctx.send(tc.id, { type: 'gift', from: u.name, amount }); }
+  }
+  m_shop(c) { this.ctx.send(c.id, { type: 'shop', items: dailyShop(), resetAt: new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z').getTime() + 86400000 }); }
+  m_buyShop(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const item = dailyShop().find(i => i.id === msg.id);
+    if (!item) return this.err(c, 'Ce skin n\'est plus dans la boutique du jour.');
+    if (u.owned.includes(item.id)) return this.err(c, 'Tu possèdes déjà ce skin.');
+    if (u.eclats < item.price) return this.err(c, 'Pas assez d\'Éclats.');
+    u.eclats -= item.price; u.owned.push(item.id); this.A.save();
+    this.ctx.admin.economy?.('spend', item.price); this.ctx.admin.economy?.('skin', item.id);
+    this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
+    this.info(c, `${item.name} ajouté à ta collection (-40 %) !`);
+  }
   m_myProfile(c) { const u = this.userOf(c); if (u) this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); }
 
   // ---------- commandes de chat ----------

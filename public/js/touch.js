@@ -12,7 +12,7 @@ const BTN = [
   ['fire', '◉', 'b-fire'], ['fire', '◉', 'b-fire2'], ['jump', '⤒', 'b-jump'], ['crouch', '⤓', 'b-crouch'], ['reload', '↻', 'b-reload'],
   ['scope', '⌖', 'b-scope'], ['abilityQ', 'Q', 'b-q'], ['abilityE', 'E', 'b-e'], ['ult', 'X', 'b-x'],
   ['cycle', '⇄', 'b-cycle'], ['interact', 'F', 'b-use'], ['mark', '◆', 'b-mark'],
-  ['buy', '$', 'b-buy'], ['scoreboard', '☰', 'b-score'], ['chat', '✎', 'b-chat'], ['pause', 'II', 'b-pause'],
+  ['emote', '☺', 'b-emote'], ['buy', '$', 'b-buy'], ['scoreboard', '☰', 'b-score'], ['chat', '✎', 'b-chat'], ['pause', 'II', 'b-pause'],
 ];
 const TOGGLE = new Set(['crouch', 'scoreboard']); // appui = bascule
 
@@ -44,7 +44,8 @@ export class TouchControls {
     document.addEventListener('gesturestart', this._gs, opt);
   }
 
-  applyScale() { this.root.style.setProperty('--ts', String(ST().touchSize || 1)); this.root.style.setProperty('--to', String(ST().touchOpacity ?? 0.55)); }
+  applyScale() { this.root.style.setProperty('--ts', String(ST().touchSize || 1)); this.root.style.setProperty('--to', String(ST().touchOpacity ?? 0.55)); this.root.classList.toggle('lefty', !!ST().touchLeft); }
+  get mirror() { return !!ST().touchLeft; }
 
   onStart(e) {
     for (const t of e.changedTouches) {
@@ -61,7 +62,7 @@ export class TouchControls {
       if (el?.closest?.('.t-stick-zone') && this.stick == null) {
         e.preventDefault();
         this.stick = { id: t.identifier, ox: t.clientX, oy: t.clientY };
-        this.stickEl.style.left = t.clientX + 'px'; this.stickEl.style.top = t.clientY + 'px';
+        this.stickEl.style.left = (this.mirror ? innerWidth - t.clientX : t.clientX) + 'px'; this.stickEl.style.top = t.clientY + 'px';
         this.stickEl.classList.add('on');
         this.move = { x: 0, y: 0 };
         continue;
@@ -79,7 +80,7 @@ export class TouchControls {
         let dx = t.clientX - this.stick.ox, dy = t.clientY - this.stick.oy;
         const d = Math.hypot(dx, dy);
         if (d > R) { dx *= R / d; dy *= R / d; }
-        this.knob.style.transform = `translate(${dx}px, ${dy}px)`;
+        this.knob.style.transform = `translate(${this.mirror ? -dx : dx}px, ${dy}px)`;
         this.move = { x: dx / R, y: dy / R };
         continue;
       }
@@ -115,6 +116,7 @@ export class TouchControls {
     if (a === 'pause') { g.releaseAll(); g.showPause(true); return; }
     if (a === 'cycle') { g.cycleWeapon(); return; }
     if (a === 'chat') { g.openChat(false); return; }
+    if (a === 'emote') { g.toggleEmote(); return; }
     if (TOGGLE.has(a)) {
       if (this.toggled.has(a)) { this.toggled.delete(a); btn.classList.remove('lit'); g.releaseAction(a); }
       else { this.toggled.add(a); btn.classList.add('lit'); g.pressAction(a); }
@@ -123,7 +125,7 @@ export class TouchControls {
     g.pressAction(a);
   }
   releaseBtn(a) {
-    if (a === 'pause' || a === 'cycle' || a === 'chat' || TOGGLE.has(a)) return;
+    if (a === 'pause' || a === 'cycle' || a === 'chat' || a === 'emote' || TOGGLE.has(a)) return;
     this.g.releaseAction(a);
   }
 

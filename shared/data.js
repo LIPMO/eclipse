@@ -12,7 +12,7 @@ export const DUEL = { buyTime: 10, roundTime: 60, money: 9000 };
 
 export const FFA = { respawn: 3, timeLimit: 600, gunTimeLimit: 480, abilityRecharge: 18 };
 // modes « chacun pour soi » (pas d'équipes, réapparition) : Mêlée et Gun Game
-export const isFfa = mode => mode === 'ffa' || mode === 'gungame';
+export const isFfa = mode => mode === 'ffa' || mode === 'gungame' || mode === 'lives';
 // Gun Game : une arme par niveau, chaque élimination fait passer à la suivante ; la dernière est le couteau
 export const GUN_LADDER = ['lancer', 'tempest', 'viper', 'brute', 'longbow', 'hornet', 'spark', 'knife'];
 

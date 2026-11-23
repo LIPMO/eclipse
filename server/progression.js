@@ -176,6 +176,19 @@ export function applyMatch(u, res, { mul = { xp: 1, eclats: 1 }, overrides, eloD
   const mp = u.mapStats[res.mapId] || (u.mapStats[res.mapId] = { matches: 0, wins: 0, kills: 0, deaths: 0 });
   mp.matches++; if (res.won) mp.wins++; mp.kills += res.kills; mp.deaths += res.deaths;
   const wk = weekly(u); wk.kills += res.kills; if (res.won) wk.wins++;
+  // statistiques par mode et par arme, meilleure série, joueurs croisés
+  u.modeStats ||= {};
+  const md = u.modeStats[res.mode] || (u.modeStats[res.mode] = { matches: 0, wins: 0, kills: 0, deaths: 0 });
+  md.matches++; if (res.won) md.wins++; md.kills += res.kills; md.deaths += res.deaths;
+  u.weaponKills ||= {};
+  for (const [w, n] of Object.entries(res.weaponKills || {})) if (typeof n === 'number') u.weaponKills[w] = (u.weaponKills[w] || 0) + n;
+  if ((res.bestStreak || 0) > (u.bestStreak || 0)) u.bestStreak = res.bestStreak;
+  u.recent ||= [];
+  for (const k of res.others || []) {
+    const e = u.recent.find(x => x.k === k);
+    if (e) { e.t = Date.now(); e.n++; } else u.recent.unshift({ k, t: Date.now(), n: 1 });
+  }
+  u.recent.sort((a, b) => b.t - a.t); if (u.recent.length > 20) u.recent.length = 20;
   // Éclats de la partie (déjà multipliés par le serveur de jeu)
   u.eclats += res.reward;
   // XP
@@ -239,6 +252,10 @@ export function publicCard(u, online = null) {
     elo: u.elo, rank: rk.name, rankColor: rk.color, created: u.created, online,
     stats: { matches: u.stats.matches, wins: u.stats.wins, kills: u.stats.kills, deaths: u.stats.deaths, assists: u.stats.assists, duels: u.stats.duels, duelWins: u.stats.duelWins, hsKills: u.stats.hsKills, mvps: u.stats.mvps, acc: u.stats.shots ? Math.round(u.stats.hits / u.stats.shots * 100) : null, playTime: u.stats.playTime },
     agentStats: u.agentStats, mapStats: u.mapStats, achievements: u.achievements, history: u.history.slice(0, 10), agent: u.agent,
+    banner: u.banner || 'nuit', motto: u.motto || '', showcase: (u.showcase || []).filter(id => u.achievements.includes(id)).slice(0, 3),
+    modeStats: u.modeStats || {}, favWeapon: Object.entries(u.weaponKills || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || null, bestStreak: u.bestStreak || 0,
+    endorse: u.endorse || {}, fairplay: Object.values(u.endorse || {}).reduce((a, b) => a + b, 0) >= 10, tourHist: (u.tourHist || []).slice(0, 10), tournamentWins: u.tournamentWins || 0,
+    lfg: !!u.lfg,
   };
 }
 export function privateProgress(u, overrides) {
@@ -251,6 +268,8 @@ export function privateProgress(u, overrides) {
     quests: { daily: q.daily.map(quest), weekly: q.weekly.map(quest), canReroll: q.reroll !== q.day, day: q.day, week: q.week },
     achievements: u.achievements, titles: titlesOf(u), title: u.title, history: u.history, agentStats: u.agentStats, mapStats: u.mapStats,
     week: weekly(u), daily: u.daily, seasons: u.seasons, friendsCount: u.friends.length,
+    banner: u.banner || 'nuit', motto: u.motto || '', showcase: u.showcase || [], blockInvites: !!u.blockInvites, lfg: !!u.lfg,
+    modeStats: u.modeStats || {}, weaponKills: u.weaponKills || {}, bestStreak: u.bestStreak || 0, endorse: u.endorse || {}, tourHist: u.tourHist || [], tournamentWins: u.tournamentWins || 0,
   };
 }
 

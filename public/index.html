@@ -38,6 +38,11 @@
 </script>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="cb-protan"><feColorMatrix type="matrix" values="0.567 0.433 0 0 0  0.558 0.442 0 0 0  0 0.242 0.758 0 0  0 0 0 1 0"/></filter>
+  <filter id="cb-deutan"><feColorMatrix type="matrix" values="0.625 0.375 0 0 0  0.7 0.3 0 0 0  0 0.3 0.7 0 0  0 0 0 1 0"/></filter>
+  <filter id="cb-tritan"><feColorMatrix type="matrix" values="0.95 0.05 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"/></filter>
+</defs></svg>
 <div id="bg-fx"></div>
 
 <!-- ============ MENUS ============ -->
@@ -101,8 +106,8 @@
           <button id="quick-ffa" class="btn">✸ MÊLÉE RAPIDE</button>
           <button id="quick-gun" class="btn" title="Chaque élimination te donne l'arme suivante. Le premier à éliminer au couteau gagne.">⟫ GUN GAME</button>
           <div class="qa-group"><button id="quick-bots" class="btn">🤖 ENTRAÎNEMENT</button>
-            <select id="qb-mode" title="Mode d'entraînement"><option value="assault">Assaut</option><option value="duel">Duel</option><option value="ffa">Mêlée</option><option value="gungame">Gun Game</option></select>
-            <select id="qb-diff" title="Difficulté des bots"><option value="easy">Facile</option><option value="normal" selected>Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option></select></div>
+            <select id="qb-mode" title="Mode d'entraînement"><option value="assault">Assaut</option><option value="duel">Duel</option><option value="ffa">Mêlée</option><option value="gungame">Gun Game</option><option value="lives">Dernier debout</option></select>
+            <select id="qb-diff" title="Difficulté des bots"><option value="easy">Facile</option><option value="normal" selected>Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option><option value="cible">Champ de tir (cibles)</option></select></div>
           <form id="code-form" class="qa-group"><input id="code-input" maxlength="6" placeholder="CODE" autocomplete="off"><button class="btn ghost" type="submit">REJOINDRE</button></form>
           <button id="open-guide" class="btn ghost" title="Commandes, modes et progression">? COMMENT JOUER</button>
         </div>
@@ -119,6 +124,7 @@
             <button data-v="duel">DUEL 1v1</button>
             <button data-v="ffa">MÊLÉE</button>
             <button data-v="gungame">GUN GAME</button>
+            <button data-v="lives">DERNIER DEBOUT</button>
           </div>
         </label>
         <label>Carte</label>
@@ -164,10 +170,17 @@
         <div id="room-map-preview" class="map-preview"><canvas width="260" height="200"></canvas><div class="map-name"></div></div>
         <div class="host-only">
           <label>Carte <select id="rs-map"></select></label>
-          <label>Mode <select id="rs-mode"><option value="assault">Assaut 5v5 (pose du Noyau)</option><option value="duel">Duel 1v1 (petites cartes)</option><option value="ffa">Mêlée (chacun pour soi)</option><option value="gungame">Gun Game (une arme par élimination)</option></select></label>
+          <label>Mode <select id="rs-mode"><option value="assault">Assaut 5v5 (pose du Noyau)</option><option value="duel">Duel 1v1 (petites cartes)</option><option value="ffa">Mêlée (chacun pour soi)</option><option value="gungame">Gun Game (une arme par élimination)</option><option value="lives">Dernier debout (vies limitées)</option></select></label>
           <label>Objectif <select id="rs-target"></select></label>
-          <label>Difficulté bots <select id="rs-diff"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option></select></label>
+          <label>Difficulté bots <select id="rs-diff"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option><option value="cible">Cibles (ne tirent pas)</option></select></label>
           <label class="check"><input type="checkbox" id="rs-private"> Salon privé (code d'accès)</label>
+          <details class="rs-opts"><summary>Options de partie</summary>
+            <label class="check"><input type="checkbox" data-opt="infAmmo"> Munitions infinies</label>
+            <label class="check"><input type="checkbox" data-opt="noAbilities"> Sans capacités (armes uniquement)</label>
+            <label class="check"><input type="checkbox" data-opt="headOnly"> Tirs à la tête uniquement</label>
+            <label class="check"><input type="checkbox" data-opt="lowGrav"> Gravité basse</label>
+            <label class="check"><input type="checkbox" data-opt="randomMap"> Carte aléatoire à chaque partie</label>
+          </details>
           <button id="rs-fill" class="btn ghost small wide">REMPLIR DE BOTS</button>
         </div>
         <div class="chat">
@@ -200,6 +213,7 @@
     <div class="coll-layout">
       <div id="coll-weapons" class="coll-weapons"></div>
       <div class="coll-main">
+        <div id="daily-shop" class="daily-shop"></div>
         <div class="coll-preview"><canvas id="coll-canvas"></canvas><div id="coll-title" class="coll-title"></div></div>
         <div id="coll-skins" class="coll-skins"></div>
       </div>
@@ -241,6 +255,7 @@
   <div id="hud">
     <div id="flash-overlay"></div>
     <div id="frost-overlay"></div>
+    <canvas id="netgraph" width="180" height="60"></canvas>
     <div id="damage-overlay"></div>
     <div id="smoke-overlay"></div>
     <div id="scope-overlay"><div class="scope-ring"></div></div>
@@ -295,11 +310,20 @@
         <button id="p-resume" class="btn primary wide">REPRENDRE</button>
         <button id="p-settings" class="btn wide">PARAMÈTRES</button>
         <button id="p-report" class="btn wide">⚑ SIGNALER UN JOUEUR</button>
+        <button id="p-tacpause" class="btn wide" style="display:none">⏸ PAUSE TACTIQUE (30 s)</button>
         <button id="p-leave" class="btn ghost wide">QUITTER LA PARTIE</button>
       </div>
     </div>
     <div id="report-overlay" class="overlay"><div class="pause-inner" id="report-inner"></div></div>
     <div id="radio-menu"></div>
+    <div id="emote-menu" class="radio-like"></div>
+    <div id="streak"></div>
+    <div id="leader"></div>
+    <div id="ult-warn"></div>
+    <div id="nade-warn">⚠</div>
+    <div id="obj-tag"><div class="mi">◆</div><div class="md"></div></div>
+    <div id="combat"></div>
+    <div id="tip"></div>
     <div id="settings-overlay" class="overlay">
       <div class="settings-float">
         <div class="sf-head"><h2>PARAMÈTRES</h2><button id="sf-close" class="btn small">RETOUR (Échap)</button></div>
@@ -314,6 +338,7 @@
         <div class="end-mvp" id="end-mvp"></div>
         <div class="end-progress" id="end-progress"></div>
         <div class="end-stats" id="end-stats"></div>
+        <div class="end-vote" id="end-vote"></div>
         <div class="muted">Retour au salon dans quelques secondes…</div>
       </div>
     </div>

@@ -146,8 +146,8 @@ const REG_PER_HOUR = env('REGISTRATIONS_PER_HOUR', 6);
 const regLimit = new Bucket(REG_PER_HOUR / 3600, REG_PER_HOUR); // inscriptions réussies par IP et par heure
 const chatLimit = new Bucket(1.2, 5);             // messages de chat par joueur
 const reportLimit = new Bucket(5 / 600, 5);       // signalements par joueur (5 puis 1 toutes les 2 min)
-const roomLimit = new Bucket(0.3, 3);
-const socialLimit = new Bucket(1, 8);              // actions de clan et de tournoi par joueur             // créations de salon par joueur
+const roomLimit = new Bucket(0.3, 3);             // créations de salon par joueur
+const socialLimit = new Bucket(1.5, 12);         // actions de profil, clan, tournoi, cadeaux par joueur
 const MAX_CONN_PER_IP = env('MAX_CONN_PER_IP', 16);
 const connPerIp = new Map();
 const wss = new WebSocketServer({
@@ -183,6 +183,7 @@ function cleanSkins(sk, owned = []) {
   return out;
 }
 const validDiff = d => DIFFICULTIES.includes(d);
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function roomCode() {
   for (;;) { let s = ''; for (let i = 0; i < 5; i++) s += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)]; if (![...rooms.values()].some(r => r.code === s)) return s; }
@@ -196,7 +197,7 @@ function roomSummary(r) {
   return { id: r.id, name: r.name, mapId: r.mapId, mode: r.mode, players: r.members.size, humans: [...r.members.values()].filter(m => !m.isBot).length, max: r.maxPlayers, state: r.state, quick: !!r.quick, official: !!r.official };
 }
 function roomState(r) {
-  return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null,
+  return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: r.opts || {}, tournament: !!r.tournament,
     members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
 }
 // les salons privés n'apparaissent pas dans la liste publique
@@ -215,6 +216,7 @@ const MODE_CFG = {
   duel: { max: 2, target: 5, tmin: 2, tmax: 13 },
   ffa: { max: 8, target: 25, tmin: 5, tmax: 60 },
   gungame: { max: 8, target: GUN_LADDER.length, tmin: GUN_LADDER.length, tmax: GUN_LADDER.length },
+  lives: { max: 8, target: 3, tmin: 1, tmax: 10 },
 };
 function teamCounts(r) {
   const c = { alpha: 0, beta: 0, ffa: 0 };
@@ -254,17 +256,28 @@ function leaveRoom(c) {
   c.roomId = null;
   if (!r) return;
   social.pushFriendsOf(c.account);
+  const leaver = r.members.get(c.id);
   r.members.delete(c.id);
   if (r.match) r.match.removePlayer(c.id);
   if (r.tournament && tournaments.onLeave(r, c)) return;
+  // Assaut : un bot remplace le joueur parti pour garder les équipes équilibrées
+  if (r.match && r.mode === 'assault' && leaver && !leaver.isBot && r.match.phase !== 'over' && [...r.members.values()].some(m => !m.isBot)) { addBot(r, leaver.team); r.match.broadcast({ type: 'notice', text: `${leaver.name.toUpperCase()} EST PARTI : UN BOT LE REMPLACE` }); }
   const humans = [...r.members.values()].filter(m => !m.isBot);
+  if (!humans.length) { r.match?.endSpectators('Plus aucun joueur dans la partie.'); for (const cl of clients.values()) if (cl.spectating === r.id) cl.spectating = null; }
   if (!humans.length && r.official) { r.hostId = null; if (r.match) { r.match = null; r.state = 'lobby'; } broadcastRooms(); return; }
   if (!humans.length) { rooms.delete(r.id); broadcastRooms(); return; }
   if (r.hostId === c.id) r.hostId = humans[0].id;
   pushRoom(r);
 }
 
+function stopSpectating(c) {
+  if (!c.spectating) return;
+  const room = rooms.get(c.spectating);
+  room?.match?.removeSpectator(c.id);
+  c.spectating = null;
+}
 function joinRoom(c, r) {
+  stopSpectating(c);
   if (r.tournament && !r.tournament.players.includes(c.account)) { send(c.id, { type: 'error', text: 'Ce salon de tournoi est réservé aux deux joueurs du match.' }); return; }
   if (c.roomId === r.id) { pushRoom(r); return; }
   if (c.roomId) leaveRoom(c);
@@ -298,6 +311,14 @@ function startMatch(r) {
     onEvent: (type, data) => admin.matchEvent(type, { room: r, ...data }),
     rewardMul: () => admin.mul().eclats,
     weaponUnlocks: () => admin.state.config.weaponUnlocks,
+    onOver: () => {
+      if (r.tournament) return;
+      const pool = mapsForMode(r.mode).filter(id => id !== r.mapId);
+      const options = shuffle(pool.slice()).slice(0, 3);
+      r.vote = { options, maps: new Map(), rematch: new Set() };
+      for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'voteOpen', options });
+    },
+    anticheat: () => ({ on: admin.state.config.anticheat !== false, strikes: admin.state.config.acStrikes || 5 }),
     onResults: results => {
       const mul = admin.mul();
       // classement Elo : uniquement les duels entre deux comptes différents
@@ -314,7 +335,8 @@ function startMatch(r) {
         const u = res.account && accounts.get(res.account);
         if (!u) { if (c) send(c.id, { type: 'matchSummary', guest: true }); continue; }
         const sum = accounts.applyResult(u, res, { mul, eloDelta: eloDeltas[res.id] ?? null });
-        clans.onMatch(u, (sum.xp || 0) + (sum.questXp || 0), res.won);
+        clans.onMatch(u, (sum.xp || 0) + (sum.questXp || 0), res.won, res.kills);
+        if (c) c.lastMatch = { t: Date.now(), accounts: new Set(res.others || []), done: new Set() };
         admin.economy('earn', sum.eclatsTotal);
         const mem = r.members.get(res.id); if (mem) mem.level = sum.level;
         if (sum.achievements.length) admin.log('partie', `${u.name} débloque : ${sum.achievements.map(a => a.label).join(', ')}`);
@@ -323,11 +345,25 @@ function startMatch(r) {
       if (r.tournament) tournaments.onResults(r, results);
     },
     onEnd: () => {
+      r.match?.endSpectators('La partie est terminée.');
+      // résultat du vote : carte la plus demandée (sinon carte aléatoire si l'option est active) et revanche
+      if (r.vote) {
+        const tally = {}; for (const v of r.vote.maps.values()) tally[v] = (tally[v] || 0) + 1;
+        const best = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+        if (best) r.mapId = best[0];
+        else if (r.opts?.randomMap) { const pool = mapsForMode(r.mode); r.mapId = pool[(Math.random() * pool.length) | 0]; }
+        const humans = [...r.members.values()].filter(m => !m.isBot);
+        r.rematchNow = humans.length > 0 && humans.every(h => r.vote.rematch.has(h.id));
+        r.vote = null;
+      } else if (r.opts?.randomMap && !r.tournament) { const pool = mapsForMode(r.mode); r.mapId = pool[(Math.random() * pool.length) | 0]; }
+      r.tacPauseUsed = false;
+      for (const cl of clients.values()) if (cl.spectating === r.id) cl.spectating = null;
       r.match = null; r.state = 'lobby';
       for (const m of r.members.values()) m.ready = m.isBot;
       for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'backToRoom' });
       pushRoom(r);
       if (r.tournament) tournaments.afterMatchEnd(r);
+      if (r.rematchNow) { r.rematchNow = false; setTimeout(() => { if (rooms.has(r.id) && r.state === 'lobby' && [...r.members.values()].some(m => !m.isBot)) { for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'chat', from: 'SYSTÈME', text: 'Revanche ! La partie recommence.' }); startMatch(r); } }, 1500); }
     },
   });
   r.match = match;
@@ -377,7 +413,7 @@ function handleLobby(c, msg) {
         const deny = admin.checkRegister(c); if (deny) { send(c.id, { type: 'authError', text: deny }); break; }
         if (!regLimit.peek(c.ip)) { send(c.id, { type: 'authError', text: 'Trop de comptes créés depuis ta connexion, réessaie plus tard.' }); admin.log('securite', `Limite d'inscriptions atteinte pour ${c.ip}`); break; }
         res = accounts.register(msg.name, msg.password);
-        if (res.user) { regLimit.take(c.ip); admin.onRegister(res.user); }
+        if (res.user) { regLimit.take(c.ip); admin.onRegister(res.user, c); }
       }
       else if (msg.type === 'login') res = accounts.login(msg.name, msg.password);
       else { const u = accounts.resume(msg.token); res = u ? { user: u, token: msg.token } : { error: 'Session expirée, reconnecte-toi.', expired: true }; }
@@ -401,12 +437,17 @@ function handleLobby(c, msg) {
       send(c.id, { type: 'welcome', id: c.id, name: c.name, guest: false, token: res.token, profile: accounts.publicProfile(res.user), motd: admin.state.config.motd, event: admin.eventInfo() });
       if (bonus) send(c.id, { type: 'dailyBonus', ...bonus });
       admin.log('auth', `Connexion : ${c.name} (${c.ip})`);
+      admin.onLogin(c, res.user);
       broadcastRooms();
       social.sendFriends(c);
       social.pushFriendsOf(c.account);
       c.clanTag = clans.tagOf(c.account);
       send(c.id, clans.payload(res.user));
       send(c.id, tournaments.payloadFor(c));
+      clans.onLogin(c, res.user);
+      // prévient les amis connectés
+      for (const fk of res.user.friends || []) { const fc = social.clientOfKey(fk); if (fc && fc !== c) send(fc.id, { type: 'friendOnline', name: c.name }); }
+      if (res.user.settings) send(c.id, { type: 'settingsSync', settings: res.user.settings, at: res.user.settingsAt || 0 });
       break;
     }
     case 'logout': if (c.token) accounts.logout(c.token); break;
@@ -527,7 +568,26 @@ function handleLobby(c, msg) {
       if (mapsForMode(r.mode).includes(msg.mapId)) r.mapId = msg.mapId;
       const t = parseInt(msg.target, 10);
       if (t) r.target = Math.max(MODE_CFG[r.mode].tmin, Math.min(MODE_CFG[r.mode].tmax, t));
+      // options de partie (salon personnalisé)
+      if (msg.opts && typeof msg.opts === 'object') { r.opts = r.opts || {}; for (const k of ['infAmmo', 'noAbilities', 'headOnly', 'lowGrav', 'randomMap']) if (k in msg.opts) r.opts[k] = !!msg.opts[k]; }
       pushRoom(r); break;
+    }
+    // vote de la prochaine carte / revanche (écran de fin)
+    case 'mapVote': case 'rematch': {
+      if (!r || !r.vote || r.tournament) break;
+      if (msg.type === 'mapVote') { if (r.vote.options.includes(msg.map)) r.vote.maps.set(c.id, msg.map); }
+      else r.vote.rematch.add(c.id);
+      const tally = {}; for (const v of r.vote.maps.values()) tally[v] = (tally[v] || 0) + 1;
+      for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'voteState', tally, rematch: r.vote.rematch.size, humans: [...r.members.values()].filter(x => !x.isBot).length });
+      break;
+    }
+    // pause tactique : l'hôte d'un salon privé, une fois par partie, 30 secondes
+    case 'tacPause': {
+      if (!isHost || !r.match || !r.private || r.tournament || r.match.phase === 'over' || r.tacPauseUsed) break;
+      r.tacPauseUsed = true; r.match.broadcast({ type: 'notice', text: `PAUSE TACTIQUE DEMANDÉE PAR ${c.name.toUpperCase()} (30 s)` });
+      r.match.paused = true;
+      setTimeout(() => { if (r.match) { r.match.paused = false; r.match.broadcast({ type: 'notice', text: 'REPRISE !' }); } }, 30000);
+      break;
     }
     case 'addBot': if (isHost && !r.tournament) { addBot(r, msg.team === 'beta' ? 'beta' : 'alpha'); pushRoom(r); } break;
     case 'fillBots': if (isHost && r.state === 'lobby' && !r.tournament) { while (r.members.size < r.maxPlayers) { const before = r.members.size; addBot(r, pickTeam(r)); if (r.members.size === before) break; } pushRoom(r); } break;
@@ -575,10 +635,45 @@ function handleLobby(c, msg) {
       send(c.id, { type: 'reportResult', ok: true, text: `Signalement contre ${name} envoyé à l'équipe de modération. Merci !` });
       break;
     }
-    case 'leaveMatch': if (r) leaveRoom(c); send(c.id, { type: 'left' }); break;
+    case 'leaveMatch': if (r) leaveRoom(c); stopSpectating(c); send(c.id, { type: 'left' }); break;
+    // ---------- spectateur staff (invisible) ----------
+    case 'spectateList': {
+      if (admin.levelOf(c) < 1) break;
+      send(c.id, { type: 'spectateList', matches: [...rooms.values()].filter(x => x.match).map(x => ({ roomId: x.id, name: x.name, mode: x.mode, map: x.mapId,
+        players: [...x.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, bot: !!m.isBot })) })) });
+      break;
+    }
+    case 'spectate': {
+      if (admin.levelOf(c) < 1) { send(c.id, { type: 'error', text: 'Réservé à l\'équipe de modération.' }); break; }
+      if (r) { send(c.id, { type: 'error', text: 'Quitte ton salon avant d\'observer une partie.' }); break; }
+      const id = String(msg.id || '');
+      const room = [...rooms.values()].find(x => x.match && (x.members.has(id) || x.id === id));
+      if (!room) { send(c.id, { type: 'error', text: 'Ce joueur n\'est pas en partie.' }); break; }
+      stopSpectating(c);
+      if (room.match.addSpectator(c.id, room.members.has(id) ? id : null)) {
+        c.spectating = room.id;
+        const tm = room.members.get(id);
+        admin.log('moderation', `${c.name} observe ${tm ? tm.name : 'la partie'} dans « ${room.name} »`);
+      }
+      break;
+    }
+    case 'spectateSwitch': { const room = c.spectating && rooms.get(c.spectating); if (room?.match) room.match.switchSpectator(c.id, String(msg.id || '')); break; }
+    case 'spectateStop': stopSpectating(c); break;
+    case 'staffAction': {
+      if (admin.levelOf(c) < 1 || !c.spectating) break;
+      const room = rooms.get(c.spectating); const tm = room && room.members.get(String(msg.id || ''));
+      if (!tm || tm.isBot) { send(c.id, { type: 'specNotice', text: 'Joueur introuvable (ou bot).' }); break; }
+      const reason = clean(msg.reason, 200) || 'Décision de la modération (observation en direct)';
+      const map = { warn: ['warn', { name: tm.name, reason }], mute: ['mute', { id: tm.id, minutes: 10, reason }], kick: ['kick', { id: tm.id, reason }], ban: ['ban', { id: tm.id, minutes: 1440, reason }] };
+      const a = map[msg.action];
+      if (!a || (msg.action === 'warn' && !tm.account)) { send(c.id, { type: 'specNotice', text: 'Action impossible sur ce joueur.' }); break; }
+      try { admin.staffRun(c, a[0], a[1]); send(c.id, { type: 'specNotice', text: `${{ warn: 'Avertissement envoyé à', mute: 'Silence de 10 min pour', kick: 'Expulsion de', ban: 'Ban de 24 h pour' }[msg.action]} ${tm.name}.` }); }
+      catch (e) { send(c.id, { type: 'specNotice', text: e.message || 'Action refusée.' }); }
+      break;
+    }
     default:
+      if (typeof msg.type === 'string' && /^(clan|tour|gift$|endorse$|setProfile$|buyShop$|pinFriend$|recent$|shop$)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
       if (social.handle(c, msg)) break;
-      if (typeof msg.type === 'string' && /^(clan|tour)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
       if (clans.handle(c, msg) || tournaments.handle(c, msg)) break;
       if (r && r.match) r.match.handle(c.id, msg);
   }
@@ -600,6 +695,8 @@ function closeRoom(r, text) {
     send(c.id, { type: 'left' });
     send(c.id, { type: 'system', kind: 'notice', text });
   }
+  r.match?.endSpectators('Le salon a été fermé.');
+  for (const cl of clients.values()) if (cl.spectating === r.id) cl.spectating = null;
   r.match = null;
   rooms.delete(r.id);
   broadcastRooms();
@@ -677,6 +774,7 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     const n = (connPerIp.get(c.ip) || 1) - 1; if (n > 0) connPerIp.set(c.ip, n); else connPerIp.delete(c.ip);
     if (c.roomId) leaveRoom(c);
+    stopSpectating(c);
     clients.delete(id);
     if (c.name) admin.log('connexion', `Déconnexion : ${c.name}`);
     if (c.account) { const u = accounts.get(c.account); if (u) { u.stats.online = (u.stats.online || 0) + Math.round((Date.now() - c.since) / 1000); accounts.touch(u); } social.pushFriendsOf(c.account); }

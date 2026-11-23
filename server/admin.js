@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { SKINS, WEAPONS, ROUND, DUEL, AGENTS, SKINNABLE, isFfa } from '../shared/data.js';
 import { MAP_INFO, mapsForMode } from '../shared/maps.js';
 import { QUESTS, QUEST_REWARD, TITLES, STAFF_TITLES, RANKS, rankOf, levelOf, levelInfo, ELO_START, REPORT_REASONS, ACHIEVEMENTS } from '../shared/progress.js';
-import { addXp, setLevel, ensureUser, titlesOf, rankFor } from './progression.js';
+import { addXp, setLevel, ensureUser, titlesOf, rankFor, weekKey } from './progression.js';
 
 export const LEVEL = { player: 0, mod: 1, admin: 2, owner: 3 };
 const RAW = Symbol('raw');
@@ -27,6 +27,11 @@ const DEFAULT_CONFIG = {
   slowMode: 0, blockLinks: true, autoMute: true, autoMuteThreshold: 3, autoMuteMinutes: 10,
   // avertissements : ban automatique de 24 h au seuil (0 = désactivé)
   warnBanAt: 3,
+  // anti-triche (désactivable) : seuil d'infractions de déplacement avant alerte
+  anticheat: true, acStrikes: 5,
+  // alertes Discord (webhook) et inscriptions
+  discordWebhook: '', discordCheat: true, discordReports: true, discordBans: true, discordTournaments: true, alertSuspectLogin: true,
+  maxAccountsPerIp: Math.max(0, parseInt(process.env.MAX_ACCOUNTS_PER_IP ?? '3', 10) || 0), weekendXp: false,
 };
 // filtre proposé au premier lancement (modifiable dans Modération → Filtre de mots)
 const DEFAULT_FILTER = ['connard', 'connasse', 'salope', 'pute', 'enculé', 'encule', 'fdp', 'ntm', 'nique ta mère', 'niquetamere', 'batard', 'bâtard', 'pédé', 'tg', 'ta gueule'];
@@ -39,11 +44,15 @@ const CONFIG_RULES = {
   xpMul: [0, 10], weaponUnlocks: 'bool', dailyBonus: 'bool',
   eventName: ['str', 60], eventXpMul: [0, 10], eventEclatsMul: [0, 10], eventUntil: [0, 4102444800000],
   slowMode: [0, 120], blockLinks: 'bool', autoMute: 'bool', autoMuteThreshold: [1, 20], autoMuteMinutes: [1, 1440], warnBanAt: [0, 20],
+  anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool',
+  alertSuspectLogin: 'bool', maxAccountsPerIp: [0, 50], weekendXp: 'bool',
 };
 const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul']);
+export const ACCOUNT_TAGS = { surveille: 'Surveillé', suspect: 'Suspect', vip: 'VIP', testeur: 'Testeur', createur: 'Créateur', partenaire: 'Partenaire' };
+const DISCORD_RE = /^https:\/\/(discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)\/api\/webhooks\/\d{5,25}\/[\w-]{20,100}$/;
 const LINK_RE = /(https?:\/\/|www\.|discord\.gg|\b[a-z0-9-]{2,}\.(com|net|org|fr|io|gg|xyz|ru|info|me|be|co)\b)/i;
 const WEAPON_DEFAULTS = Object.fromEntries(Object.entries(WEAPONS).map(([id, w]) => [id, { damage: w.damage, headMul: w.headMul }]));
-const DEFAULT_STATS = () => ({ matches: 0, kills: 0, headshots: 0, modes: {}, maps: {}, agents: {}, weapons: {}, regsByDay: {}, matchesByDay: {}, peak: 0, peakAt: 0, agentWins: {}, earnByDay: {}, spendByDay: {}, skinSales: {} });
+const DEFAULT_STATS = () => ({ matches: 0, kills: 0, headshots: 0, modes: {}, maps: {}, agents: {}, weapons: {}, regsByDay: {}, matchesByDay: {}, peak: 0, peakAt: 0, agentWins: {}, earnByDay: {}, spendByDay: {}, skinSales: {}, weaponHs: {}, hourly: Array(24).fill(0), hourlyN: Array(24).fill(0) });
 
 function fail(msg, status = 400) { const e = new Error(msg); e.status = status; throw e; }
 const str = (v, n) => String(v ?? '').replace(/[<>]/g, '').trim().slice(0, n);
@@ -156,7 +165,8 @@ export class Admin {
   eventInfo() { const c = this.state.config; return this.eventActive() ? { name: c.eventName || 'Événement', xp: c.eventXpMul, eclats: c.eventEclatsMul, until: c.eventUntil } : null; }
   mul() {
     const c = this.state.config, ev = this.eventActive();
-    return { xp: c.xpMul * (ev ? c.eventXpMul : 1), eclats: c.rewardMul * (ev ? c.eventEclatsMul : 1) };
+    const wd = new Date().getDay(), weekend = c.weekendXp && (wd === 0 || wd === 6);
+    return { xp: c.xpMul * (ev ? c.eventXpMul : 1) * (weekend ? 1.5 : 1), eclats: c.rewardMul * (ev ? c.eventEclatsMul : 1) };
   }
   economy(kind, v) {
     const st = this.state.stats, d = today();
@@ -177,6 +187,7 @@ export class Admin {
     this.state.reports.unshift(report);
     if (this.state.reports.length > 500) this.state.reports.length = 500;
     this.log('moderation', `Signalement (${REPORT_REASONS[r.category] || r.category}) de ${r.from} contre ${r.target}${r.reason ? ' : ' + r.reason : ''}`);
+    this.discord('report', `⚑ Signalement **${REPORT_REASONS[r.category] || r.category}** de ${r.from} contre **${r.target}**${r.reason ? ' : ' + r.reason : ''}`);
     this.save();
     // prévient le staff connecté
     for (const c of this.onlineClients()) if (this.levelOf(c) >= 1) this.ctx.send(c.id, { type: 'system', kind: 'staff', text: `Nouveau signalement contre ${r.target} (${REPORT_REASONS[r.category] || r.category}).` });
@@ -202,6 +213,7 @@ export class Admin {
     if (online > st.peak) { st.peak = online; st.peakAt = now; this.save(); }
     if (now - this.lastHistory >= 60000) {
       this.lastHistory = now;
+      { const hr = new Date(now).getHours(); st.hourly ||= Array(24).fill(0); st.hourlyN ||= Array(24).fill(0); st.hourly[hr] += online; st.hourlyN[hr]++; }
       const pings = this.onlineClients().map(c => c.ping).filter(p => p > 0);
       const t = this.ticks.length ? this.ticks : [0];
       this.history.push({ t: now, online, inGame: this.inGameCount(), rooms: this.ctx.rooms.size,
@@ -228,6 +240,68 @@ export class Admin {
   }
 
   // ---------- contrôles d'accès des joueurs ----------
+  // alertes Discord : envoi limité (file de 30 messages, 1 toutes les 1,2 s), jamais d'adresse autre que Discord
+  discord(kind, text) {
+    const cfg = this.state.config;
+    if (!cfg.discordWebhook || !DISCORD_RE.test(cfg.discordWebhook)) return;
+    const flag = { cheat: 'discordCheat', report: 'discordReports', ban: 'discordBans', tournament: 'discordTournaments' }[kind];
+    if (flag && cfg[flag] === false) return;
+    this.discordQ ||= [];
+    if (this.discordQ.length >= 30) return;
+    this.discordQ.push(String(text).replace(/@(everyone|here)/g, '@\u200b$1').slice(0, 1900));
+    if (this.discordT) return;
+    const pump = () => {
+      const msg = this.discordQ.shift();
+      if (!msg) { this.discordT = null; return; }
+      fetch(cfg.discordWebhook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'ECLIPSE', content: msg, allowed_mentions: { parse: [] } }), signal: AbortSignal.timeout(8000) })
+        .catch(() => {}).finally(() => { this.discordT = setTimeout(pump, 1200); this.discordT.unref?.(); });
+    };
+    pump();
+  }
+  // historique des sanctions d'un compte (50 dernières)
+  sanction(key, type, text, by) {
+    const u = key && this.ctx.accounts.get(key); if (!u) return;
+    (u.sanctions ||= []).unshift({ t: Date.now(), type, text: String(text || '').slice(0, 240), by: by || 'Automatique' });
+    if (u.sanctions.length > 50) u.sanctions.length = 50;
+    this.ctx.accounts.save();
+  }
+  // connexion d'un compte surveillé : le staff connecté (et Discord) est prévenu
+  onLogin(c, u) {
+    const tags = u.tags || [];
+    if (!this.state.config.alertSuspectLogin || !(tags.includes('surveille') || tags.includes('suspect'))) return;
+    const text = `Compte ${tags.includes('surveille') ? 'surveillé' : 'suspect'} connecté : ${u.name}`;
+    this.log('moderation', text);
+    for (const o of this.onlineClients()) if (o !== c && this.levelOf(o) >= 1) this.ctx.send(o.id, { type: 'system', kind: 'staff', text });
+    this.discord('cheat', `👀 ${text}`);
+  }
+  filterText(text) {
+    let out = text, hits = [];
+    for (const w of this.state.filter) {
+      if (!w) continue;
+      const esc = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(w.length <= 3 ? `(^|[^\\p{L}\\p{N}])(${esc})(?=$|[^\\p{L}\\p{N}])` : esc, w.length <= 3 ? 'giu' : 'gi');
+      if (re.test(out)) { hits.push(w); out = w.length <= 3 ? out.replace(re, (m, pre, word) => pre + '*'.repeat(word.length)) : out.replace(re, m => '*'.repeat(m.length)); }
+    }
+    return { out, hits, link: LINK_RE.test(text) };
+  }
+  serverAverages() {
+    if (this.avgCache && Date.now() - this.avgCache.t < 60000) return this.avgCache.v;
+    let k = 0, hs = 0, sh = 0, hi = 0, n = 0, d = 0;
+    for (const u of Object.values(this.users())) { const s = u?.stats; if (!s || s.kills < 20) continue; n++; k += s.kills; hs += s.hsKills || 0; sh += s.shots || 0; hi += s.hits || 0; d += s.deaths || 0; }
+    const v = { players: n, hs: k ? Math.round(hs / k * 100) : null, acc: sh ? Math.round(hi / sh * 100) : null, kd: d ? Math.round(k / d * 100) / 100 : null };
+    this.avgCache = { t: Date.now(), v };
+    return v;
+  }
+  // action de modération lancée depuis le jeu (spectateur) : mêmes droits et même journal que le panneau
+  staffRun(c, action, body) {
+    const user = c.account && this.ctx.accounts.get(c.account);
+    const lvl = LEVEL[user?.role || 'player'] || 0;
+    const def = ACTIONS[action];
+    if (!user || !def || lvl < def.level) fail('Droits insuffisants', 403);
+    const out = def.fn.call(this, { body, user, lvl, q: new URLSearchParams(), ip: c.ip });
+    if (def.post && def.audit !== false) this.audit(user.name, (def.label || action) + ' (spectateur)', out && out._detail ? out._detail : '');
+    return out;
+  }
   levelOf(c) { const u = c.account && this.ctx.accounts.get(c.account); return LEVEL[u?.role || 'player'] || 0; }
   activeBan(type, value) { const now = Date.now(); return this.state.bans.find(b => b.type === type && b.value === value && (!b.until || b.until > now)); }
   banText(b) {
@@ -254,9 +328,15 @@ export class Admin {
     const b = this.activeBan('ip', c.ip); if (b) return this.banText(b);
     if (cfg.maintenance) return cfg.maintenanceMsg;
     if (!cfg.registrationOpen) return 'Les inscriptions sont fermées pour le moment.';
+    if (cfg.maxAccountsPerIp > 0) {
+      const since = Date.now() - 86400000;
+      const n = Object.values(this.users()).filter(u => u && u.regIp === c.ip && u.created > since).length;
+      if (n >= cfg.maxAccountsPerIp) { this.log('securite', `Inscription refusée : ${n} comptes déjà créés en 24 h depuis ${c.ip}`); return 'Trop de comptes créés depuis ta connexion aujourd\'hui. Réessaie demain.'; }
+    }
     return null;
   }
-  onRegister(user) {
+  onRegister(user, c) {
+    if (c) user.regIp = c.ip;
     const d = today(); this.state.stats.regsByDay[d] = (this.state.stats.regsByDay[d] || 0) + 1;
     this.log('auth', `Nouveau compte : ${user.name}`); this.save();
   }
@@ -334,6 +414,7 @@ export class Admin {
     } else if (type === 'kill') {
       st.kills++; if (d.head) st.headshots++;
       st.weapons[d.weapon] = (st.weapons[d.weapon] || 0) + 1;
+      if (d.head) { st.weaponHs ||= {}; st.weaponHs[d.weapon] = (st.weaponHs[d.weapon] || 0) + 1; }
       this.log('kill', `${d.killer || '—'} a éliminé ${d.victim}${d.head ? ' (tête)' : ''} — ${WEAPONS[d.weapon]?.name || d.weapon}`);
     } else if (type === 'end') {
       const r = d.room, m = r.match;
@@ -352,6 +433,7 @@ export class Admin {
       }
     } else if (type === 'cheat') {
       this.log('securite', `${d.stat ? 'Statistiques suspectes' : `Mouvement suspect (${d.strikes} alertes)`} : ${d.name} dans « ${d.room.name} » — ${d.reason}`);
+      this.discord('cheat', `🚨 Anti-triche : **${d.name}** dans « ${d.room.name} » — ${d.reason}`);
       const key = d.account || 'guest:' + d.name;
       const sus = this.state.suspects[key] || (this.state.suspects[key] = { name: d.name, account: d.account || null, count: 0, alerts: [] });
       sus.count++; sus.last = Date.now(); sus.name = d.name;
@@ -476,7 +558,7 @@ export class Admin {
     ensureUser(u);
     return { name: u.name, role: u.role || 'player', created: u.created, eclats: u.eclats, matches: u.stats.matches, wins: u.stats.wins, kills: u.stats.kills, deaths: u.stats.deaths,
       banned: !!this.activeBan('account', key), online: this.clientsOf(key).length > 0, skins: u.owned.length,
-      level: levelOf(u.xp), xp: u.xp, elo: u.elo, lastSeen: u.lastSeen || u.created, warnings: u.warnings || 0 };
+      level: levelOf(u.xp), xp: u.xp, elo: u.elo, lastSeen: u.lastSeen || u.created, warnings: u.warnings || 0, tags: u.tags || [] };
   }
 }
 
@@ -515,6 +597,56 @@ const ACTIONS = {
     };
   } },
   history: { level: 1, fn() { return { points: this.history }; } },
+  spectators: { level: 1, fn() {
+    const out = [];
+    for (const c of this.ctx.clients.values()) {
+      if (!c.spectating) continue;
+      const r = this.ctx.rooms.get(c.spectating); const sp = r?.match?.spectators?.get(c.id);
+      out.push({ staff: c.name, room: r?.name || '?', target: sp ? r.match.players.get(sp.target)?.name || '?' : '?' });
+    }
+    return out;
+  } },
+  peaks: { level: 1, fn() {
+    const st = this.state.stats, h = st.hourly || [], n = st.hourlyN || [];
+    return { hours: Array.from({ length: 24 }, (_, i) => n[i] ? Math.round(h[i] / n[i] * 10) / 10 : 0), samples: n.reduce((a, b) => a + b, 0) };
+  } },
+  weapons: { level: 1, fn() {
+    const st = this.state.stats;
+    return Object.entries(st.weapons || {}).map(([id, k]) => ({ id, name: WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', core: 'Noyau', admin: 'Admin' }[id] || id, kills: k, hs: (st.weaponHs || {})[id] || 0 })).sort((a, b) => b.kills - a.kills);
+  } },
+  search: { level: 1, fn({ q }) {
+    const s = String(q.get('q') || '').toLowerCase().trim().slice(0, 40);
+    if (s.length < 2) return { accounts: [], players: [], rooms: [], clans: [], tournaments: [] };
+    return {
+      accounts: Object.values(this.users()).filter(u => u?.name?.toLowerCase().includes(s)).slice(0, 10).map(u => ({ name: u.name, level: levelOf(u.xp || 0), banned: !!this.activeBan('account', this.ctx.accounts.key(u.name)) })),
+      players: this.onlineClients().filter(c => c.name.toLowerCase().includes(s)).slice(0, 10).map(c => ({ id: c.id, name: c.name, inMatch: !!(c.roomId && this.ctx.rooms.get(c.roomId)?.match) })),
+      rooms: [...this.ctx.rooms.values()].filter(r => r.name.toLowerCase().includes(s)).slice(0, 10).map(r => ({ id: r.id, name: r.name, state: r.state })),
+      clans: (this.ctx.clans?.adminList() || []).filter(c => c.tag.toLowerCase().includes(s) || c.name.toLowerCase().includes(s)).slice(0, 10).map(c => ({ tag: c.tag, name: c.name })),
+      tournaments: (this.ctx.tournaments?.adminList() || []).filter(t => t.name.toLowerCase().includes(s)).slice(0, 10).map(t => ({ id: t.id, name: t.name, status: t.status })),
+    };
+  } },
+  'report/week': { level: 1, fn() {
+    const since = Date.now() - 7 * 86400000, users = Object.values(this.users()).filter(Boolean);
+    const days = Array.from({ length: 7 }, (_, i) => new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
+    const st = this.state.stats;
+    const wk = weekKey();
+    return {
+      newAccounts: users.filter(u => u.created > since).length,
+      matches: days.reduce((a, d) => a + (st.matchesByDay?.[d] || 0), 0),
+      reports: this.state.reports.filter(r => r.t > since).length,
+      bans: this.state.bans.filter(b => b.at > since).length,
+      peak: this.history.filter(h => h.t > since).reduce((m, h) => Math.max(m, h.online), 0),
+      active: users.filter(u => (u.lastSeen || 0) > since).length,
+      top: users.filter(u => u.week?.key === wk && u.week.xp > 0).sort((a, b) => b.week.xp - a.week.xp).slice(0, 5).map(u => ({ name: u.name, xp: u.week.xp, kills: u.week.kills, wins: u.week.wins })),
+    };
+  } },
+  'filter/test': { level: 1, post: true, audit: false, fn({ body }) { return this.filterText(str(body.text, 300)); } },
+  'account/tags': { level: 1, post: true, label: 'Étiquettes de compte', fn({ body }) {
+    const u = this.findUser(body.name);
+    const tags = (Array.isArray(body.tags) ? body.tags : []).map(String).filter(t => ACCOUNT_TAGS[t]);
+    u.tags = [...new Set(tags)]; this.ctx.accounts.save();
+    return { tags: u.tags, _detail: `${u.name} : ${u.tags.map(t => ACCOUNT_TAGS[t]).join(', ') || 'aucune'}` };
+  } },
   players: { level: 1, fn({ lvl }) {
     return this.onlineClients().map(c => {
       const r = c.roomId && this.ctx.rooms.get(c.roomId);
@@ -554,7 +686,8 @@ const ACTIONS = {
       achievements: u.achievements.map(id => ACHIEVEMENTS.find(a => a.id === id)?.label || id), history: u.history,
       friends: u.friends.map(k => A.get(k)?.name).filter(Boolean), notes: u.notes || [], seasons: u.seasons || [],
       agentStats: u.agentStats, mapStats: u.mapStats, daily: u.daily, suspect: sus ? { count: sus.count, alerts: sus.alerts.slice(0, 8) } : null,
-      reports: this.state.reports.filter(r => r.targetAccount === key || r.target?.toLowerCase() === key).length };
+      reports: this.state.reports.filter(r => r.targetAccount === key || r.target?.toLowerCase() === key).length,
+      sanctions: u.sanctions || [], tags: u.tags || [], avg: this.serverAverages(), regIp: lvl >= 2 ? u.regIp || null : null };
   } },
   rooms: { level: 1, fn() { return [...this.ctx.rooms.values()].map(r => this.roomInfo(r)); } },
   room: { level: 1, fn({ q }) { return this.roomInfo(this.room(q.get('id')), true); } },
@@ -587,6 +720,7 @@ const ACTIONS = {
     const c = this.findClient(body.id);
     if (c.account) this.guard(lvl, this.findUser(c.account), null);
     const reason = str(body.reason, 200);
+    if (c.account) this.sanction(c.account, 'kick', `Expulsé${reason ? ' — ' + reason : ''}`, user.name);
     this.ctx.kick(c, `Tu as été expulsé par l'équipe de modération.${reason ? ' Raison : ' + reason : ''}`);
     return { _detail: `${c.name}${reason ? ' — ' + reason : ''}` };
   } },
@@ -617,10 +751,13 @@ const ACTIONS = {
     }
     this.save();
     this.log('moderation', `${label} banni par ${user.name} (${minutes ? minutes + ' min' : 'définitif'})`);
+    for (const [type, value] of targets) if (type === 'account') this.sanction(value, 'ban', `Banni ${minutes ? `${minutes} min` : 'définitivement'} — ${reason}`, user.name);
+    this.discord('ban', `⛔ **${label}** banni ${minutes ? `${minutes} min` : 'définitivement'} par ${user.name} — ${reason}`);
     return { _detail: `${label} — ${minutes ? minutes + ' min' : 'définitif'} — ${reason}` };
   } },
-  unban: { level: 1, post: true, label: 'Débannissement', fn({ body }) {
+  unban: { level: 1, post: true, label: 'Débannissement', fn({ body, user }) {
     const b = this.state.bans.find(x => x.id === body.id); if (!b) fail('Ban introuvable', 404);
+    if (b.type === 'account') this.sanction(b.value, 'unban', 'Ban levé', user.name);
     this.state.bans = this.state.bans.filter(x => x !== b); this.save();
     return { _detail: b.label };
   } },
@@ -633,6 +770,7 @@ const ACTIONS = {
     const reason = str(body.reason, 200) || 'Non précisée';
     this.state.mutes = this.state.mutes.filter(m => m.key !== key);
     this.state.mutes.push({ id: crypto.randomUUID(), key, label, reason, by: user.name, at: Date.now(), until: minutes ? Date.now() + minutes * 60000 : 0 });
+    if (!key.startsWith('guest:')) this.sanction(key, 'mute', `Silence ${minutes ? `${minutes} min` : 'définitif'} — ${reason}`, user.name);
     this.save();
     for (const c of this.ctx.clients.values()) if ((c.account || 'guest:' + c.name) === key) this.ctx.send(c.id, { type: 'system', kind: 'notice', text: `Tu ne peux plus écrire dans le chat${minutes ? ` pendant ${minutes} min` : ''}. Raison : ${reason}` });
     return { _detail: `${label} — ${minutes ? minutes + ' min' : 'illimité'}` };
@@ -826,6 +964,11 @@ const ACTIONS = {
     for (const c of this.onlineClients()) this.ctx.send(c.id, { type: 'system', kind: 'broadcast', from: user.name, text });
     return { sent: this.onlineClients().length, _detail: text };
   } },
+  'discord/test': { level: 2, post: true, label: 'Test du webhook Discord', fn({ user }) {
+    if (!this.state.config.discordWebhook) fail('Aucun webhook configuré.');
+    this.discord('test', `✅ Test des alertes ECLIPSE envoyé par ${user.name}.`);
+    return {};
+  } },
   'config/save': { level: 2, post: true, label: 'Configuration modifiée', fn({ body, user }) {
     const cfg = this.state.config, patch = body.patch || {};
     const changed = [];
@@ -834,6 +977,8 @@ const ACTIONS = {
       let v = patch[k];
       if (rule === 'bool') v = !!v;
       else if (rule[0] === 'str') v = str(v, rule[1]);
+      if (k === 'discordWebhook' && v && !DISCORD_RE.test(v)) fail('Adresse de webhook invalide : elle doit commencer par https://discord.com/api/webhooks/');
+      if (rule === 'bool' || rule[0] === 'str') { /* déjà traité */ }
       else { v = Number(v); if (!Number.isFinite(v)) fail(`Valeur invalide pour ${k}`); v = Math.max(rule[0], Math.min(rule[1], DECIMAL.has(k) ? Math.round(v * 10) / 10 : Math.round(v))); }
       if (cfg[k] !== v) { cfg[k] = v; changed.push(k); }
     }
@@ -996,6 +1141,7 @@ const ACTIONS = {
     const u = this.findUser(body.name); ensureUser(u); this.guard(lvl, u, null);
     const reason = str(body.reason, 200) || 'Comportement inapproprié';
     u.warnings = (u.warnings || 0) + 1;
+    this.sanction(this.ctx.accounts.key(u.name), 'warn', `Avertissement n°${u.warnings} — ${reason}`, user.name);
     u.notes.unshift({ id: crypto.randomUUID(), t: Date.now(), by: user.name, text: `Avertissement n°${u.warnings} : ${reason}` });
     const key = this.ctx.accounts.key(u.name);
     for (const c of this.clientsOf(key)) this.ctx.send(c.id, { type: 'system', kind: 'warn', from: user.name, text: `Avertissement n°${u.warnings} : ${reason}` });
@@ -1019,7 +1165,9 @@ const ACTIONS = {
     return Object.entries(this.state.suspects).map(([key, s]) => {
       const u = s.account && this.ctx.accounts.get(s.account);
       const reports = this.state.reports.filter(r => (s.account && r.targetAccount === s.account) || r.target === s.name).length;
-      return { key, ...s, reports, banned: !!(s.account && this.activeBan('account', s.account)), online: s.account ? this.clientsOf(s.account).length > 0 : false,
+      const live = s.account ? this.clientsOf(s.account)[0] : null;
+      const inMatch = live && live.roomId && this.ctx.rooms.get(live.roomId)?.match ? live.id : null;
+      return { key, ...s, reports, banned: !!(s.account && this.activeBan('account', s.account)), online: !!live, cid: inMatch,
         kd: u ? (u.stats.deaths ? Math.round(u.stats.kills / u.stats.deaths * 100) / 100 : u.stats.kills) : null,
         hs: u && u.stats.kills ? Math.round((u.stats.hsKills || 0) / u.stats.kills * 100) : null, acc: u && u.stats.shots ? Math.round(u.stats.hits / u.stats.shots * 100) : null };
     }).sort((a, b) => b.last - a.last);
@@ -1027,6 +1175,15 @@ const ACTIONS = {
   'suspect/clear': { level: 1, post: true, label: 'Alertes anti-triche effacées', fn({ body }) {
     const s = this.state.suspects[body.key]; if (!s) fail('Introuvable', 404);
     delete this.state.suspects[body.key]; this.save(); return { _detail: s.name };
+  } },
+
+  // ---------- anti-triche ----------
+  'anticheat/toggle': { level: 2, post: true, label: 'Anti-triche', fn({ body, user }) {
+    const on = body.on === undefined ? this.state.config.anticheat === false : !!body.on;
+    this.state.config.anticheat = on; this.save();
+    this.log('securite', `Anti-triche ${on ? 'RÉACTIVÉ' : 'DÉSACTIVÉ'} par ${user.name}`);
+    this.discord?.('cheat', `🛡️ Anti-triche **${on ? 'réactivé' : 'désactivé'}** par ${user.name}`);
+    return { on, _detail: on ? 'réactivé' : 'désactivé' };
   } },
 
   // ---------- tournois ----------

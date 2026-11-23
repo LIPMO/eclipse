@@ -7,16 +7,16 @@ import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa } from '/shared/d
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins } from './models.js';
 import * as SFX from './audio.js';
-import { mountSettings, keyName } from './settings.js';
+import { mountSettings, keyName, sanitizeSettings, applyPreset } from './settings.js';
 import { initClans, openClanTab } from './clans.js';
 import { initTournaments, openTournamentsTab } from './tournaments.js';
-import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub } from './hub.js';
+import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub, emojify } from './hub.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const MODE_LABEL = { assault: 'ASSAUT 5v5', duel: 'DUEL 1v1', ffa: 'MÊLÉE', gungame: 'GUN GAME' };
-const TARGETS = { assault: [3, 5, 7, 9, 13], duel: [3, 5, 7, 9], ffa: [10, 15, 25, 40], gungame: [8] };
-const DIFF_LABEL = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert' };
+const MODE_LABEL = { assault: 'ASSAUT 5v5', duel: 'DUEL 1v1', ffa: 'MÊLÉE', gungame: 'GUN GAME', lives: 'DERNIER DEBOUT' };
+const TARGETS = { assault: [3, 5, 7, 9, 13], duel: [3, 5, 7, 9], ffa: [10, 15, 25, 40], gungame: [8], lives: [1, 2, 3, 5] };
+const DIFF_LABEL = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert', cible: 'Cibles' };
 
 const net = new Net();
 const state = { myId: null, guest: true, room: null, rooms: [], game: null, tab: 'login', create: { mode: 'assault', map: 'dune', diff: 'normal' }, authMode: 'login', collWeapon: 'lancer', collSkin: null, agentView: 'ignis' };
@@ -200,7 +200,9 @@ net.on('chat', m => {
   const log = $('chat-log');
   const d = document.createElement('div');
   if (m.from === 'SYSTÈME') d.className = 'sys';
-  d.innerHTML = `${m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : ''}<b>${esc(m.from)}</b>${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''} : ${esc(m.text)}`;
+  if (m.from !== 'SYSTÈME' && profile.settings.chatMode === 'off') return;
+  const from = profile.settings.streamer && m.from !== 'SYSTÈME' && m.from !== profile.name ? 'Joueur' : m.from;
+  d.innerHTML = `${m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : ''}<b>${esc(from)}</b>${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''} : ${esc(emojify(m.text))}`;
   log.appendChild(d); log.scrollTop = log.scrollHeight;
 });
 $('chat-input').onkeydown = e => {
@@ -220,7 +222,7 @@ function renderRoom() {
   if (r.code) $('room-code').innerHTML = `SALON PRIVÉ · CODE <b>${esc(r.code)}</b> <button class="btn ghost small" id="copy-code">COPIER</button>`;
   if ($('copy-code')) $('copy-code').onclick = () => { navigator.clipboard?.writeText(r.code).then(() => toast('Code copié !'), () => toast(`Code : ${r.code}`)); };
   $('room-invite').style.display = state.guest ? 'none' : '';
-  $('room-sub').textContent = `${MODE_LABEL[r.mode]} · ${MAP_INFO[r.mapId].name} · ${r.mode === 'gungame' ? `${r.target} armes` : isFfa(r.mode) ? `${r.target} éliminations` : `premier à ${r.target} manches`} · bots ${DIFF_LABEL[r.difficulty]}${r.state === 'playing' ? ' · EN JEU' : ''}`;
+  $('room-sub').textContent = `${MODE_LABEL[r.mode]} · ${MAP_INFO[r.mapId].name} · ${r.mode === 'gungame' ? `${r.target} armes` : r.mode === 'lives' ? `${r.target} vie(s)` : isFfa(r.mode) ? `${r.target} éliminations` : `premier à ${r.target} manches`} · bots ${DIFF_LABEL[r.difficulty]}${r.state === 'playing' ? ' · EN JEU' : ''}`;
   document.querySelector('.room-grid').classList.toggle('ffa', isFfa(r.mode));
   $('team-alpha').querySelector('h3').textContent = isFfa(r.mode) ? 'JOUEURS' : r.mode === 'duel' ? 'DUELLISTE 1' : 'ÉQUIPE ALPHA';
   $('team-beta').querySelector('h3').textContent = r.mode === 'duel' ? 'DUELLISTE 2' : 'ÉQUIPE OMÉGA';
@@ -228,7 +230,7 @@ function renderRoom() {
     const a = AGENTS[m.agent];
     const other = !m.isBot && m.id !== state.myId;
     return `<div class="member ${m.id === state.myId ? 'me' : ''}" style="--c:${a?.color}">${agentIconHTML(m.agent)}
-      <div class="mn">${m.level ? `<span class="mlvl">${m.level}</span>` : ''}${m.clan ? `<span class="clan-tag">[${esc(m.clan)}]</span> ` : ''}<span class="${m.account ? 'link' : ''}" ${m.account ? `data-prof="${esc(m.name)}"` : ''}>${esc(m.name)}</span> ${m.id === r.hostId ? '<span class="host">★ HÔTE</span>' : ''}${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''}<div class="ma">${a?.name || ''} · ${a?.role || ''}</div></div>
+      <div class="mn">${m.level ? `<span class="mlvl">${m.level}</span>` : ''}${m.clan ? `<span class="clan-tag">[${esc(m.clan)}]</span> ` : ''}<span class="${m.account ? 'link' : ''}" ${m.account ? `data-prof="${esc(m.name)}"` : ''}>${profile.settings.streamer && m.id !== state.myId && !m.isBot ? 'Joueur' : esc(m.name)}</span> ${m.id === r.hostId ? '<span class="host">★ HÔTE</span>' : ''}${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''}<div class="ma">${a?.name || ''} · ${a?.role || ''}</div></div>
       ${other ? `<button class="x rep" data-report="${esc(m.name)}" title="Signaler ce joueur">⚑</button>` : ''}
       ${m.isBot ? (host ? `<button class="x" data-rm="${m.id}" title="Retirer">✕</button>` : '<span class="muted">BOT</span>') : (m.ready ? '<span class="rdy">PRÊT</span>' : '')}</div>`;
   };
@@ -252,7 +254,8 @@ function renderRoom() {
   $('rs-map').innerHTML = maps.map(id => `<option value="${id}">${MAP_INFO[id].name} — ${MAP_INFO[id].subtitle}</option>`).join('');
   $('rs-map').value = r.mapId;
   $('rs-mode').value = r.mode;
-  $('rs-target').innerHTML = TARGETS[r.mode].map(t => `<option value="${t}">${r.mode === 'gungame' ? t + ' armes (fixe)' : isFfa(r.mode) ? t + ' éliminations' : 'Premier à ' + t + ' manches'}</option>`).join('');
+  document.querySelectorAll('[data-opt]').forEach(el => { el.checked = !!r.opts?.[el.dataset.opt]; });
+  $('rs-target').innerHTML = TARGETS[r.mode].map(t => `<option value="${t}">${r.mode === 'gungame' ? t + ' armes (fixe)' : r.mode === 'lives' ? t + ' vie(s) par joueur' : isFfa(r.mode) ? t + ' éliminations' : 'Premier à ' + t + ' manches'}</option>`).join('');
   if (!TARGETS[r.mode].includes(r.target)) $('rs-target').insertAdjacentHTML('beforeend', `<option value="${r.target}">${r.target}</option>`);
   $('rs-target').value = r.target;
   $('rs-diff').value = r.difficulty;
@@ -292,6 +295,7 @@ $('room-leave').onclick = () => net.send('leaveRoom');
 $('room-ready').onclick = () => { const me = state.room?.members.find(m => m.id === state.myId); net.send('setReady', { ready: !me?.ready }); };
 $('room-start').onclick = () => { SFX.initAudio(); net.send('start'); };
 $('rs-fill').onclick = () => net.send('fillBots');
+document.querySelectorAll('[data-opt]').forEach(el => { el.onchange = () => net.send('roomSettings', { opts: { [el.dataset.opt]: el.checked } }); });
 for (const [id, key] of [['rs-map', 'mapId'], ['rs-mode', 'mode'], ['rs-target', 'target'], ['rs-diff', 'difficulty']]) $(id).onchange = e => net.send('roomSettings', { [key]: e.target.value });
 
 // ======================= PARTIE =======================
@@ -299,9 +303,20 @@ net.on('matchStart', m => {
   document.getElementById('mmodal').classList.remove('show');
   if (state.game) state.game.destroy();
   $('menu').classList.remove('active');
-  state.game = new Game(net, { ...m, guest: state.guest }, () => exitGame());
-  state.game.lock();
+  state.game = new Game(net, { ...m, guest: state.guest, host: !!(state.room && state.room.hostId === state.myId && state.room.private && !state.room.tournament) }, () => exitGame());
+  state.game.onLowFps = () => notify({ kind: 'PERFORMANCES', text: 'Le jeu manque de fluidité sur cet appareil. Activer le préréglage « PC faible » ?', ms: 20000, actions: [['Activer', () => { applyPreset('low'); toast('Préréglage « PC faible » activé (complet à la prochaine partie).', 4000); }], ['Non merci', () => { profile.settings.lowFpsTip = false; save(); }]] });
+  if (!m.spectate) state.game.lock();
 });
+// observation staff : lien /?observer=<id> ouvert depuis le panneau d'administration
+// lien de profil partageable : https://…/#profil=Pseudo
+net.on('welcome', () => { const mm = location.hash.match(/^#profil=([A-Za-z0-9_\-]{3,16})$/); if (mm) { setTimeout(() => viewProfile(decodeURIComponent(mm[1])), 600); try { history.replaceState(null, '', location.pathname + location.search); } catch { /* */ } } });
+const specParam = (() => { try { return new URLSearchParams(location.search).get('observer'); } catch { return null; } })();
+net.on('welcome', m => {
+  if (!specParam || m.guest) { if (specParam && m.guest) toast('Connecte-toi avec ton compte staff pour observer une partie.', 6000); return; }
+  setTimeout(() => net.send('spectate', { id: specParam }), 300);
+  try { history.replaceState(null, '', location.pathname); } catch { /* */ }
+});
+net.on('specEnd', m => { if (state.game?.spec) { state.game.destroy(); exitGame(); } toast(m.text || 'Observation terminée.', 4000); });
 function exitGame() {
   state.game = null;
   $('menu').classList.add('active');
@@ -372,7 +387,18 @@ function renderAgents() {
 $('agents-list').onclick = e => { const r = e.target.closest('.agent-row'); if (r) { state.agentView = r.dataset.id; renderAgents(); } };
 
 // ======================= COLLECTION =======================
+function renderShop() {
+  const el = $('daily-shop'); if (!el) return;
+  const d = state.shop;
+  if (!d) { el.innerHTML = '<div class="muted small">Chargement de la boutique du jour…</div>'; return; }
+  const left = Math.max(0, d.resetAt - Date.now()), h = Math.floor(left / 3600000), mn = Math.floor(left % 3600000 / 60000);
+  el.innerHTML = `<div class="shop-head"><b>BOUTIQUE DU JOUR</b> <span class="muted small">-40 % · renouvelée dans ${h} h ${mn} min</span></div><div class="shop-items">${d.items.map(i => { const s = SKINS.find(x => x.id === i.id); const owned = profile.owned.includes(i.id); return `<div class="shop-item"><div class="sw" style="background:linear-gradient(135deg, ${s?.body} 0 55%, ${s?.accent} 55%)"></div><b>${esc(i.name)}</b><span><s class="muted">${i.old}</s> <span class="gem small"></span> ${i.price}</span>${owned ? '<span class="badge-ok small">POSSÉDÉ</span>' : state.guest ? '<span class="muted small">compte requis</span>' : `<button class="btn small primary" data-shop="${esc(i.id)}">ACHETER</button>`}</div>`; }).join('')}</div>`;
+  el.onclick = e => { const b = e.target.closest('[data-shop]'); if (b && confirm('Acheter ce skin ?')) net.send('buyShop', { id: b.dataset.shop }); };
+}
+net.on('shop', m => { state.shop = m; renderShop(); });
 function renderCollection() {
+  if (!state.shop || Date.now() > state.shop.resetAt) net.send('shop');
+  renderShop();
   $('coll-weapons').innerHTML = SKINNABLE.map(w => `<button class="${w === state.collWeapon ? 'active' : ''}" data-w="${w}">${WEAPONS[w].name.toUpperCase()}<small>${SKINS.find(s => s.id === profile.equipped[w])?.name || 'Standard'}</small></button>`).join('');
   const sel = state.collSkin || profile.equipped[state.collWeapon] || 'default';
   $('coll-skins').innerHTML = SKINS.map(s => {
@@ -421,8 +447,33 @@ function equipLocal(id) {
 }
 
 // ======================= PARAMÈTRES =======================
+// réglages qui s'appliquent à toute la page (menus et partie)
+function applyGlobalSettings() {
+  const st = profile.settings, b = document.body;
+  b.style.setProperty('--hs', st.hudScale || 1);
+  b.style.setProperty('--chs', st.chatSize || 1);
+  b.classList.toggle('reduce-motion', !!st.reduceMotion);
+  b.classList.toggle('streamer', !!st.streamer);
+  b.dataset.cb = st.colorblind || 'none';
+  for (const [k, c] of [['volWeapons', 'weapons'], ['volSteps', 'steps'], ['volAbilities', 'abilities'], ['volUi', 'ui'], ['volNotif', 'notif']]) SFX.setCategoryVolume(c, st[k] ?? 1);
+}
+applyGlobalSettings();
+let syncT = null, applyingSync = false;
+// réglages du compte plus récents que ceux de cet appareil : on les reprend
+net.on('settingsSync', m => {
+  if (!profile.settings.syncAccount || !(m.at > (profile.settingsAt || 0))) return;
+  const clean = sanitizeSettings(m.settings); const keys = clean.keys; delete clean.keys;
+  if (clean.syncAccount === false) return;
+  Object.assign(profile.settings, clean); if (keys) Object.assign(profile.settings.keys, keys);
+  profile.settingsAt = m.at; save();
+  applyingSync = true; document.dispatchEvent(new CustomEvent('settings-changed', { detail: { key: '*' } })); applyingSync = false;
+  toast('Tes paramètres ont été récupérés depuis ton compte.', 3500);
+});
 document.addEventListener('settings-changed', e => {
   const k = e.detail?.key;
+  applyGlobalSettings();
+  // sauvegarde des réglages sur le compte (regroupée)
+  if (!applyingSync && !state.guest && profile.settings.syncAccount) { clearTimeout(syncT); syncT = setTimeout(() => { profile.settingsAt = Date.now(); save(); net.send('saveSettings', { settings: profile.settings, at: profile.settingsAt }); }, 2500); }
   if (k === 'vol' || k === '*') SFX.setVolume(profile.settings.vol);
   if ((k === 'keys' || k === '*') && state.tab === 'agents') renderAgents();
 });

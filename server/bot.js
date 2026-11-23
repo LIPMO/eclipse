@@ -9,6 +9,8 @@ export const DIFF = {
   normal: { react: 0.42, aimErr: 0.03,  turn: 8,  head: 0.18, fov: 1.25, abil: 0.55, hear: 14 },
   hard:   { react: 0.24, aimErr: 0.016, turn: 13, head: 0.32, fov: 1.4,  abil: 0.85, hear: 22 },
   expert: { react: 0.17, aimErr: 0.011, turn: 17, head: 0.45, fov: 1.55, abil: 1,    hear: 30 },
+  // champ de tir : cibles mobiles qui ne tirent pas
+  cible:  { react: 99,   aimErr: 1,     turn: 4,  head: 0,    fov: 1.2,  abil: 0,    hear: 0, passive: true },
 };
 export const DIFFICULTIES = Object.keys(DIFF);
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
@@ -245,7 +247,7 @@ export class BotBrain {
       p.yaw += angDiff(yawT, p.yaw) * k;
       p.pitch += (pitchT - p.pitch) * k;
       const aimed = Math.abs(angDiff(yawT, p.yaw)) < 0.12;
-      if (T > this.reactUntil && aimed && p.blindEnd < T && w) {
+      if (!cfg.passive && T > this.reactUntil && aimed && p.blindEnd < T && w) {
         const d = WEAPONS[w.id];
         if (d.type === 'melee' && dist > 2.4) { wishX = to[0] / dist; wishZ = to[2] / dist; }
         else {
@@ -317,7 +319,7 @@ export class BotBrain {
       this.vel[0] = this.dashDir[0] / n * MOVE.dashSpeed; this.vel[2] = this.dashDir[1] / n * MOVE.dashSpeed;
       if (this.dashT <= 0) this.dashDir = null;
     }
-    this.vel[1] -= MOVE.gravity * dt;
+    this.vel[1] -= MOVE.gravity * (m.opts?.lowGrav ? 0.45 : 1) * dt;
     this.onGround = collideMove(p.pos, this.vel, dt, m.allBoxes());
     // anti-blocage
     this.stuckT += dt;

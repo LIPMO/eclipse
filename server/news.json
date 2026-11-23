@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.7.0",
+    "date": "2026-11-23",
+    "title": "Nouveau mode Dernier debout, champ de tir, profils et paramètres repensés",
+    "items": [
+      "Nouveau mode « Dernier debout » : chacun pour soi avec des vies limitées, le dernier en jeu gagne. Et un champ de tir (Entraînement → Champ de tir) avec des cibles qui ne tirent pas.",
+      "Fin de partie : statistiques détaillées (précision, série, arme favorite), vote pour la prochaine carte, bouton revanche et recommandations des joueurs (fair-play, meneur, coéquipier).",
+      "En partie : émotes (V), inspection de l'arme (G), chiffres de dégâts, séries annoncées, premier sang, prime sur le meneur en Mêlée, rapport de combat à la mort, alerte de grenade, flèche vers le Noyau, MVP de chaque manche.",
+      "Options de salon : munitions infinies, sans capacités, têtes uniquement, gravité basse, carte aléatoire, pause tactique.",
+      "Paramètres : recherche, 3 profils de réglages, code d'export, sauvegarde sur le compte, volume par catégorie, limite de FPS, préréglages graphiques, filtres daltoniens, mode streamer, taille de l'interface, et plus.",
+      "Profil : bannières, devise, vitrine de succès, statistiques par mode et par arme, historique des tournois, lien de profil à partager, comparaison avec un ami.",
+      "Amis et clans : favoris, « vu il y a », joueurs récents et suggestions, cadeau d'Éclats, recherche d'équipe, mission de clan hebdomadaire, message du jour, classement de la semaine.",
+      "Boutique du jour : 3 skins à -40 % chaque jour (onglet Collection).",
+      "Modération : observation des parties en direct, anti-triche réglable, historique des sanctions, alertes Discord et nouveaux outils pour l'équipe."
+    ]
+  },
+  {
     "version": "1.6.0",
     "date": "2026-11-22",
     "title": "Gun Game, killcam, clans, tournois et version téléphone",

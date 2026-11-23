@@ -1,5 +1,5 @@
 // Clans (onglet CLAN) : créer, inviter, rôles, chat de clan, classement des clans.
-import { notify, openModal, closeModal, viewProfile, hub } from './hub.js';
+import { notify, openModal, closeModal, viewProfile, hub, emojify } from './hub.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,7 +20,7 @@ export function initClans(ctx) {
   });
   net.on('clanNotice', m => toast(m.text, 4000));
   net.on('clanInvite', m => {
-    notify({ kind: 'CLAN', text: `${m.from} t'invite à rejoindre le clan [${m.tag}] ${m.name}.`, ms: 30000, actions: [['Rejoindre', () => net.send('clanAccept', { tag: m.tag })], ['Refuser', () => net.send('clanDecline', { tag: m.tag })]] });
+    notify({ kind: 'CLAN', type: 'clan', text: `${m.from} t'invite à rejoindre le clan [${m.tag}] ${m.name}.`, ms: 30000, actions: [['Rejoindre', () => net.send('clanAccept', { tag: m.tag })], ['Refuser', () => net.send('clanDecline', { tag: m.tag })]] });
   });
   net.on('clanChat', m => {
     C.chat.push({ ...m, t: Date.now() });
@@ -38,7 +38,7 @@ function updateBadge() {
   b.textContent = n ? String(n) : '';
 }
 
-export function openClanTab() { C.unread = 0; updateBadge(); net.send('clanGet'); net.send('clanLeaderboard'); renderClan(); }
+export function openClanTab() { C.unread = 0; updateBadge(); net.send('clanGet'); net.send('clanLeaderboard', { kind: C.lbKind || 'all' }); renderClan(); }
 
 export function renderClan() {
   const root = $('clan-root'); if (!root) return;
@@ -59,10 +59,12 @@ export function renderClan() {
     const on = cl.members.filter(m => m.online).length;
     left = `<div class="panel cl-head"><div class="cl-tag">[${esc(cl.tag)}]</div><div class="grow"><h2>${esc(cl.name)}</h2>
         <div class="muted small">${cl.members.length}/${cl.max} membres · ${on} en ligne · ${cl.xp.toLocaleString('fr-FR')} XP · ${cl.wins} victoires${cl.rank ? ` · ${cl.rank}<sup>e</sup> au classement` : ''} · ton rôle : <b>${ROLE[cl.myRole]}</b></div>
-        ${cl.desc ? `<p class="cl-desc">${esc(cl.desc)}</p>` : ''}</div></div>
+        ${cl.desc ? `<p class="cl-desc">${esc(cl.desc)}</p>` : ''}${cl.motd ? `<p class="cl-motd">📢 ${esc(cl.motd)}</p>` : ''}</div></div>
+      <div class="panel"><h3>MISSION DE LA SEMAINE</h3><p class="small">Faire <b>${cl.week.goal}</b> éliminations ensemble cette semaine : +100 Éclats pour chaque membre et +500 XP pour le clan.</p><div class="pf-bar"><i style="width:${Math.min(100, cl.week.kills / cl.week.goal * 100)}%"></i></div><div class="muted small">${cl.week.kills} / ${cl.week.goal} ${cl.week.done ? '· <b class="gold">accomplie ✔</b>' : ''} · ${cl.week.xp.toLocaleString('fr-FR')} XP cette semaine</div></div>
       ${staff ? `<div class="panel"><h3>INVITER UN JOUEUR</h3><form id="cl-inv" class="fr-add"><input id="cl-inv-name" maxlength="16" placeholder="Pseudo"><button class="btn primary" type="submit">INVITER</button></form>
         ${cl.invites?.length ? `<p class="muted small" style="margin-top:8px">En attente : ${cl.invites.map(n => `${esc(n)} <a href="#" data-c="uninvite" data-n="${esc(n)}" title="Annuler">✕</a>`).join(' · ')}</p>` : ''}
-        <form id="cl-desc" class="fr-add"><input id="cl-desc-in" maxlength="140" placeholder="Description du clan" value="${esc(cl.desc)}"><button class="btn ghost" type="submit">MODIFIER</button></form></div>` : ''}
+        <form id="cl-desc" class="fr-add"><input id="cl-desc-in" maxlength="140" placeholder="Description du clan" value="${esc(cl.desc)}"><button class="btn ghost" type="submit">MODIFIER</button></form>
+        <form id="cl-motd" class="fr-add"><input id="cl-motd-in" maxlength="140" placeholder="Message du jour (affiché aux membres à la connexion)" value="${esc(cl.motd || '')}"><button class="btn ghost" type="submit">PUBLIER</button></form></div>` : ''}
       <div class="panel"><h3>MEMBRES</h3>
         ${cl.members.map(m => `<div class="fr-row ${m.online ? 'on' : ''}"><span class="dot ${m.online ? 'on' : ''}"></span><div class="fr-who"><b class="link" data-c="profile" data-n="${esc(m.name)}">${ROLE_ICON[m.role]} ${esc(m.name)}</b> <span class="muted small">niv. ${m.level} · ${ROLE[m.role]} · ${m.xp.toLocaleString('fr-FR')} XP apportée</span></div><span class="grow"></span>
           ${owner && m.role !== 'owner' ? `${m.role === 'member' ? `<button class="btn small ghost" data-c="role" data-r="officer" data-n="${esc(m.name)}">PROMOUVOIR</button>` : `<button class="btn small ghost" data-c="role" data-r="member" data-n="${esc(m.name)}">RÉTROGRADER</button>`}<button class="btn small ghost" data-c="role" data-r="owner" data-n="${esc(m.name)}" title="Donner le rôle de chef">★</button>` : ''}
@@ -72,13 +74,14 @@ export function renderClan() {
   }
   root.innerHTML = `<div class="fr-grid"><div>${left}</div><div>
       ${cl ? `<div class="panel fr-mp"><h3>CHAT DU CLAN</h3><div id="cl-log" class="mp-log"></div><form id="cl-chat" class="fr-add"><input id="cl-text" maxlength="200" placeholder="Message au clan…"><button class="btn primary" type="submit">ENVOYER</button></form><p class="muted small">En partie ou dans un salon, écris <b>/c message</b> pour parler à ton clan.</p></div>` : ''}
-      <div class="panel"><h3>CLASSEMENT DES CLANS</h3><div id="cl-lb"></div><p class="muted small">L'XP gagnée en partie par chaque membre s'ajoute à celle de son clan.</p></div>
+      <div class="panel"><h3>CLASSEMENT DES CLANS <span class="seg small" id="cl-lbk"><button data-c="lbk" data-k="all" class="${C.lbKind !== 'week' ? 'active' : ''}">TOUT</button><button data-c="lbk" data-k="week" class="${C.lbKind === 'week' ? 'active' : ''}">SEMAINE</button></span></h3><div id="cl-lb"></div><p class="muted small">L'XP gagnée en partie par chaque membre s'ajoute à celle de son clan.</p></div>
     </div></div>`;
   renderClanChat(); renderClanLb();
   const f = id => $(id);
   if (f('cl-create')) f('cl-create').onsubmit = e => { e.preventDefault(); net.send('clanCreate', { tag: f('cl-tag').value.trim().toUpperCase(), name: f('cl-name').value.trim() }); };
   if (f('cl-inv')) f('cl-inv').onsubmit = e => { e.preventDefault(); const n = f('cl-inv-name').value.trim(); if (n) net.send('clanInvite', { name: n }); f('cl-inv-name').value = ''; };
   if (f('cl-desc')) f('cl-desc').onsubmit = e => { e.preventDefault(); net.send('clanDesc', { desc: f('cl-desc-in').value }); };
+  if (f('cl-motd')) f('cl-motd').onsubmit = e => { e.preventDefault(); net.send('clanMotd', { motd: f('cl-motd-in').value }); };
   if (f('cl-chat')) f('cl-chat').onsubmit = e => { e.preventDefault(); const t = f('cl-text').value.trim(); if (t) net.send('clanChat', { text: t }); f('cl-text').value = ''; };
   root.onclick = e => {
     const b = e.target.closest('[data-c]'); if (!b) return;
@@ -94,12 +97,13 @@ export function renderClan() {
     if (c === 'leave' && confirm(C.data?.clan?.myRole === 'owner' ? 'Quitter le clan ? Un officier (ou le plus ancien membre) deviendra chef.' : 'Quitter le clan ?')) net.send('clanLeave');
     if (c === 'disband' && confirm('Dissoudre définitivement le clan ? Tous les membres seront retirés.')) net.send('clanDisband');
     if (c === 'lbview') net.send('clanView', { tag: t });
+    if (c === 'lbk') { C.lbKind = b.dataset.k; net.send('clanLeaderboard', { kind: C.lbKind }); renderClan(); }
   };
 }
 
 function renderClanChat() {
   const log = $('cl-log'); if (!log) return;
-  log.innerHTML = C.chat.map(m => m.from ? `<div class="in"><b>${esc(m.from)}</b> : ${esc(m.text)}</div>` : `<div class="muted"><i>${esc(m.text)}</i></div>`).join('') || '<div class="muted small">Aucun message pour l\'instant.</div>';
+  log.innerHTML = C.chat.map(m => m.from ? `<div class="in"><b>${esc(m.from)}</b> : ${esc(emojify(m.text))}</div>` : `<div class="muted"><i>${esc(m.text)}</i></div>`).join('') || '<div class="muted small">Aucun message pour l\'instant.</div>';
   log.scrollTop = log.scrollHeight;
 }
 

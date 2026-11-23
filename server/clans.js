@@ -66,7 +66,9 @@ export class Clans {
       return { name: m.name, role: this.roleOf(cl, k), level: levelOf(m.xp || 0), online: !!oc, xp: cl.contrib?.[k] || 0 };
     }).filter(Boolean).sort((a, b) => (b.online - a.online) || ({ owner: 0, officer: 1, member: 2 }[a.role] - { owner: 0, officer: 1, member: 2 }[b.role]) || a.name.localeCompare(b.name));
     const me = viewerKey && cl.members.includes(viewerKey);
-    const out = { tag: cl.tag, name: cl.name, desc: cl.desc || '', created: cl.created, xp: cl.xp || 0, wins: cl.wins || 0, matches: cl.matches || 0, members, max: CLAN.maxMembers, rank: this.rankOf(cl) };
+    const wk = this.week(cl);
+    const out = { tag: cl.tag, name: cl.name, desc: cl.desc || '', motd: cl.motd || '', created: cl.created, xp: cl.xp || 0, wins: cl.wins || 0, matches: cl.matches || 0, members, max: CLAN.maxMembers, rank: this.rankOf(cl),
+      week: { xp: wk.xp, kills: wk.kills, goal: this.missionGoal(cl), done: wk.done } };
     if (me) { out.myRole = this.roleOf(cl, viewerKey); if (out.myRole !== 'member') out.invites = cl.invites.map(k => this.A.get(k)?.name).filter(Boolean); }
     return out;
   }
@@ -82,11 +84,15 @@ export class Clans {
   refreshTag(key) { const c = this.online(key); if (c) { c.clanTag = this.tagOf(key); this.ctx.onTagChange?.(c); } }
 
   rankOf(cl) { const rows = this.rows(); const i = rows.findIndex(r => r.tag === cl.tag); return i < 0 ? null : i + 1; }
-  rows() {
-    if (this.lbCache && Date.now() - this.lbCache.t < 10000) return this.lbCache.rows;
-    const rows = Object.values(this.clans).map(cl => ({ tag: cl.tag, name: cl.name, xp: cl.xp || 0, wins: cl.wins || 0, members: cl.members.length }))
+  rows(kind = 'all') {
+    this.lbCache ||= {};
+    const hit = this.lbCache[kind];
+    if (hit && Date.now() - hit.t < 10000) return hit.rows;
+    const val = cl => kind === 'week' ? this.week(cl).xp : cl.xp || 0;
+    const rows = Object.values(this.clans).map(cl => ({ tag: cl.tag, name: cl.name, xp: val(cl), wins: cl.wins || 0, members: cl.members.length }))
+      .filter(r => kind !== 'week' || r.xp > 0)
       .sort((a, b) => b.xp - a.xp || b.wins - a.wins || a.tag.localeCompare(b.tag));
-    this.lbCache = { t: Date.now(), rows };
+    this.lbCache[kind] = { t: Date.now(), rows };
     return rows;
   }
 
@@ -123,6 +129,21 @@ export class Clans {
     cl.desc = desc; this.save(); this.pushAll(cl);
   }
 
+  // mission de la semaine : un objectif d'éliminations collectif, récompensé une fois par semaine
+  weekKey() { const d = new Date(); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day); return d.toISOString().slice(0, 10); }
+  week(cl) { const k = this.weekKey(); if (!cl.week || cl.week.key !== k) cl.week = { key: k, xp: 0, kills: 0, done: false }; return cl.week; }
+  missionGoal(cl) { return 60 + cl.members.length * 25; }
+  m_clanMotd(c, u, msg) {
+    const cl = this.clanOf(u); const key = this.A.key(u.name);
+    if (!cl || this.roleOf(cl, key) === 'member') return this.err(c, 'Seuls le chef et les officiers peuvent écrire le message du jour.');
+    const motd = clean(msg.motd, 140);
+    if (this.badWord(motd)) return this.err(c, 'Ce message contient un mot interdit.');
+    cl.motd = motd; this.save(); this.pushAll(cl);
+  }
+  onLogin(c, u) {
+    const cl = this.clanOf(u);
+    if (cl?.motd) setTimeout(() => this.send(c, { type: 'clanChat', from: null, tag: cl.tag, text: `Message du jour : ${cl.motd}` }), 1500);
+  }
   m_clanInvite(c, u, msg) {
     const cl = this.clanOf(u); const key = this.A.key(u.name);
     if (!cl || this.roleOf(cl, key) === 'member') return this.err(c, 'Seuls le chef et les officiers peuvent inviter.');
@@ -131,7 +152,7 @@ export class Clans {
     const tk = this.A.key(t.name);
     if (tk === key) return this.err(c, 'C\'est toi !');
     if (t.clan) return this.err(c, `${t.name} fait déjà partie d'un clan.`);
-    if ((t.blocked || []).includes(key)) return this.err(c, `${t.name} n'accepte pas tes invitations.`);
+    if ((t.blocked || []).includes(key) || t.blockInvites) return this.err(c, `${t.name} n'accepte pas les invitations.`);
     if (cl.members.length >= CLAN.maxMembers) return this.err(c, 'Ton clan est complet.');
     if (cl.invites.includes(tk)) return this.err(c, 'Invitation déjà envoyée.');
     if (cl.invites.length >= CLAN.maxInvites) return this.err(c, 'Trop d\'invitations en attente : annule-en quelques-unes.');
@@ -249,10 +270,11 @@ export class Clans {
     this.send(c, { type: 'clanView', clan: v });
   }
 
-  m_clanLeaderboard(c, u) {
-    const rows = this.rows();
+  m_clanLeaderboard(c, u, msg) {
+    const kind = msg?.kind === 'week' ? 'week' : 'all';
+    const rows = this.rows(kind);
     const mine = u.clan ? rows.findIndex(r => r.tag.toLowerCase() === u.clan) : -1;
-    this.send(c, { type: 'clanLeaderboard', rows: rows.slice(0, 50).map((r, i) => ({ pos: i + 1, ...r })), me: mine >= 0 ? { pos: mine + 1, ...rows[mine] } : null, total: rows.length });
+    this.send(c, { type: 'clanLeaderboard', kind, rows: rows.slice(0, 50).map((r, i) => ({ pos: i + 1, ...r })), me: mine >= 0 ? { pos: mine + 1, ...rows[mine] } : null, total: rows.length });
   }
 
   m_clanChat(c, u, msg) { this.chat(c, msg.text); }
@@ -276,9 +298,17 @@ export class Clans {
   systemMsg(cl, text) { for (const k of cl.members) { const oc = this.online(k); if (oc) this.send(oc, { type: 'clanChat', from: null, tag: cl.tag, text }); } }
 
   // ---- fin de partie : l'XP gagnée par les membres alimente le clan ----
-  onMatch(u, xpGain, won) {
+  onMatch(u, xpGain, won, kills = 0) {
     const cl = this.clanOf(u); if (!cl) return;
     const key = this.A.key(u.name);
+    const wk = this.week(cl);
+    wk.xp += Math.max(0, Math.round(xpGain || 0)); wk.kills += Math.max(0, kills | 0);
+    if (!wk.done && wk.kills >= this.missionGoal(cl)) {
+      wk.done = true; cl.xp = (cl.xp || 0) + 500;
+      for (const k of cl.members) { const m = this.A.get(k); if (m) { m.eclats = (m.eclats || 0) + 100; const oc = this.online(k); if (oc) this.send(oc, { type: 'profile', profile: this.A.publicProfile(m) }); } }
+      this.ctx.admin.economy?.('earn', 100 * cl.members.length);
+      this.systemMsg(cl, `Mission de la semaine accomplie (${wk.kills} éliminations) ! +100 Éclats pour chaque membre et +500 XP pour le clan.`);
+    }
     cl.xp = (cl.xp || 0) + Math.max(0, Math.round(xpGain || 0));
     cl.matches = (cl.matches || 0) + 1;
     if (won) cl.wins = (cl.wins || 0) + 1;

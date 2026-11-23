@@ -4,10 +4,11 @@ Jeu de tir tactique original, jouable dans le navigateur : agents à capacités,
 
 ## Contenu
 
-- **4 modes**
+- **5 modes**
   - **Assaut 5v5** : les attaquants posent le Noyau sur le site A ou B, les défenseurs le désamorcent. Économie, changement de côté à la mi-temps.
   - **Duel 1v1** : sur 3 petites cartes (FOSSE, CUBE, IGLOO). Victoire à l'élimination, 9000 crédits à chaque manche. Si le temps est écoulé, la manche revient au joueur qui a le plus de PV.
   - **Mêlée** : chacun pour soi, réapparition au bout de 3 s, toutes les armes gratuites.
+  - **Dernier debout** : chacun pour soi avec des vies limitées (3 par défaut) ; le dernier joueur encore en jeu gagne.
   - **Gun Game** : chacun pour soi, une arme par niveau (8 armes), chaque élimination donne la suivante ; le premier qui élimine au couteau gagne.
 - **Duel rapide** : un bouton apparie automatiquement deux joueurs et lance la partie.
 - **7 cartes** : DUNE, NÉON, GLACIER, TEMPLE (5v5) et FOSSE, CUBE, IGLOO (duel).
@@ -15,6 +16,9 @@ Jeu de tir tactique original, jouable dans le navigateur : agents à capacités,
 - **Killcam** des 3 dernières secondes avant la mort, **marqueur de position** au clic molette.
 - **Clans** (tag, rôles, chat de clan, classement) et **tournois** à élimination directe créés depuis l'administration.
 - **Version téléphone** : joystick, visée au doigt, boutons d'action réglables.
+- **Champ de tir**, émotes, vote de carte et revanche, options de salon (munitions infinies, têtes uniquement, gravité basse…).
+- **Profils** (bannière, devise, vitrine, statistiques par mode et par arme), joueurs récents, cadeaux, recommandations, boutique du jour.
+- **Paramètres** : recherche, profils de réglages, export par code, sauvegarde sur le compte, volumes par catégorie, filtres daltoniens, mode streamer.
 - **8 armes** (pistolets, PM, pompe, fusils, sniper avec lunette) et **10 skins**.
 - **Lobby** : liste des salons, équipes, choix de l'agent, chat, bots (3 difficultés).
 - **Comptes** : inscription et connexion. Mots de passe hachés (scrypt), session mémorisée 30 jours. Éclats, skins et statistiques sont sauvegardés sur le serveur. Un mode invité est aussi disponible.
@@ -123,6 +127,16 @@ Les données d'administration (bans, silences, signalements, configuration, stat
 **Système** : 106. sauvegarde complète téléchargeable · 107. redémarrage du serveur · 108. liste de l'équipe · 109. explication des rôles.
 
 **Sécurité** : 110. trois rôles avec permissions distinctes · 111. code d'installation pour le premier propriétaire · 112. limite des tentatives de connexion · 113. impossible d'agir sur un membre de rang égal ou supérieur · 114. vraie IP des joueurs derrière Cloudflare · 115. session admin séparée du jeu et actualisation automatique toutes les 3 secondes.
+
+### Observer une partie (spectateur staff)
+
+Dans **Joueurs connectés**, **Salons** ou **Anti-triche**, le bouton **👁 Regarder** ouvre le jeu dans un nouvel onglet et te place, invisible, dans la vue du joueur choisi. Il faut être connecté au jeu avec ton compte staff. Le panneau à droite affiche son niveau, son agent, son arme, ses munitions, sa précision, ses tirs à la tête et ses alertes. **X** active les rayons X (tous les ennemis visibles à travers les murs), **V** passe à la 3e personne, **← →** changent de joueur. Tu peux avertir, rendre muet, expulser ou bannir 24 h sans quitter l'observation. Seul le gameplay est transmis : ce n'est pas une capture de l'écran du joueur.
+
+### Anti-triche et alertes Discord
+
+L'onglet **Anti-triche** a un bouton pour désactiver ou réactiver l'anti-triche (à réserver aux tests). Dans **Configuration**, tu règles sa sensibilité et tu peux coller l'adresse d'un webhook Discord (Paramètres du salon → Intégrations → Webhooks) pour recevoir les alertes, signalements, bans et vainqueurs de tournois. Seules les adresses `https://discord.com/api/webhooks/…` sont acceptées.
+
+Variable facultative : `MAX_ACCOUNTS_PER_IP` (3 par défaut) fixe la limite d'inscriptions par adresse IP sur 24 h au premier lancement ; elle se change ensuite dans la configuration.
 
 ## Installer sur un serveur Linux avec un tunnel Cloudflare
 
@@ -264,6 +278,7 @@ Commandes par défaut, modifiables dans PARAMÈTRES > TOUCHES :
 | Y · T | Chat d'équipe · messages radio |
 | Clic molette | Marquer une position pour l'équipe |
 | Espace (après la mort) | Passer la killcam |
+| V · G | Émotes · inspecter l'arme |
 
 Sur téléphone : joystick à gauche, glisser à droite pour viser, boutons d'action à l'écran (Paramètres → Tactile pour la taille, l'opacité et la sensibilité).
 

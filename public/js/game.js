@@ -1,18 +1,37 @@
 // Client de jeu : rendu, prédiction du mouvement local, tir, capacités, HUD.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { parseMap, CELL } from '/shared/maps.js';
+import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
+const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
 import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER } from '/shared/data.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm } from '/shared/physics.js';
 import { envTexture, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
 import * as SFX from './audio.js';
 import { TouchControls, isTouchDevice } from './touch.js';
+import { emojify } from './hub.js';
 import { profile, save } from './store.js';
 import { mountSettings, isRebinding, applyCrosshair, keyName } from './settings.js';
 import { WEAPON_UNLOCK, RADIO, REPORT_REASONS } from '/shared/progress.js';
 
 const $ = id => document.getElementById(id);
-const ALLY = '#19e3c4', ENEMY = '#ff4f6d';
+let ALLY = '#19e3c4';
+const ENEMY = '#ff4f6d';
+const EMOTES = ['👍 GG', '😂 Mdr', '🔥 En feu !', '😮 Oups', '👏 Bien joué', '😎 Trop facile', '🙏 Désolé', '💀 RIP'];
+const ULTS = new Set(['overdrive', 'megasmoke', 'hunt', 'fortress', 'phantom', 'firestorm', 'blizzard']);
+const TIPS = [
+  'Clic molette : marque une position pour ton équipe. Vise un ennemi pour une alerte rouge.',
+  'Marcher (Maj) rend tes pas silencieux : les ennemis ne t\'entendent plus.',
+  'Accroupi, ta précision augmente de 25 %.',
+  'Le Longbow tue en un tir à la tête… mais il faut viser avec la lunette.',
+  'Après ta mort, la killcam te montre d\'où venait le tir.',
+  'Tes capacités se rechargent en Mêlée : utilise-les souvent !',
+  'En Assaut, garde de l\'argent pour la manche suivante si tu perds.',
+  'Une série de 5 éliminations est annoncée à tout le serveur.',
+  'En Mêlée, abattre le meneur 👑 rapporte 150 points de bonus.',
+  'Touche V : émotes rapides. Touche G : inspecter ton arme.',
+  'Rejoins un clan pour faire grimper son classement à chaque partie.',
+  'Le champ de tir (Entraînement → Champ de tir) est parfait pour t\'échauffer.',
+];
 const ICONS = { smoke: '◍', molotov: '✹', flash: '✦', dash: '➤', heal: '✚', recon: '◎', wall: '▦', shield: '⛉', blink: '⇢', invis: '◌', overdrive: 'ϟ', megasmoke: '☁', hunt: '◉', fortress: '⛨', phantom: '☾', firestorm: '⚡', haste: '»', cryo: '❄', blizzard: '❅' };
 const REASONS = { elim: 'ÉQUIPE ADVERSE ÉLIMINÉE', time: 'TEMPS ÉCOULÉ', explode: 'NOYAU DÉTONÉ', defuse: 'NOYAU DÉSAMORCÉ', hp: 'TEMPS ÉCOULÉ — AVANTAGE PV', draw: 'TEMPS ÉCOULÉ — PV IDENTIQUES', admin: 'MANCHE ANNULÉE PAR L\'ÉQUIPE' };
 const VM_OFFSET = {
@@ -31,6 +50,7 @@ export class Game {
     this.net = net;
     this.onExit = onExit;
     this.myId = start.you;
+    ALLY = ST().allyColor || '#19e3c4';
     this.mode = start.mode;
     this.isGuest = !!start.guest;
     this.target = start.target;
@@ -67,6 +87,12 @@ export class Game {
     this.unsubs = [];
     this.alive = true;
     this.killedBy = null;
+    // spectateur staff : vue du joueur observé, aucune entrée envoyée au serveur
+    this.opts = start.opts || {};
+    this.isHost = !!start.host;
+    this.roundHistory = [];
+    this.bubbles = [];
+    this.spec = start.spectate ? { xray: false, third: false, buf: [], info: null, ghost: null } : null;
 
     this.initRenderer();
     this.buildMap();
@@ -74,7 +100,8 @@ export class Game {
     this.initHUD();
     this.bindInput();
     this.bindNet();
-    if (isTouchDevice()) this.touch = new TouchControls(this);
+    if (isTouchDevice() && !this.spec) this.touch = new TouchControls(this);
+    if (this.spec) this.initSpectator();
     this.applyRoster(start.players);
     $('game').classList.add('active');
     this.onResize();
@@ -108,7 +135,7 @@ export class Game {
 
   onResize() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ST().quality === 'high' ? 1.5 : 1) * ST().renderScale);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ST().gfxPreset === 'ultra' ? 2 : ST().quality === 'high' ? 1.5 : 1) * ST().renderScale);
     this.renderer.setSize(w, h, false);
     this.aspect = w / h;
     this.camera.aspect = this.aspect;
@@ -379,6 +406,14 @@ export class Game {
   // ======================= HUD =======================
   initHUD() {
     applyCrosshair($('crosshair'));
+    $('abilities').style.display = this.opts.noAbilities ? 'none' : '';
+    for (const id of ['streak', 'leader', 'ult-warn', 'combat']) $(id).textContent = '';
+    $('end-vote').innerHTML = '';
+    document.querySelectorAll('.end-endorse').forEach(x => x.remove());
+    $('p-tacpause').style.display = this.isHost ? '' : 'none';
+    $('p-tacpause').onclick = () => { this.net.send('tacPause'); $('p-tacpause').style.display = 'none'; this.lock(); };
+    if (!this.spec) { const tip = $('tip'); tip.textContent = '💡 ' + TIPS[(Math.random() * TIPS.length) | 0]; tip.classList.add('show'); clearTimeout(this.tipT); this.tipT = setTimeout(() => tip.classList.remove('show'), 9000); }
+    $('netgraph').style.display = ST().netGraph ? 'block' : 'none';
     $('fps').style.display = ST().fps ? 'block' : 'none';
     $('minimap').style.display = ST().minimap ? 'block' : 'none';
     $('killfeed').innerHTML = '';
@@ -457,7 +492,13 @@ export class Game {
     this.cmT = setTimeout(() => { $('center-msg').textContent = ''; }, dur * 1000);
   }
 
-  nameOf(id) { return this.roster.get(id)?.name || '???'; }
+  nameOf(id) {
+    const r = this.roster.get(id);
+    if (!r) return '???';
+    // mode streamer : les pseudos des autres joueurs sont remplacés
+    if (ST().streamer && id !== this.myId && !r.bot) return 'Joueur ' + ([...this.roster.keys()].filter(k => !this.roster.get(k).bot).indexOf(id) + 1);
+    return r.name;
+  }
 
   addKillfeed(m) {
     const kf = $('killfeed');
@@ -476,10 +517,14 @@ export class Game {
     const log = $('game-chat').querySelector('.log');
     const d = document.createElement('div');
     const myTeam = this.roster.get(this.myId)?.team;
+    const sys = m.from === 'SYSTÈME' || m.system;
+    if (!sys && ST().chatMode === 'off') return;
+    if (!sys && ST().chatMode === 'team' && !m.teamOnly && !m.radio) return;
+    if (!sys && ST().streamer) m = { ...m, from: [...this.roster.values()].find(r => r.name === m.from && r.id !== this.myId) ? this.nameOf([...this.roster.values()].find(r => r.name === m.from).id) : m.from };
     const color = m.from === 'SYSTÈME' ? '#ffcf5a' : isFfa(this.mode) ? '#c4b0ff' : m.team === myTeam ? ALLY : ENEMY;
     const tag = m.radio ? '<span class="tag radio">RADIO</span>' : m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : '';
     d.className = m.radio ? 'radio' : m.teamOnly ? 'team' : '';
-    d.innerHTML = `${tag}<b style="color:${color}">${esc(m.from)}</b> : ${esc(m.text)}`;
+    d.innerHTML = `${tag}<b style="color:${color}">${esc(m.from)}</b> : ${esc(emojify(m.text))}`;
     log.appendChild(d);
     while (log.children.length > 8) log.firstChild.remove();
   }
@@ -494,7 +539,7 @@ export class Game {
   addClanChat(m) {
     const log = $('game-chat').querySelector('.log');
     const d = document.createElement('div'); d.className = 'whisper';
-    d.innerHTML = `<span class="tag clan">${esc(m.tag)}</span>${m.from ? `<b>${esc(m.from)}</b> : ` : ''}${esc(m.text)}`;
+    d.innerHTML = `<span class="tag clan">${esc(m.tag)}</span>${m.from ? `<b>${esc(m.from)}</b> : ` : ''}${esc(emojify(m.text))}`;
     log.appendChild(d);
     while (log.children.length > 8) log.firstChild.remove();
   }
@@ -506,6 +551,14 @@ export class Game {
     const el = $('radio-menu');
     if (v) el.innerHTML = `<h4>RADIO <span class="muted">(chiffre pour envoyer, ${esc(KB('radio'))} pour fermer)</span></h4>` + RADIO.map((t, i) => `<div><b>${i + 1}</b> ${esc(t)}</div>`).join('');
     el.classList.toggle('show', v);
+  }
+
+  toggleEmote(v = !this.emoteOpen) {
+    this.emoteOpen = v;
+    const el = $('emote-menu');
+    if (v) el.innerHTML = `<h4>ÉMOTES <span class="muted">(chiffre ou toucher)</span></h4>` + EMOTES.map((t, i) => `<div data-emote="${i}"><b>${i + 1}</b> ${esc(t)}</div>`).join('');
+    el.classList.toggle('show', v);
+    el.onclick = e => { const d = e.target.closest('[data-emote]'); if (d) { this.net.send('emote', { e: +d.dataset.emote }); this.toggleEmote(false); } };
   }
 
   // ---------- signalement en partie ----------
@@ -553,6 +606,8 @@ export class Game {
       case 'scoreboard': this.showScoreboard(true); break;
       case 'scope': this.toggleScope(); break;
       case 'mark': if (this.me?.al && !this.ended) this.net.send('mark', { d: this.aimDir() }); break;
+      case 'emote': this.toggleEmote(); break;
+      case 'inspect': if (this.me?.al) this.inspectT = 1.8; break;
       case 'fire': if (!this.me?.al && !isFfa(this.mode)) this.specIdx++; break;
     }
   }
@@ -592,7 +647,10 @@ export class Game {
         return;
       }
       if (this.radioOpen && e.code === 'Escape') { this.toggleRadio(false); return; }
+      if (this.emoteOpen && /^(Digit|Numpad)[1-8]$/.test(e.code)) { e.preventDefault(); this.net.send('emote', { e: +e.code.slice(-1) - 1 }); this.toggleEmote(false); return; }
+      if (this.emoteOpen && e.code === 'Escape') { this.toggleEmote(false); return; }
       if (this.codeMap[e.code] || e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+      if (this.spec) { this.specKey(e); return; }
       if (e.code === 'Escape' && this.buyOpen) { this.toggleBuy(false); return; }
       if (e.repeat || this.paused) return;
       this.press(e.code);
@@ -603,7 +661,7 @@ export class Game {
       let s = ST().sens * 0.0022;
       if (this.scoped) s *= ST().scopeSens / WEAPONS.longbow.scope;
       L.yaw -= e.movementX * s;
-      L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - e.movementY * s * (ST().invertY ? -1 : 1)));
+      L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - e.movementY * s * (ST().sensY || 1) * (ST().invertY ? -1 : 1)));
       this.vmSwayX += e.movementX * 0.00025; this.vmSwayY += e.movementY * 0.00025;
     };
     this._md = e => {
@@ -642,7 +700,7 @@ export class Game {
     $('p-resume').onclick = () => this.lock();
     $('p-settings').onclick = () => this.openSettings();
     $('sf-close').onclick = () => this.closeSettings();
-    $('p-leave').onclick = () => this.leave();
+    $('p-leave').onclick = () => { if (ST().confirmQuit && !this.ended && !this.spec && !confirm('Quitter la partie en cours ?')) return; this.leave(); };
     $('p-report').onclick = () => this.openReport();
   }
 
@@ -672,6 +730,8 @@ export class Game {
     if (all || key === 'fps') $('fps').style.display = ST().fps ? 'block' : 'none';
     if (all || key === 'minimap') $('minimap').style.display = ST().minimap ? 'block' : 'none';
     if (all || key === 'vol') SFX.setVolume(ST().vol);
+    for (const [k, c] of [['volWeapons', 'weapons'], ['volSteps', 'steps'], ['volAbilities', 'abilities'], ['volUi', 'ui'], ['volNotif', 'notif']]) if (all || key === k) SFX.setCategoryVolume(c, ST()[k] ?? 1);
+    if (all || key === 'netGraph') $('netgraph').style.display = ST().netGraph ? 'block' : 'none';
     if (all || key === 'keys') { this.buildKeyMap(); this.buildAbilityHUD(); }
     if (all || key === 'enemyColor') {
       for (const o of this.others.values()) if (this.isEnemyId(o.id)) {
@@ -694,7 +754,7 @@ export class Game {
     let s = (ST().touchSens || 1) * 0.0048;
     if (this.scoped) s *= ST().scopeSens / WEAPONS.longbow.scope;
     L.yaw -= mx * s;
-    L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - my * s * (ST().invertY ? -1 : 1)));
+    L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - my * s * (ST().sensY || 1) * (ST().invertY ? -1 : 1)));
     this.vmSwayX += mx * 0.0003; this.vmSwayY += my * 0.0003;
   }
 
@@ -715,6 +775,7 @@ export class Game {
   showPause(v) { this.paused = v; $('pause-menu').classList.toggle('show', v); }
 
   toggleBuy(force) {
+    if (this.spec) return;
     const open = this.mode === 'gungame' ? false : (force ?? !this.buyOpen);
     if (open === this.buyOpen) return;
     this.buyOpen = open;
@@ -748,27 +809,30 @@ export class Game {
 
   renderScoreboard() {
     if (!this.snap) return;
-    const gun = this.mode === 'gungame';
-    const players = this.snap.players.slice().sort((a, b) => gun ? (b.gl || 0) - (a.gl || 0) || b.k - a.k : b.sc - a.sc);
+    const gun = this.mode === 'gungame', lives = this.mode === 'lives';
+    const players = this.snap.players.slice().sort((a, b) => gun ? (b.gl || 0) - (a.gl || 0) || b.k - a.k : lives ? (b.lv || 0) - (a.lv || 0) || b.k - a.k : b.sc - a.sc);
     const me = this.roster.get(this.myId);
     const row = p => {
       const r = this.roster.get(p.i) || {};
       const ag = AGENTS[r.agent] || AGENTS.ignis;
       const ally = !isFfa(this.mode) && r.team === me?.team;
       const lvl = r.level ? `<span class="sb-lvl">${r.level}</span>` : '';
-      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${esc(r.name || '?')}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
+      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan && !ST().streamer ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${p.i === this.leaderId && isFfa(this.mode) ? '👑 ' : ''}${esc(this.nameOf(p.i))}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : lives ? (p.lv > 0 ? '❤'.repeat(Math.min(p.lv, 5)) : 'éliminé') : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
     };
-    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span>PING</span></div>`;
+    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : lives ? 'VIES' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span>PING</span></div>`;
     let html;
     if (this.mode === 'duel') html = `<h2>DUEL 1v1 — premier à ${this.target} manches</h2><br>${head}${players.map(row).join('')}`;
     else if (gun) html = `<h2>GUN GAME — chaque élimination donne l'arme suivante, le couteau pour finir</h2><br>${head}${players.map(row).join('')}`;
+    else if (lives) html = `<h2>DERNIER DEBOUT — ${this.target} vie(s) par joueur, le dernier en jeu gagne</h2><br>${head}${players.map(row).join('')}`;
     else if (isFfa(this.mode)) html = `<h2>MÊLÉE — premier à ${this.target} éliminations</h2><br>${head}${players.map(row).join('')}`;
     else {
       const ally = players.filter(p => this.roster.get(p.i)?.team === me?.team);
       const enemy = players.filter(p => this.roster.get(p.i)?.team !== me?.team);
       const sc = this.snap.sc;
       const myS = sc[me?.team] ?? 0, enS = sc[me?.team === 'alpha' ? 'beta' : 'alpha'] ?? 0;
-      html = `<div class="sb-team"><h3 class="t-alpha">VOTRE ÉQUIPE — ${myS}</h3>${head}${ally.map(row).join('')}</div>
+      // historique des manches : une pastille par manche (gagnée / perdue)
+      const hist = this.roundHistory.length ? `<div class="sb-hist">${this.roundHistory.map((w, i) => `<i class="${!w ? 'draw' : w === me?.team ? 'won' : 'lost'}" title="Manche ${i + 1}">${i + 1}</i>`).join('')}</div>` : '';
+      html = hist + `<div class="sb-team"><h3 class="t-alpha">VOTRE ÉQUIPE — ${myS}</h3>${head}${ally.map(row).join('')}</div>
         <div class="sb-team"><h3 class="t-beta">ADVERSAIRES — ${enS}</h3>${head}${enemy.map(row).join('')}</div>`;
     }
     $('sb-inner').innerHTML = html;
@@ -819,7 +883,7 @@ export class Game {
   eyePos() { const L = this.local; return [L.pos[0], L.pos[1] + L.eyeH, L.pos[2]]; }
 
   canAct() {
-    return this.me?.al && !this.chatOpen && !this.buyOpen && !this.paused && (!!this.touch || document.pointerLockElement === $('game-canvas'));
+    return !this.spec && this.me?.al && !this.chatOpen && !this.buyOpen && !this.paused && (!!this.touch || document.pointerLockElement === $('game-canvas'));
   }
 
   tryFire(now) {
@@ -854,7 +918,7 @@ export class Game {
     this.net.send('shoot', { d: dirs.map(d => d.map(v => Math.round(v * 10000) / 10000)) });
     L.lastShot = now;
     if (def.type !== 'melee') {
-      L.mag--;
+      if (!this.opts.infAmmo) L.mag--;
       const rec = def.recoil * (L.burst < 3 ? 0.6 : 1);
       L.recoil = Math.min(0.32, L.recoil + rec);
       L.yaw += (Math.random() - 0.5) * def.recoil * (L.burst > 5 ? 1.2 : 0.4);
@@ -890,6 +954,7 @@ export class Game {
 
   useAbility(k) {
     const L = this.local, now = performance.now() / 1000;
+    if (this.opts.noAbilities) { this.centerMsg('CAPACITÉS DÉSACTIVÉES DANS CE SALON', 1.5); return; }
     if (!this.canAct() || now < L.abilityCd || this.snap?.ph === 'over') return;
     const agent = AGENTS[this.roster.get(this.myId)?.agent];
     if (!agent) return;
@@ -933,6 +998,7 @@ export class Game {
     });
     on('shot', m => this.onRemoteShot(m));
     on('hit', m => {
+      if (ST().damageNumbers && m.d > 0) this.damageNumber(m.d, m.h, m.k);
       if (ST().hitmarker) {
         const hm = $('hitmarker');
         hm.className = m.k ? 'kill' : m.h ? 'head' : '';
@@ -952,6 +1018,8 @@ export class Game {
       }
       if (m.v === this.myId) {
         this.killedBy = m.k;
+        this.deathMark = { p: this.local.pos.slice(), t: performance.now() / 1000 };
+        $('combat').innerHTML = '';
         if (this.scoped) this.toggleScope(false);
         $('death-info').innerHTML = m.k && m.k !== this.myId ? `ÉLIMINÉ PAR <b>${esc(this.nameOf(m.k))}</b>` : 'ÉLIMINÉ';
       }
@@ -969,8 +1037,10 @@ export class Game {
     on('roundEnd', m => {
       const me = this.roster.get(this.myId);
       const win = me && m.winner === me.team;
-      if (!m.winner) { this.banner('ÉGALITÉ', REASONS[m.reason] || '', '', 4); return; }
-      this.banner(win ? 'MANCHE GAGNÉE' : 'MANCHE PERDUE', REASONS[m.reason] || '', win ? 'win' : 'lose', 4);
+      if (m.history) this.roundHistory = m.history;
+      const mvpTxt = m.mvp ? ` · MVP de la manche : ${this.nameOf(m.mvp.id)} (${m.mvp.kills} élim., ${m.mvp.dmg} dégâts)` : '';
+      if (!m.winner) { this.banner('ÉGALITÉ', (REASONS[m.reason] || '') + mvpTxt, '', 4); return; }
+      this.banner(win ? 'MANCHE GAGNÉE' : 'MANCHE PERDUE', (REASONS[m.reason] || '') + mvpTxt, win ? 'win' : 'lose', 4);
       SFX.playUI(win ? 'win' : 'lose');
       if (win) { this.roundWins = (this.roundWins || 0) + 1; }
     });
@@ -986,12 +1056,21 @@ export class Game {
     });
     on('flash', m => { const now = performance.now() / 1000; this.local.flashUntil = now + m.d; this.local.flashDur = m.d; });
     on('flashBang', m => { SFX.playFlashBang(m.p); this.addImpact(m.p, '#ffffff', 5, 0.3); });
-    on('ability', m => { if (m.i !== this.myId) SFX.playAbility(m.k, m.p); });
+    on('ability', m => {
+      if (m.i !== this.myId) SFX.playAbility(m.k, m.p);
+      // avertissement d'ultime ennemie
+      if (ULTS.has(m.k) && this.isEnemyId(m.i)) { const w = $('ult-warn'); w.textContent = `⚠ ULTIME ENNEMIE : ${this.nameOf(m.i)}`; clearTimeout(this.ultT); this.ultT = setTimeout(() => { w.textContent = ''; }, 2500); }
+    });
     on('notice', m => this.centerMsg(m.text, 2.5));
     on('bought', m => { if (m.slot) { this.pendingSwitch = m.slot; } });
     on('wallBreak', () => SFX.playAbility('wall', null));
     on('mark', m => this.addMark(m));
     on('killcam', m => this.startKillcam(m));
+    on('emote', m => this.showEmote(m));
+    on('leader', m => { this.leaderId = m.id; $('leader').textContent = m.id && isFfa(this.mode) ? `👑 MENEUR : ${this.nameOf(m.id)}${m.id === this.myId ? ' (toi !)' : ''}` : ''; });
+    on('combat', m => { $('combat').innerHTML = `<b>${esc(this.nameOf([...this.roster.values()].find(r => r.name === m.killer)?.id) || m.killer)}</b> à ${m.dist} m · tu lui as infligé <b>${m.dealt}</b> dégâts · il lui restait <b>${m.hp}</b> PV${m.armor ? ` et ${m.armor} d'armure` : ''} · tu as reçu <b>${m.recv}</b> dégâts`; });
+    on('voteOpen', m => this.renderVote(m.options));
+    on('voteState', m => this.renderVote(this.voteOptions, m));
     on('gun', m => {
       const id = GUN_LADDER[Math.min(m.lvl, GUN_LADDER.length - 1)];
       const name = (WEAPONS[id]?.name || '').toUpperCase();
@@ -1017,6 +1096,14 @@ export class Game {
     // vie / mort
     if (me.al && !L.alive) { L.alive = true; this.syncSlot = true; }
     if (!me.al && L.alive) { L.alive = false; this.toggleBuy(false); }
+    if (this.spec) {
+      // le spectateur suit l'arme réellement tenue par le joueur observé
+      const wid = me.wp[me.sl]?.[0];
+      L.slot = me.sl; if (me.wp[me.sl]) { L.mag = me.wp[me.sl][1]; L.reserve = me.wp[me.sl][2]; }
+      if (wid && this.vmWeaponId !== wid) this.setViewmodel(wid);
+      const selfP = s.players.find(p => p.i === this.myId);
+      if (selfP && selfP.p) { this.spec.buf.push({ t: s.t, p: selfP.p, y: selfP.y, pt: selfP.pt, c: selfP.c, al: selfP.al }); if (this.spec.buf.length > 30) this.spec.buf.shift(); }
+    }
     if (this.syncSlot && me.wp[me.sl]) {
       this.syncSlot = false;
       L.slot = me.sl;
@@ -1134,6 +1221,7 @@ export class Game {
   }
 
   onRemoteShot(m) {
+    if (m.i === this.myId && this.spec) { const d = WEAPONS[m.w]; SFX.playShot(d ? (d.type === 'pistol' ? 'pistol' : d.type) : 'rifle', null); this.vmKick = 1; if (d && d.type !== 'melee') for (const e of m.e || []) { this.addTracer(this.camera.position.clone().add(new THREE.Vector3(0, -0.12, 0)), new THREE.Vector3(...e)); this.addImpact(e, '#ffe0a0'); } return; }
     if (m.i === this.myId) return;
     const o = this.others.get(m.i);
     const def = WEAPONS[m.w];
@@ -1186,12 +1274,22 @@ export class Game {
   frame(t) {
     if (this.destroyed) return;
     this.raf = requestAnimationFrame(tt => this.frame(tt));
+    // limiteur d'images par seconde
+    const cap = Number(ST().fpsCap) || 0;
+    if (cap && t - this.last < 1000 / cap - 1.5) return;
     const dt = Math.min(0.05, (t - this.last) / 1000);
     this.last = t;
     const now = t / 1000;
     this.fpsAcc += dt; this.fpsN++;
     if (this.fpsAcc > 0.5) {
-      $('fps').textContent = Math.round(this.fpsN / this.fpsAcc) + ' FPS'; this.fpsAcc = 0; this.fpsN = 0;
+      const fpsNow = Math.round(this.fpsN / this.fpsAcc);
+      $('fps').textContent = fpsNow + ' FPS'; this.fpsAcc = 0; this.fpsN = 0;
+      // conseil « PC faible » si le jeu rame longtemps
+      if (ST().lowFpsTip && ST().gfxPreset !== 'low' && !this.lowTipDone && fpsNow > 0) {
+        this.lowFps = fpsNow < 28 ? (this.lowFps || 0) + 1 : 0;
+        if (this.lowFps >= 30) { this.lowTipDone = true; this.onLowFps?.(); }
+      }
+      if (ST().netGraph) this.drawNetGraph(fpsNow);
       const rtt = Math.round(this.net.rtt || 0);
       $('ping').textContent = rtt ? `${rtt} ms` : '';
       $('ping').className = rtt > 150 ? 'bad' : rtt > 80 ? 'mid' : '';
@@ -1206,7 +1304,7 @@ export class Game {
 
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
-    if (this.me?.al && !this.scoped && !this.kc) {
+    if (this.me?.al && !this.scoped && !this.kc && !this.spec?.third) {
       this.renderer.clearDepth();
       this.renderer.render(this.vmScene, this.vmCam);
     }
@@ -1215,6 +1313,7 @@ export class Game {
   }
 
   updateLocal(dt, now) {
+    if (this.spec) { this.updateSpectator(dt, now); return; }
     const L = this.local, H = this.held;
     const alive = !!this.me?.al;
     if (!alive) return;
@@ -1244,7 +1343,7 @@ export class Game {
       L.vel[2] += (wz * speed - L.vel[2]) * k;
     }
     if (H.has('jump') && L.onGround && !frozen) { L.vel[1] = MOVE.jump; L.onGround = false; SFX.playJump(); }
-    L.vel[1] -= MOVE.gravity * dt;
+    L.vel[1] -= MOVE.gravity * (this.opts.lowGrav ? 0.45 : 1) * dt;
     const prev = L.pos.slice();
     const wasGround = L.onGround, fallV = L.vel[1];
     L.onGround = collideMove(L.pos, L.vel, dt, this.boxes);
@@ -1355,7 +1454,7 @@ export class Game {
       } else {
         ch.root.rotation.x = 0;
         const enemy = this.isEnemyId(o.id);
-        ch.xray.visible = !!(enemy && st.rv);
+        ch.xray.visible = !!((enemy && st.rv) || (this.spec?.xray && enemy));
       }
       // invisibilité
       const enemy = this.isEnemyId(o.id);
@@ -1438,8 +1537,16 @@ export class Game {
     const L = this.local;
     const cam = this.camera;
     let shake = 0;
-    if (this.shake > 0) { this.shake -= dt; shake = this.shake * 0.08; }
-    if (this.me?.al || !this.me) {
+    if (this.shake > 0) { this.shake -= dt; shake = ST().reduceMotion ? 0 : this.shake * 0.08; }
+    if (this.spec) {
+      const e = this.eyePos();
+      if (this.spec.third) {
+        const back = 3.2, cp = Math.cos(L.pitch);
+        cam.position.set(e[0] + Math.sin(L.yaw) * cp * back, e[1] + 0.6 - Math.sin(L.pitch) * back * 0.5, e[2] + Math.cos(L.yaw) * cp * back);
+      } else cam.position.set(e[0], e[1], e[2]);
+      cam.rotation.set(L.pitch, L.yaw, 0);
+      $('death-info').innerHTML = this.me && !this.me.al ? `${esc(this.nameOf(this.myId))} est mort${this.me.rs ? ` · réapparition dans ${Math.ceil(this.me.rs)} s` : ''}` : '';
+    } else if (this.me?.al || !this.me) {
       const e = this.eyePos();
       cam.position.set(e[0], e[1], e[2]);
       cam.rotation.set(L.pitch + L.recoil + (Math.random() - 0.5) * shake, L.yaw + (Math.random() - 0.5) * shake, 0);
@@ -1469,7 +1576,7 @@ export class Game {
     // modèle d'arme
     const hs = Math.hypot(L.vel[0], L.vel[2]);
     if (L.onGround && hs > 0.5) this.vmBob += dt * hs * 1.5;
-    const bobA = ST().bob ? Math.min(1, hs / 6) * (L.onGround ? 1 : 0.3) : 0;
+    const bobA = ST().bob && !ST().reduceMotion ? Math.min(1, hs / 6) * (L.onGround ? 1 : 0.3) : 0;
     this.vmSwayX *= Math.exp(-dt * 10); this.vmSwayY *= Math.exp(-dt * 10);
     this.vmKick *= Math.exp(-dt * 14);
     const base = this.vmBase || VM_OFFSET.rifle;
@@ -1480,7 +1587,9 @@ export class Game {
       base[0] * (ST().leftHand ? -1 : 1) + Math.cos(this.vmBob) * 0.012 * bobA - this.vmSwayX,
       base[1] + Math.abs(Math.sin(this.vmBob)) * 0.014 * bobA + this.vmSwayY - reloadK * 0.12 - sw * 0.25 - (L.crouch ? 0.01 : 0),
       base[2] + this.vmKick * (melee ? -0.15 : 0.06));
-    this.vm.rotation.set(this.vmKick * (melee ? -0.6 : 0.12) - reloadK * 0.6 + sw * 0.6, this.vmSwayX * 2 + (melee ? this.vmKick * 0.8 : 0), reloadK * 0.4);
+    let insp = 0;
+    if (this.inspectT > 0) { this.inspectT -= dt; if (this.local.lastShot > now - 0.2 || L.reloadEnd > now) this.inspectT = 0; insp = Math.sin(Math.min(1, (1.8 - this.inspectT) / 1.8) * Math.PI); }
+    this.vm.rotation.set(this.vmKick * (melee ? -0.6 : 0.12) - reloadK * 0.6 + sw * 0.6 + insp * 0.35, this.vmSwayX * 2 + (melee ? this.vmKick * 0.8 : 0) + insp * 1.1, reloadK * 0.4 + insp * 0.5);
   }
 
   // ======================= HUD (mise à jour) =======================
@@ -1498,9 +1607,18 @@ export class Game {
     } else if (isFfa(this.mode)) {
       const myK = this.self?.k ?? 0;
       const best = Math.max(0, ...s.players.filter(p => p.i !== this.myId).map(p => p.k));
-      $('score-left').textContent = myK;
-      $('score-right').textContent = best;
-      $('round-label').textContent = `OBJECTIF ${this.target}`;
+      // classement en direct : position du joueur
+      const pos = 1 + s.players.filter(p => p.i !== this.myId && p.k > myK).length;
+      if (this.mode === 'lives') {
+        const inGame = s.players.filter(p => (p.lv ?? 1) > 0).length;
+        $('score-left').textContent = this.self?.lv ?? 0;
+        $('score-right').textContent = inGame;
+        $('round-label').textContent = `${this.self?.lv ?? 0} ❤ · ${inGame} EN JEU`;
+      } else {
+        $('score-left').textContent = myK;
+        $('score-right').textContent = best;
+        $('round-label').textContent = `OBJECTIF ${this.target} · ${pos}${pos === 1 ? 'ER' : 'E'} / ${s.players.length}`;
+      }
     } else {
       $('score-left').textContent = s.sc[myTeam] ?? 0;
       $('score-right').textContent = s.sc[myTeam === 'alpha' ? 'beta' : 'alpha'] ?? 0;
@@ -1574,6 +1692,17 @@ export class Game {
     const L = this.local;
     const me = this.me;
     if (!me) return;
+    // série en cours
+    const st = this.self?.st || 0;
+    $('streak').textContent = me.al && st >= 2 ? `SÉRIE ×${st}` : '';
+    $('combat').style.display = !me.al && !this.spec && $('combat').textContent ? 'block' : 'none';
+    // alerte de grenade proche
+    let nade = null, nd = 7;
+    for (const m of this.projMeshes.values()) { const d = Math.hypot(m.position.x - L.pos[0], m.position.z - L.pos[2]); if (d < nd) { nd = d; nade = m; } }
+    const nw = $('nade-warn');
+    if (nade && me.al) { const ang = Math.atan2(nade.position.x - L.pos[0], -(nade.position.z - L.pos[2])) + L.yaw; nw.style.display = 'block'; nw.style.transform = `translate(-50%, -50%) rotate(${ang}rad) translateY(-90px) rotate(${-ang}rad)`; }
+    else nw.style.display = 'none';
+    this.updateObjective();
     // munitions
     const wid = this.curWeaponId();
     const def = WEAPONS[wid];
@@ -1601,7 +1730,181 @@ export class Game {
     }
     $('smoke-overlay').style.opacity = inSmoke * 0.92;
     this.updateMarks(now);
+    this.updateBubbles(now);
     if (ST().minimap && now - this.lastMini > 0.05) { this.lastMini = now; this.drawMinimap(); }
+  }
+
+  // ---- objectif (Noyau au sol ou posé) ----
+  updateObjective() {
+    const el = $('obj-tag'), c = this.snap?.core;
+    if (!c || !c.p || this.mode !== 'assault' || !(c.s === 'dropped' || c.s === 'planted') || this.kc) { el.style.display = 'none'; return; }
+    const v = new THREE.Vector3(c.p[0], c.p[1] + 1, c.p[2]).project(this.camera);
+    const w = innerWidth, h = innerHeight;
+    let x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h;
+    if (v.z > 1) { x = w - x; y = h - 60; }
+    x = Math.max(40, Math.min(w - 40, x)); y = Math.max(60, Math.min(h - 60, y));
+    el.style.display = 'flex';
+    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+    el.classList.toggle('planted', c.s === 'planted');
+    const e = this.camera.position;
+    el.querySelector('.md').textContent = `${c.s === 'planted' ? 'NOYAU POSÉ' : 'NOYAU'} · ${Math.round(Math.hypot(c.p[0] - e.x, c.p[2] - e.z))} m`;
+  }
+  // ---- émotes ----
+  showEmote(m) {
+    const text = EMOTES[m.e]; if (!text) return;
+    this.addChat({ from: this.nameOf(m.i), text, team: this.roster.get(m.i)?.team, emote: true });
+    if (m.i === this.myId) return;
+    const el = document.createElement('div'); el.className = 'emote-bubble'; el.textContent = text;
+    $('hud').appendChild(el);
+    this.bubbles.push({ id: m.i, el, end: performance.now() / 1000 + 2.6 });
+  }
+  updateBubbles(now) {
+    if (!this.bubbles.length) return;
+    const w = innerWidth, h = innerHeight, v = new THREE.Vector3();
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const b = this.bubbles[i], o = this.others.get(b.id);
+      if (now > b.end || !o?.cur || !o.ch.root.visible) { if (now > b.end || !o) { b.el.remove(); this.bubbles.splice(i, 1); } else b.el.style.display = 'none'; continue; }
+      v.set(o.cur.p[0], o.cur.p[1] + 2.35, o.cur.p[2]).project(this.camera);
+      if (v.z > 1) { b.el.style.display = 'none'; continue; }
+      b.el.style.display = 'block';
+      b.el.style.transform = `translate(${(v.x * 0.5 + 0.5) * w}px, ${(-v.y * 0.5 + 0.5) * h}px) translate(-50%, -100%)`;
+    }
+  }
+  // ---- vote de fin de partie ----
+  renderVote(options, st = null) {
+    if (!options) return;
+    this.voteOptions = options;
+    const tally = st?.tally || {};
+    $('end-vote').innerHTML = `<div class="ev-title">PROCHAINE CARTE</div><div class="ev-maps">${options.map(id => `<button class="btn ${this.myVote === id ? 'primary' : ''}" data-vote="${esc(id)}">${esc(MAP_NAMES[id] || id)}${tally[id] ? ` <b>${tally[id]}</b>` : ''}</button>`).join('')}</div>
+      <button class="btn ${this.myRematch ? 'primary' : 'ghost'}" data-rematch>⟲ REVANCHE${st ? ` (${st.rematch}/${st.humans})` : ''}</button>`;
+    $('end-vote').onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.vote) { this.myVote = b.dataset.vote; this.net.send('mapVote', { map: b.dataset.vote }); }
+      if (b.dataset.rematch !== undefined) { this.myRematch = true; this.net.send('rematch'); }
+      this.renderVote(this.voteOptions, st);
+    };
+  }
+
+  // ---- chiffres de dégâts ----
+  damageNumber(d, head, kill) {
+    const el = document.createElement('div');
+    el.className = 'dmg-num' + (head ? ' head' : '') + (kill ? ' kill' : '');
+    el.textContent = Math.round(d);
+    el.style.left = `calc(50% + ${Math.round((Math.random() - 0.5) * 60)}px)`;
+    $('hud').appendChild(el);
+    setTimeout(() => el.remove(), 800);
+  }
+  // ---- graphique réseau ----
+  drawNetGraph(fps) {
+    const c = $('netgraph'); if (!c) return;
+    (this.ng ||= []).push([Math.round(this.net.rtt || 0), fps]);
+    if (this.ng.length > 60) this.ng.shift();
+    const g = c.getContext('2d'), W = c.width, H = c.height;
+    g.clearRect(0, 0, W, H); g.fillStyle = 'rgba(8,10,18,.6)'; g.fillRect(0, 0, W, H);
+    const line = (i, max, col) => { g.strokeStyle = col; g.lineWidth = 1.5; g.beginPath(); this.ng.forEach((v, x) => { const y = H - 4 - Math.min(1, v[i] / max) * (H - 18); x === 0 ? g.moveTo(x * W / 60, y) : g.lineTo(x * W / 60, y); }); g.stroke(); };
+    line(0, 300, '#ffcf5a'); line(1, 160, '#19e3c4');
+    const last = this.ng[this.ng.length - 1];
+    g.fillStyle = '#ffcf5a'; g.font = '11px sans-serif'; g.fillText(`ping ${last[0]} ms`, 4, 11);
+    g.fillStyle = '#19e3c4'; g.fillText(`${last[1]} FPS`, W - 50, 11);
+  }
+
+  // ---- spectateur staff ----
+  initSpectator() {
+    $('click-to-play').style.display = 'none';
+    document.body.classList.add('spectating');
+    const el = document.createElement('div');
+    el.id = 'spec-panel';
+    el.innerHTML = `<div class="sp-head"><span class="sp-tag">👁 OBSERVATION</span><span class="muted small">invisible pour les joueurs</span></div>
+      <div id="sp-body">Chargement…</div>
+      <div class="sp-row"><select id="sp-target"></select><button class="btn small" data-sp="prev">◀</button><button class="btn small" data-sp="next">▶</button></div>
+      <div class="sp-row"><button class="btn small" data-sp="xray" id="sp-xray">Rayons X : non</button><button class="btn small" data-sp="third" id="sp-third">Vue : 1re personne</button></div>
+      <div class="sp-row sp-mod"><input id="sp-reason" maxlength="200" placeholder="Raison (facultatif)"></div>
+      <div class="sp-row sp-mod"><button class="btn small" data-sp="warn">Avertir</button><button class="btn small" data-sp="mute">Silence 10 min</button><button class="btn small danger" data-sp="kick">Expulser</button><button class="btn small danger" data-sp="ban">Bannir 24 h</button></div>
+      <div id="sp-notice" class="muted small"></div>
+      <div class="sp-row"><button class="btn small ghost wide" data-sp="quit">Quitter l'observation</button></div>
+      <p class="muted small">Touches : ← → changer de joueur · X rayons X · V vue · Échap quitter</p>`;
+    $('hud').appendChild(el);
+    el.onclick = e => { const b = e.target.closest('[data-sp]'); if (b) this.specAction(b.dataset.sp); };
+    el.querySelector('#sp-target').onchange = e => this.net.send('spectateSwitch', { id: e.target.value });
+    el.querySelector('#sp-reason').addEventListener('keydown', e => e.stopPropagation()); // taper la raison ne déclenche pas les raccourcis
+    const on = (t, fn) => this.unsubs.push(this.net.on(t, fn));
+    on('specInfo', m => this.renderSpecInfo(m));
+    on('specTarget', m => this.setSpecTarget(m.you));
+    on('specNotice', m => { $('sp-notice').textContent = m.text; });
+  }
+  setSpecTarget(id) {
+    this.myId = id; this.spec.buf = []; this.others.forEach(o => { o.ch.root.visible = false; });
+    // le joueur observé n'est plus un « autre » : on reconstruit la liste des modèles
+    for (const [oid, o] of this.others) { this.scene.remove(o.ch.root); this.others.delete(oid); }
+    if (this.spec.ghost) { this.scene.remove(this.spec.ghost.root); this.spec.ghost = null; }
+    this.applyRoster([...this.roster.values()].map(r => ({ ...r, id: r.id })));
+  }
+  specKey(e) {
+    if (e.repeat) return;
+    if (e.code === 'ArrowRight') this.specAction('next');
+    else if (e.code === 'ArrowLeft') this.specAction('prev');
+    else if (e.code === 'KeyX') this.specAction('xray');
+    else if (e.code === 'KeyV') this.specAction('third');
+    else if (e.code === 'Escape') this.specAction('quit');
+    else if (e.code === 'Tab') this.showScoreboard(!$('scoreboard').classList.contains('show'));
+  }
+  specAction(a) {
+    const sp = this.spec;
+    const list = sp.info?.players || [];
+    if (a === 'next' || a === 'prev') {
+      if (!list.length) return;
+      const i = list.findIndex(p => p.id === this.myId);
+      const n = list[(i + (a === 'next' ? 1 : list.length - 1) + list.length) % list.length];
+      if (n) this.net.send('spectateSwitch', { id: n.id });
+    } else if (a === 'xray') { sp.xray = !sp.xray; $('sp-xray').textContent = `Rayons X : ${sp.xray ? 'oui' : 'non'}`; }
+    else if (a === 'third') { sp.third = !sp.third; $('sp-third').textContent = `Vue : ${sp.third ? '3e personne' : '1re personne'}`; }
+    else if (a === 'quit') { this.net.send('spectateStop'); this.destroy(); this.onExit && this.onExit('spec'); }
+    else if (['warn', 'mute', 'kick', 'ban'].includes(a)) {
+      const name = sp.info?.p?.name || '?';
+      const label = { warn: 'avertir', mute: 'rendre muet 10 min', kick: 'expulser', ban: 'bannir 24 h' }[a];
+      if (!confirm(`Confirmer : ${label} ${name} ?`)) return;
+      this.net.send('staffAction', { action: a, id: this.myId, reason: $('sp-reason').value });
+    }
+  }
+  renderSpecInfo(m) {
+    this.spec.info = m;
+    const p = m.p; if (!p) return;
+    if (p.id !== this.myId) this.setSpecTarget(p.id);
+    const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
+    const ag = AGENTS[p.agent];
+    const wn = id => WEAPONS[id]?.name || id;
+    const warn = (v, lim) => v >= lim ? ' class="bad"' : '';
+    $('sp-body').innerHTML = `<div class="sp-name">${p.clan ? `<span class="clan-tag">[${esc(p.clan)}]</span> ` : ''}<b>${esc(p.name)}</b> ${p.bot ? '<span class="muted">(bot)</span>' : p.account ? '' : '<span class="muted">(invité)</span>'}</div>
+      <div class="sp-grid">
+        <span>Niveau</span><b>${p.level ?? '—'}</b><span>Agent</span><b style="color:${ag?.color || '#fff'}">${esc(ag?.name || p.agent)}</b>
+        <span>Arme en main</span><b>${p.weapon ? esc(wn(p.weapon)) : '—'}${p.mag != null && WEAPONS[p.weapon]?.mag ? ` (${p.mag}/${p.reserve})` : ''}</b><span>Équipement</span><b>${p.weapons.map(w => esc(wn(w))).join(', ')}</b>
+        <span>PV / armure</span><b>${p.alive ? `${p.hp} / ${p.armor}` : 'mort'}</b><span>Crédits</span><b>${p.money}</b>
+        <span>É / M / A</span><b>${p.kills} / ${p.deaths} / ${p.assists}</b><span>Dégâts</span><b>${p.dmg}</b>
+        <span>Tirs à la tête</span><b${warn(p.kills >= 8 && p.hs / p.kills, 0.75)}>${pct(p.hs, p.kills)}</b><span>Précision</span><b${warn(p.shots >= 40 && p.hits / p.shots, 0.7)}>${pct(p.hits, p.shots)} <span class="muted">(${p.hits}/${p.shots})</span></b>
+        <span>Capacités / ultimes</span><b>${p.abilities} / ${p.ults}</b><span>Vitesse</span><b>${p.speed} m/s</b>
+        <span>Alertes anti-triche</span><b${warn(p.strikes, 5)}>${p.strikes}</b><span>Ping</span><b>${p.ping ? p.ping + ' ms' : '—'}</b>
+        ${p.gun !== undefined ? `<span>Gun Game</span><b>arme ${p.gun + 1}</b>` : ''}
+      </div>
+      <div class="muted small">${esc(m.mode)} · ${esc(m.map)} · ${m.ac ? 'anti-triche actif' : '<span class="bad">anti-triche désactivé</span>'}</div>`;
+    const sel = $('sp-target');
+    sel.innerHTML = m.players.map(q => `<option value="${esc(q.id)}" ${q.id === p.id ? 'selected' : ''}>${esc(q.name)}${q.bot ? ' (bot)' : ''} · ${q.k}/${q.d}${q.alive ? '' : ' · mort'}</option>`).join('');
+    document.querySelectorAll('#spec-panel .sp-mod').forEach(x => { x.style.display = p.bot ? 'none' : ''; });
+  }
+  updateSpectator(dt, now) {
+    const sp = this.spec, L = this.local;
+    const renderT = Date.now() + (this.offset || 0) - 120;
+    const st = this.interpState({ buf: sp.buf }, renderT);
+    if (st) {
+      L.pos = st.p.slice(); L.yaw = st.y; L.pitch = st.pt; L.crouch = !!st.c;
+      L.eyeH += ((L.crouch ? PLAYER.eyeCrouch : PLAYER.eye) - L.eyeH) * Math.min(1, dt * 14);
+      // vue à la 3e personne : modèle du joueur observé et caméra derrière lui
+      if (sp.third) {
+        if (!sp.ghost) { const r = this.roster.get(this.myId); sp.ghost = buildCharacter(r?.agent || 'ignis', ALLY); this.scene.add(sp.ghost.root); }
+        sp.ghost.root.visible = !!this.me?.al;
+        sp.ghost.root.position.set(L.pos[0], L.pos[1], L.pos[2]); sp.ghost.root.rotation.y = L.yaw;
+      } else if (sp.ghost) sp.ghost.root.visible = false;
+    }
+    SFX.setListener(this.eyePos(), L.yaw);
   }
 
   // ---- killcam : revoir les 3 dernières secondes avant sa mort, du point de vue du tueur ----
@@ -1737,6 +2040,7 @@ export class Game {
     if (snap.core.p) { const [x, y] = P(snap.core.p[0], snap.core.p[2]); g.fillStyle = '#ff2f6d'; g.save(); g.translate(x, y); g.rotate(Math.PI / 4); g.fillRect(-4, -4, 8, 8); g.restore(); }
     const tnow = performance.now() / 1000;
     const me = this.roster.get(this.myId);
+    if (this.deathMark && tnow - this.deathMark.t < 20) { const [x, y] = P(this.deathMark.p[0], this.deathMark.p[2]); g.strokeStyle = '#ff4f6d'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x - 5, y - 5); g.lineTo(x + 5, y + 5); g.moveTo(x + 5, y - 5); g.lineTo(x - 5, y + 5); g.stroke(); }
     for (const k of this.marks || []) { const [x, y] = P(k.p[0], k.p[2]); g.strokeStyle = k.d ? '#ff4f6d' : '#ffe14d'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x + 5, y); g.lineTo(x, y + 6); g.lineTo(x - 5, y); g.closePath(); g.stroke(); }
     for (const o of this.others.values()) {
       const st = o.cur;
@@ -1781,8 +2085,21 @@ export class Game {
     const mvp = m.stats.find(s => s.id === m.mvp);
     $('end-mvp').innerHTML = mvp ? `<span class="mvp-badge">MVP</span> ${agentIconHTML(mvp.agent, 'sm')} <b>${esc(mvp.name)}</b> <span class="muted">${mvp.score} pts · ${mvp.kills}/${mvp.deaths}/${mvp.assists} · ${mvp.dmg} dégâts</span>` : '';
     $('end-progress').innerHTML = this.isGuest ? '<div class="muted">Crée un compte pour gagner de l\'XP, monter de niveau et accomplir des quêtes.</div>' : '<div class="muted">Calcul de la progression…</div>';
-    const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(s.name)}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}</span><span>${s.deaths}</span><span>${s.assists}</span><span>${s.dmg ?? ''}</span><span>${s.hs ?? ''}</span><span></span></div>`).join('');
-    $('end-stats').innerHTML = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>TÊTE</span><span></span></div>${rows}`;
+    const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
+    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[id] || '—';
+    const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
+    $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span>ARME FAVORITE</span></div>${rows}`;
+    this.myVote = null; this.myRematch = false;
+    // recommander un joueur de la partie (comptes uniquement)
+    if (!this.isGuest) {
+      const others = m.stats.filter(x => x.id !== this.myId && !x.bot);
+      if (others.length) {
+        const box = document.createElement('div'); box.className = 'end-endorse';
+        box.innerHTML = `<div class="ev-title">RECOMMANDER UN JOUEUR</div>${others.map(x => `<div class="ee-row"><b>${esc(this.nameOf(x.id) === '???' ? x.name : this.nameOf(x.id))}</b>${[['fairplay', '🤝 Fair-play'], ['leader', '🎖 Meneur'], ['equipier', '💪 Coéquipier']].map(([k, l]) => `<button class="btn small ghost" data-end="${k}" data-n="${esc(x.name)}">${l}</button>`).join('')}</div>`).join('')}`;
+        box.onclick = e => { const b = e.target.closest('[data-end]'); if (!b) return; this.net.send('endorse', { name: b.dataset.n, kind: b.dataset.end }); b.parentElement.querySelectorAll('button').forEach(x => { x.disabled = true; }); b.classList.add('primary'); };
+        $('end-stats').after(box);
+      }
+    }
     $('end-screen').classList.add('show');
     document.dispatchEvent(new CustomEvent('eclats-changed'));
   }
@@ -1825,6 +2142,7 @@ export class Game {
     this.touch?.destroy();
     while (this.marks?.length) this.removeMark(0);
     this.endKillcam();
+    if (this.spec) { this.spec.ghost && this.scene.remove(this.spec.ghost.root); document.body.classList.remove('spectating'); $('spec-panel')?.remove(); }
     if (document.pointerLockElement) { this.expectUnlock = true; document.exitPointerLock(); }
     this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     this.renderer.dispose();
