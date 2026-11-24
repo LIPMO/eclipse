@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.13.1",
+    "date": "2026-11-24",
+    "title": "Glissades beaucoup plus longues",
+    "items": [
+      "Glissade : environ 10 m et près de 2 secondes au lieu de 5 m et 0,8 seconde. Elle ralentit plus doucement, et le saut garde toujours l'élan.",
+      "Une glissade toutes les 1,1 seconde reste la limite, pour éviter qu'elles s'enchaînent."
+    ]
+  },
+  {
     "version": "1.13.0",
     "date": "2026-11-23",
     "title": "Glissades",

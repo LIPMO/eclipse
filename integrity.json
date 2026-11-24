@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-23T19:48:05.446Z",
+ "generated": "2026-11-24T16:40:03.544Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -44,7 +44,7 @@
   "public/mentions-legales.html": "1a5a7897a3af7cf92a18848a93b928b251a3ea0f78bf06d6d832e40777fb41e8",
   "public/robots.txt": "46a7b87c779cefa66d2db8782ca3445a1ae4d0867563f4faaae95d8d83107e00",
   "public/sitemap.xml": "91c1a73d0c93e44e163329a18d6358467e68bb51126f16cdf71f6a0ec1170476",
-  "shared/data.js": "c9b34bb52a178017a54ca5ea92e665f59b4dd026ff3d6c67d7eeb3f6c26c61d2",
+  "shared/data.js": "29df47124bc5b7d11f09cfe2c01dd250e55990272d756fbd22a22cdf21becdf1",
   "shared/maps.js": "e8a60b38a52dac51354105a559d46d2adbe57fb0e18b037c207783995f6fe2f2",
   "shared/physics.js": "4d74759f49e4abe6a9214440a5056e5391362030d32287f211ded744ef0050bd",
   "shared/progress.js": "93c7c1d1a0548e81300b39472ca93a7c83b24d87f46c6d40a96521a650f2eeac"
