@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.14.0",
+    "date": "2026-11-24",
+    "title": "Viseurs sur les armes",
+    "items": [
+      "Nouveaux viseurs : point rouge sur le Viper et le Brute, viseur holographique sur le Lancer, lunette ACOG sur le Tempest. Ils sont visibles sur les armes, en partie et dans la collection.",
+      "Clic droit (gâchette gauche à la manette) pour viser : l'arme se centre, la vue zoome un peu, et le tir est plus précis avec moins de recul. Tu te déplaces plus lentement en visant.",
+      "Les pistolets n'ont pas de viseur, et le Longbow garde sa lunette.",
+      "Recharger, changer d'arme ou glisser arrête la visée. Réglages : PARAMÈTRES → Souris (multiplicateur au viseur, viser en maintenant le bouton)."
+    ]
+  },
+  {
     "version": "1.13.1",
     "date": "2026-11-24",
     "title": "Glissades beaucoup plus longues",

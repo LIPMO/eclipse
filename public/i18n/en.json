@@ -1424,7 +1424,15 @@
 "En courant, la touche s'accroupir lance une glissade : plus petit et plus rapide, mais moins précis. Saute pendant la glissade pour garder l'élan.": "While running, the crouch key starts a slide: smaller and faster, but less accurate. Jump during the slide to keep your momentum.",
 "En courant, appuie sur S'ACCROUPIR pour glisser : tu deviens petit et rapide, mais tu tires moins précisément.": "While running, press CROUCH to slide: you become small and fast, but you shoot less accurately.",
 "Saute pendant la glissade pour garder ton élan.": "Jump during a slide to keep your momentum.",
-"Glissade ennemie": "Enemy slide"
+"Glissade ennemie": "Enemy slide",
+"Viseur / lunette": "Sight / scope",
+"Multiplicateur au viseur et en lunette": "Sight and scope multiplier",
+"Viseur et lunette : maintenir le bouton": "Sight and scope: hold the button",
+"Désactivé : un clic pour viser, un autre pour arrêter": "Off: click once to aim, again to stop",
+"viseur / lunette": "sight / scope",
+"viseur": "sight",
+"lunette": "scope",
+"Clic droit avec le Viper, le Brute, le Tempest ou le Lancer : tu vises au viseur, plus précis mais plus lent.": "Right click with the Viper, Brute, Tempest or Lancer: you aim down the sight, more accurate but slower."
 },
 "patterns": [
 [

@@ -135,7 +135,7 @@ export function openGuide() {
       <h3>COMMANDES</h3>
       <div class="g-keys">
         <div>${k('forward')}${k('left')}${k('back')}${k('right')} se déplacer</div><div>${k('jump')} sauter · ${k('crouch')} s'accroupir (en courant : glissade) · ${k('walk')} marcher sans bruit</div>
-        <div><kbd>Clic gauche</kbd> tirer · <kbd>Clic droit</kbd> lunette</div><div>${k('reload')} recharger · ${k('slot1')}${k('slot2')}${k('slot3')} changer d'arme</div>
+        <div><kbd>Clic gauche</kbd> tirer · <kbd>Clic droit</kbd> viseur / lunette</div><div>${k('reload')} recharger · ${k('slot1')}${k('slot2')}${k('slot3')} changer d'arme</div>
         <div>${k('abilityQ')} ${k('abilityE')} capacités · ${k('ult')} ultime</div><div>${k('buy')} menu d'achat · ${k('interact')} poser / désamorcer</div>
         <div>${k('chat')} chat (tous) · ${k('teamChat')} chat d'équipe</div><div>${k('radio')} puis un chiffre : message radio · ${k('scoreboard')} scores</div>
         <div>${k('mark')} marquer une position pour ton équipe (vise un ennemi : alerte rouge)</div>

@@ -26,6 +26,7 @@ const TIPS = [
   'En courant, appuie sur S\'ACCROUPIR pour glisser : tu deviens petit et rapide, mais tu tires moins précisément.',
   'Saute pendant une glissade pour garder ton élan.',
   'Le Longbow tue en un tir à la tête… mais il faut viser avec la lunette.',
+  'Clic droit avec le Viper, le Brute, le Tempest ou le Lancer : tu vises au viseur, plus précis mais plus lent.',
   'Après ta mort, la killcam te montre d\'où venait le tir.',
   'Tes capacités se rechargent en Mêlée : utilise-les souvent !',
   'En Assaut, garde de l\'argent pour la manche suivante si tu perds.',
@@ -77,6 +78,7 @@ export class Game {
     };
     this.syncSlot = true;
     this.scoped = false;
+    this.ads = false; this.adsK = 0; // visée au viseur (armes avec ads, voir shared/data.js)
     this.boxes = this.map.boxes;
     this.wallMeshes = new Map(); this.smokeMeshes = new Map(); this.fireMeshes = new Map(); this.projMeshes = new Map();
     this.tracers = []; this.particles = [];
@@ -198,6 +200,7 @@ export class Game {
     let v = 2 * Math.atan(Math.tan(hfov / 2) / (this.aspect || 1.7)) * 180 / Math.PI;
     if (this.scoped) v /= WEAPONS.longbow.scope;
     else v *= this.fovKick || 1; // léger élargissement du champ de vision pendant une glissade
+    if (this.adsK > 0) v /= 1 + ((WEAPONS[this.curWeaponId()]?.ads?.zoom || 1) - 1) * this.adsK; // zoom du viseur
     this.camera.fov = v;
     this.camera.updateProjectionMatrix();
   }
@@ -411,6 +414,7 @@ export class Game {
     this.vm.add(this.vmFlash);
     if (def.model === 'knife') { w.rotation.set(0.2, -0.25, -0.5); }
     this.vmBase = VM_OFFSET[def.model] || VM_OFFSET.rifle;
+    this.vmSight = w.userData.sight || null; // centre de la fenêtre du viseur (visée)
     this.local.switchT = 0.35;
   }
 
@@ -550,7 +554,7 @@ export class Game {
       const w = WEAPONS[id], a = ARMOR[id];
       const name = w ? w.name : a.name;
       const cost = w ? w.cost : a.cost;
-      const stat = w ? `${w.damage}${w.pellets > 1 ? '×' + w.pellets : ''} dég · ${w.mag} balles · ${w.auto ? 'auto' : 'semi'}` : `+${a.value} armure`;
+      const stat = w ? `${w.damage}${w.pellets > 1 ? '×' + w.pellets : ''} dég · ${w.mag} balles · ${w.auto ? 'auto' : 'semi'}${w.ads ? ' · viseur' : w.scope ? ' · lunette' : ''}` : `+${a.value} armure`;
       const lock = w && this.unlocks && (WEAPON_UNLOCK[id] || 1) > this.level;
       return `<div class="buy-item ${lock ? 'locked' : ''}" data-item="${id}"><div class="bn">${name}${lock ? ` <span class="lock">🔒 NIV. ${WEAPON_UNLOCK[id]}</span>` : ''}</div><div class="bp">${cost ? cost : 'GRATUIT'}</div><div class="bs">${stat}</div></div>`;
     }).join('')}</div>`).join('');
@@ -914,8 +918,7 @@ export class Game {
     this._ku = e => { if (this.codeMap[e.code] || e.code === 'Tab') e.preventDefault(); this.release(e.code); };
     this._mm = e => {
       if (document.pointerLockElement !== canvas) return;
-      let s = ST().sens * 0.0022;
-      if (this.scoped) s *= ST().scopeSens / WEAPONS.longbow.scope;
+      const s = ST().sens * 0.0022 * this.aimSensK();
       L.yaw -= e.movementX * s;
       L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - e.movementY * s * (ST().sensY || 1) * (ST().invertY ? -1 : 1)));
       this.vmSwayX += e.movementX * 0.00025; this.vmSwayY += e.movementY * 0.00025;
@@ -1012,8 +1015,7 @@ export class Game {
   touchLook(mx, my) {
     if (!this.canAct() && !(this.me && !this.me.al)) return;
     const L = this.local;
-    let s = (ST().touchSens || 1) * 0.0048;
-    if (this.scoped) s *= ST().scopeSens / WEAPONS.longbow.scope;
+    const s = (ST().touchSens || 1) * 0.0048 * this.aimSensK();
     L.yaw -= mx * s;
     L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - my * s * (ST().sensY || 1) * (ST().invertY ? -1 : 1)));
     this.vmSwayX += mx * 0.0003; this.vmSwayY += my * 0.0003;
@@ -1023,7 +1025,7 @@ export class Game {
   padLook(dx, dy) {
     if (!this.canAct() && !(this.me && !this.me.al)) return;
     const L = this.local;
-    let k = 1; if (this.scoped) k = ST().scopeSens / WEAPONS.longbow.scope;
+    const k = this.aimSensK();
     L.yaw -= dx * k;
     L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - dy * k));
     this.vmSwayX += dx * 0.05; this.vmSwayY += dy * 0.05;
@@ -1144,7 +1146,7 @@ export class Game {
     L.mag = w[1]; L.reserve = w[2];
     L.nextFire = performance.now() / 1000 + 0.3;
     L.burst = 0;
-    if (this.scoped) this.toggleScope(false);
+    if (this.scoped || this.ads) this.toggleScope(false);
     this.setViewmodel(w[0]);
   }
 
@@ -1154,13 +1156,20 @@ export class Game {
     if (!def.mag || L.reloadEnd > now || L.mag >= def.mag || L.reserve <= 0 || !this.me?.al) return;
     L.reloadEnd = now + def.reload;
     this.reloadSlot = L.slot;
-    if (this.scoped) this.toggleScope(false);
+    if (this.scoped || this.ads) this.toggleScope(false);
     this.net.send('reload');
     SFX.playReload();
   }
 
   toggleScope(force) {
     const def = WEAPONS[this.curWeaponId()];
+    if (force === false) this.ads = false;
+    if (def.ads && !def.scope) {
+      // viseur : pas de cache noir, l'arme se centre et le champ de vision se resserre un peu
+      this.ads = !!(force ?? !this.ads) && !!this.me?.al && !(this.local.slideT > 0);
+      return;
+    }
+    this.ads = false;
     const v = force ?? (!this.scoped && !!def.scope && this.me?.al);
     if (v === this.scoped) return;
     this.scoped = !!v;
@@ -1169,6 +1178,13 @@ export class Game {
     this.updateFov();
   }
 
+  // sensibilité de visée : lunette, ou viseur (progressif pendant la mise en joue)
+  aimSensK() {
+    if (this.scoped) return ST().scopeSens / WEAPONS.longbow.scope;
+    const k = this.adsK || 0; if (k < 0.01) return 1;
+    const z = 1 + ((WEAPONS[this.curWeaponId()]?.ads?.zoom || 1) - 1) * k;
+    return (1 + ((ST().scopeSens ?? 1) - 1) * k) / z;
+  }
   aimDir() { return dirFromAngles(this.local.yaw, this.local.pitch + this.local.recoil); }
   eyePos() { const L = this.local; return [L.pos[0], L.pos[1] + L.eyeH, L.pos[2]]; }
 
@@ -1193,11 +1209,14 @@ export class Game {
     L.nextFire = now + 1 / (def.rate * (this.me.rm || 1));
     const hs = Math.hypot(L.vel[0], L.vel[2]);
     let spread = def.type === 'sniper' ? (this.scoped ? def.scopedSpread : def.spread) : (def.spread || 0);
+    // viseur : dispersion de base et rafale réduites (pas les pénalités de mouvement ni de saut)
+    const adsM = def.ads ? 1 - (1 - def.ads.spread) * (this.adsK || 0) : 1;
     if (def.type !== 'melee') {
+      spread *= adsM;
       if (hs > 2.2) spread += def.moveSpread * Math.min(1, hs / 6);
       if (!L.onGround) spread += def.airSpread;
       if (L.crouch && !(L.slideT > 0)) spread *= 0.75; // la glissade ne donne pas le bonus de précision accroupi
-      if (def.auto) spread += Math.min(L.burst, 14) * def.recoil * 0.3;
+      if (def.auto) spread += Math.min(L.burst, 14) * def.recoil * 0.3 * adsM;
     }
     const dirs = [];
     const n = def.pellets || 1;
@@ -1211,7 +1230,7 @@ export class Game {
     L.lastShot = now;
     if (def.type !== 'melee') {
       if (!this.opts.infAmmo) L.mag--;
-      const rec = def.recoil * (L.burst < 3 ? 0.6 : 1);
+      const rec = def.recoil * (L.burst < 3 ? 0.6 : 1) * (1 - 0.25 * (this.adsK || 0));
       L.recoil = Math.min(0.32, L.recoil + rec);
       L.yaw += (Math.random() - 0.5) * def.recoil * (L.burst > 5 ? 1.2 : 0.4);
       L.burst++;
@@ -1319,7 +1338,7 @@ export class Game {
         this.killedBy = m.k;
         this.deathMark = { p: this.local.pos.slice(), t: performance.now() / 1000 };
         $('combat').innerHTML = '';
-        if (this.scoped) this.toggleScope(false);
+        if (this.scoped || this.ads) this.toggleScope(false);
         $('death-info').innerHTML = m.k && m.k !== this.myId ? `ÉLIMINÉ PAR <b>${esc(this.nameOf(m.k))}</b>` : 'ÉLIMINÉ';
       }
       const o = this.others.get(m.v);
@@ -1633,7 +1652,7 @@ export class Game {
       this.renderer.render(this.vmScene, this.vmCam);
     }
     this.updateFrameHUD(dt, now);
-    if (this.touch) this.touch.update({ alive: !!this.me?.al, canBuy: this.mode !== 'gungame' && (isFfa(this.mode) || this.snap?.ph === 'buy'), assault: this.mode === 'assault', scope: WEAPONS[this.curWeaponId()]?.scope });
+    if (this.touch) this.touch.update({ alive: !!this.me?.al, canBuy: this.mode !== 'gungame' && (isFfa(this.mode) || this.snap?.ph === 'buy'), assault: this.mode === 'assault', scope: WEAPONS[this.curWeaponId()]?.scope || WEAPONS[this.curWeaponId()]?.ads });
   }
 
   updateLocal(dt, now) {
@@ -1664,6 +1683,7 @@ export class Game {
     if (walking) speed *= MOVE.walkMul;
     if (L.crouch) speed *= MOVE.crouchMul;
     if (this.scoped) speed *= 0.6;
+    if (def.ads && this.adsK > 0) speed *= 1 - (1 - def.ads.move) * this.adsK;
     if (L.dashT > 0) L.dashT -= dt;
     else if (L.slideT > 0) {
       // la vitesse de la glissade diminue avec le frottement ; on peut légèrement l'orienter
@@ -1735,6 +1755,7 @@ export class Game {
     L.vel[0] *= v0 / hv; L.vel[2] *= v0 / hv;
     L.slideT = MOVE.slideTime;
     L.slideReady = now + MOVE.slideCooldown;
+    this.ads = false;
     this.toggleBuy(false);
     SFX.playSlide();
     this.net.send('slide');
@@ -1902,6 +1923,11 @@ export class Game {
     const cam = this.camera;
     let shake = 0;
     if (this.shake > 0) { this.shake -= dt; shake = ST().reduceMotion ? 0 : this.shake * 0.08 * (ST().shakeAmount ?? 1); }
+    // mise en joue au viseur (≈ 0,15 s) : zoom progressif, réticule normal masqué ; retombe à 0 à la mort
+    this.adsK += ((this.ads && this.me?.al && !this.spec ? 1 : 0) - this.adsK) * Math.min(1, dt * 14);
+    if (this.adsK < 0.002) this.adsK = 0;
+    if (Math.abs(this.adsK - (this.adsFovK || 0)) > 0.002 || (this.adsK === 0 && this.adsFovK)) { this.adsFovK = this.adsK; this.updateFov(); }
+    $('crosshair').classList.toggle('ads', this.adsK > 0.6);
     if (this.spec) {
       const e = this.eyePos();
       if (this.spec.third) {
@@ -1955,10 +1981,14 @@ export class Game {
     const reloadK = L.reloadEnd > now ? Math.sin(Math.min(1, 1 - (L.reloadEnd - now) / (WEAPONS[this.curWeaponId()].reload || 1)) * Math.PI) : 0;
     const sw = Math.max(0, L.switchT) / 0.35;
     const melee = WEAPONS[this.curWeaponId()].type === 'melee';
+    // viseur : l'arme glisse au centre, la fenêtre du viseur devant l'œil (balancement réduit)
+    const ak = this.vmSight ? (this.adsK || 0) : 0, hipK = 1 - ak * 0.85;
+    const hip = [base[0] * (ST().leftHand ? -1 : 1), base[1], base[2]];
+    const aim = this.vmSight ? [0, -this.vmSight.y, -(this.vmSight.dist || 0.25) - this.vmSight.z] : hip;
     this.vm.position.set(
-      base[0] * (ST().leftHand ? -1 : 1) + Math.cos(this.vmBob) * 0.012 * bobA - this.vmSwayX,
-      base[1] + Math.abs(Math.sin(this.vmBob)) * 0.014 * bobA + this.vmSwayY - reloadK * 0.12 - sw * 0.25 - (L.crouch ? 0.01 : 0) - (L.slideRoll || 0) * 0.5,
-      base[2] + this.vmKick * (melee ? -0.15 : 0.06));
+      hip[0] + (aim[0] - hip[0]) * ak + (Math.cos(this.vmBob) * 0.012 * bobA - this.vmSwayX) * hipK,
+      hip[1] + (aim[1] - hip[1]) * ak + (Math.abs(Math.sin(this.vmBob)) * 0.014 * bobA + this.vmSwayY) * hipK - reloadK * 0.12 - sw * 0.25 - (L.crouch ? 0.01 : 0) * hipK - (L.slideRoll || 0) * 0.5,
+      hip[2] + (aim[2] - hip[2]) * ak + this.vmKick * (melee ? -0.15 : 0.06));
     let insp = 0;
     if (this.inspectT > 0) { this.inspectT -= dt; if (this.local.lastShot > now - 0.2 || L.reloadEnd > now) this.inspectT = 0; insp = Math.sin(Math.min(1, (1.8 - this.inspectT) / 1.8) * Math.PI); }
     this.vm.rotation.set(this.vmKick * (melee ? -0.6 : 0.12) - reloadK * 0.6 + sw * 0.6 + insp * 0.35, this.vmSwayX * 2 + (melee ? this.vmKick * 0.8 : 0) + insp * 1.1, reloadK * 0.4 + insp * 0.5 + (L.slideRoll || 0) * 2.5);

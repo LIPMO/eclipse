@@ -928,3 +928,6 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 /* 1.12 : ami spectateur (retransmission en différé) */
 #spec-panel.friend { width: 260px; border-color: rgba(25, 227, 196, .5); }
 #spec-panel.friend .sp-tag { background: var(--alpha); color: #04211b; }
+
+/* 1.14 : visée au viseur, le réticule normal s'efface (le point du viseur prend le relais) */
+#crosshair.ads { opacity: 0; transition: opacity .08s; }

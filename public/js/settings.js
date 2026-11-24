@@ -23,7 +23,7 @@ export function keyName(code) {
 export const ACTIONS = [
   ['forward', 'Avancer'], ['back', 'Reculer'], ['left', 'Gauche'], ['right', 'Droite'],
   ['jump', 'Sauter'], ['crouch', 'S\'accroupir'], ['walk', 'Marcher (silencieux)'],
-  ['fire', 'Tirer'], ['scope', 'Lunette'], ['reload', 'Recharger'],
+  ['fire', 'Tirer'], ['scope', 'Viseur / lunette'], ['reload', 'Recharger'],
   ['slot1', 'Arme principale'], ['slot2', 'Arme secondaire'], ['slot3', 'Couteau'],
   ['abilityQ', 'Capacité 1'], ['abilityE', 'Capacité 2'], ['ult', 'Ultime'],
   ['interact', 'Poser / désamorcer'], ['buy', 'Menu d\'achat'], ['scoreboard', 'Tableau des scores'], ['chat', 'Chat (tous)'],
@@ -82,12 +82,12 @@ const SECTIONS = [
   { id: 'mouse', title: 'Souris', items: [
     { k: 'sens', t: 'range', label: 'Sensibilité', min: 0.05, max: 5, step: 0.01, num: true },
     { k: 'sensY', t: 'range', label: 'Multiplicateur vertical', min: 0.3, max: 2, step: 0.05, num: true, hint: '1 = même vitesse à la verticale qu\'à l\'horizontale' },
-    { k: 'scopeSens', t: 'range', label: 'Multiplicateur en lunette', min: 0.2, max: 2, step: 0.05, num: true, hint: '1 = même vitesse de visée qu\'en vue normale (corrigée du zoom)' },
+    { k: 'scopeSens', t: 'range', label: 'Multiplicateur au viseur et en lunette', min: 0.2, max: 2, step: 0.05, num: true, hint: '1 = même vitesse de visée qu\'en vue normale (corrigée du zoom)' },
     { k: 'invertY', t: 'toggle', label: 'Inverser l\'axe vertical' },
     { k: 'crouchToggle', t: 'toggle', label: 'Accroupi en mode bascule', hint: 'Un appui pour s\'accroupir, un autre pour se relever' },
     { k: 'slide', t: 'toggle', label: 'Glissade (s\'accroupir en courant)', hint: 'En courant, la touche s\'accroupir lance une glissade : plus petit et plus rapide, mais moins précis. Saute pendant la glissade pour garder l\'élan.' },
     { k: 'walkToggle', t: 'toggle', label: 'Marche silencieuse en mode bascule' },
-    { k: 'scopeHold', t: 'toggle', label: 'Lunette : maintenir le bouton', hint: 'Désactivé : un clic ouvre la lunette, un autre la ferme' },
+    { k: 'scopeHold', t: 'toggle', label: 'Viseur et lunette : maintenir le bouton', hint: 'Désactivé : un clic pour viser, un autre pour arrêter' },
     { k: 'autoReload', t: 'toggle', label: 'Rechargement automatique quand le chargeur est vide' },
   ] },
   { id: 'pad', title: 'Manette', custom: 'pad', items: [
@@ -309,7 +309,7 @@ function profilesHTML(sec) {
 }
 
 export const PAD_LAYOUT = [
-  ['Stick gauche', 'Se déplacer (pousser à fond pour courir)'], ['Stick droit', 'Viser'], ['Gâchette droite (RT / R2)', 'Tirer'], ['Gâchette gauche (LT / L2)', 'Lunette'],
+  ['Stick gauche', 'Se déplacer (pousser à fond pour courir)'], ['Stick droit', 'Viser'], ['Gâchette droite (RT / R2)', 'Tirer'], ['Gâchette gauche (LT / L2)', 'Viseur / lunette'],
   ['A / Croix', 'Sauter'], ['B / Rond', 'S\'accroupir'], ['X / Carré', 'Recharger'], ['Y / Triangle', 'Arme suivante'],
   ['LB / L1', 'Capacité 1'], ['RB / R1', 'Capacité 2'], ['Croix haut', 'Ultime'], ['Croix bas (maintenir)', 'Poser / désamorcer le Noyau'],
   ['Croix gauche', 'Lâcher l\'arme'], ['Croix droite', 'Menu d\'achat'], ['Clic stick gauche', 'Marcher (silencieux)'], ['Clic stick droit', 'Marquer une position'],

@@ -333,6 +333,43 @@ function cyl(r, len, mat, x = 0, y = 0, z = 0, seg = 10) {
   m.rotation.x = Math.PI / 2; m.position.set(x, y, z); return m;
 }
 
+// ---------- viseurs (1.14) ----------
+// Chaque viseur est posé sur le rail supérieur ; il renvoie le centre de sa fenêtre (alignée avec le centre de l'écran en visée).
+const glassMat = () => new THREE.MeshBasicMaterial({ color: '#9fffe8', transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide });
+const dotMat = c => new THREE.MeshBasicMaterial({ color: c });
+function addSight(g, type, baseY, z, mats) {
+  const { dark, accent } = mats;
+  const add = (...ms) => ms.forEach(m => g.add(m));
+  if (type === 'reddot') { // viseur point rouge (réflexe) : fenêtre ouverte, point rouge au centre
+    const w = 0.046, h = 0.034, cy = baseY + 0.006 + h / 2;
+    add(box(0.044, 0.012, 0.06, dark, 0, baseY, z), box(0.006, h + 0.006, 0.03, dark, -w / 2, cy, z - 0.01), box(0.006, h + 0.006, 0.03, dark, w / 2, cy, z - 0.01),
+      box(w + 0.006, 0.006, 0.03, accent, 0, cy + h / 2 + 0.003, z - 0.01));
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.006, h), glassMat()); glass.position.set(0, cy, z - 0.02); add(glass);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 8, 6), dotMat('#ff2a2a')); dot.position.set(0, cy, z - 0.021); add(dot);
+    return Object.assign(new THREE.Vector3(0, cy, z - 0.02), { dist: 0.27 });
+  }
+  if (type === 'holo') { // viseur holographique : fenêtre rectangulaire, cercle et point au centre
+    const w = 0.062, h = 0.042, cy = baseY + 0.006 + h / 2, d = 0.07;
+    add(box(0.05, 0.012, 0.09, dark, 0, baseY, z), box(0.007, h + 0.008, d, dark, -w / 2, cy, z), box(0.007, h + 0.008, d, dark, w / 2, cy, z),
+      box(w + 0.007, 0.008, d, dark, 0, cy + h / 2 + 0.004, z), box(w + 0.007, 0.004, 0.02, accent, 0, cy + h / 2 + 0.009, z + 0.02));
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.007, h), glassMat()); glass.position.set(0, cy, z - d / 2 + 0.004); add(glass);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.0085, 0.0007, 6, 32), dotMat('#ff4a2a')); ring.position.set(0, cy, z - d / 2 + 0.003); add(ring);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0012, 8, 6), dotMat('#ff4a2a')); dot.position.set(0, cy, z - d / 2 + 0.003); add(dot);
+    return Object.assign(new THREE.Vector3(0, cy, z - d / 2), { dist: 0.34 });
+  }
+  // ACOG : lunette courte (tube creux), réticule rouge au fond
+  const r = 0.021, len = 0.16, cy = baseY + 0.02 + r;
+  add(box(0.03, 0.02, 0.08, dark, 0, baseY + 0.01, z));
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20, 1, true), new THREE.MeshStandardMaterial({ color: '#16181d', metalness: 0.4, roughness: 0.6, side: THREE.DoubleSide }));
+  tube.rotation.x = Math.PI / 2; tube.position.set(0, cy, z); add(tube);
+  const ring = (zz, rr) => { const m = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.004, 6, 24), accent); m.position.set(0, cy, zz); add(m); };
+  ring(z - len / 2, r + 0.002); ring(z + len / 2, r + 0.002);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(r * 0.95, 24), glassMat()); lens.position.set(0, cy, z - len / 2 + 0.002); add(lens);
+  const chev = new THREE.Mesh(new THREE.ConeGeometry(0.0022, 0.004, 3), dotMat('#ff3030')); chev.position.set(0, cy - 0.002, z - len / 2 + 0.003); chev.rotation.z = 0; add(chev);
+  const post = box(0.0006, 0.012, 0.0006, dotMat('#ff3030'), 0, cy - 0.0105, z - len / 2 + 0.003); add(post);
+  return Object.assign(new THREE.Vector3(0, cy, z + len / 2), { dist: 0.15 });
+}
+
 // L'arme pointe vers -Z. Origine ≈ poignée.
 export function buildWeapon(model, skinId) {
   const g = new THREE.Group();
@@ -361,25 +398,29 @@ export function buildWeapon(model, skinId) {
       break;
     case 'smg':
       add(box(0.07, 0.1, 0.38, body, 0, 0.04, -0.12), cyl(0.018, 0.14, dark, 0, 0.05, -0.37), box(0.045, 0.2, 0.05, dark, 0, -0.1, -0.12),
-        box(0.045, 0.12, 0.06, dark, 0, -0.07, 0.04), box(0.03, 0.05, 0.22, body, 0, 0.03, 0.18), box(0.074, 0.015, 0.3, accent, 0, 0.098, -0.12), box(0.02, 0.04, 0.03, accent, 0, 0.12, -0.02));
+        box(0.045, 0.12, 0.06, dark, 0, -0.07, 0.04), box(0.03, 0.05, 0.22, body, 0, 0.03, 0.18), box(0.074, 0.015, 0.3, accent, 0, 0.098, -0.12));
       g.children[3].rotation.x = 0.2; muzzle.set(0, 0.05, -0.45);
+      g.userData.sight = addSight(g, 'reddot', 0.112, -0.05, { dark, accent });
       break;
     case 'shotgun':
       add(box(0.075, 0.09, 0.55, body, 0, 0.05, -0.2), cyl(0.024, 0.32, dark, 0, 0.075, -0.6), cyl(0.026, 0.28, accent, 0, 0.02, -0.5),
         box(0.045, 0.12, 0.06, dark, 0, -0.06, 0.05), box(0.06, 0.1, 0.28, body, 0, 0.02, 0.2), box(0.078, 0.012, 0.4, accent, 0, 0.1, -0.2));
       g.children[3].rotation.x = 0.25; muzzle.set(0, 0.075, -0.78);
+      g.userData.sight = addSight(g, 'reddot', 0.112, -0.16, { dark, accent });
       break;
     case 'dmr':
       add(box(0.07, 0.1, 0.5, body, 0, 0.05, -0.15), cyl(0.017, 0.38, dark, 0, 0.065, -0.58), box(0.06, 0.07, 0.26, accent, 0, 0.04, -0.42),
         box(0.045, 0.15, 0.06, dark, 0, -0.08, -0.1), box(0.045, 0.12, 0.06, dark, 0, -0.07, 0.06), box(0.05, 0.09, 0.3, body, 0, 0.03, 0.26),
-        cyl(0.028, 0.18, dark, 0, 0.14, -0.12), box(0.074, 0.012, 0.4, accent, 0, 0.102, -0.1));
+        box(0.074, 0.012, 0.4, accent, 0, 0.102, -0.1));
       g.children[4].rotation.x = 0.2; muzzle.set(0, 0.065, -0.78);
+      g.userData.sight = addSight(g, 'acog', 0.108, -0.1, { dark, accent });
       break;
     case 'rifle':
       add(box(0.075, 0.11, 0.48, body, 0, 0.05, -0.14), cyl(0.018, 0.34, dark, 0, 0.07, -0.56), box(0.07, 0.085, 0.24, accent, 0, 0.05, -0.42),
         box(0.05, 0.19, 0.075, dark, 0, -0.1, -0.12), box(0.045, 0.12, 0.06, dark, 0, -0.07, 0.06), box(0.055, 0.1, 0.3, body, 0, 0.03, 0.26),
-        box(0.03, 0.05, 0.08, dark, 0, 0.13, -0.1), box(0.079, 0.014, 0.36, accent, 0, 0.11, -0.12), box(0.012, 0.03, 0.012, accent, 0, 0.1, -0.68));
+        box(0.079, 0.014, 0.36, accent, 0, 0.11, -0.12), box(0.012, 0.03, 0.012, accent, 0, 0.1, -0.68));
       g.children[3].rotation.x = -0.18; g.children[4].rotation.x = 0.2; muzzle.set(0, 0.07, -0.74);
+      g.userData.sight = addSight(g, 'holo', 0.123, -0.1, { dark, accent });
       break;
     case 'sniper':
       add(box(0.08, 0.11, 0.55, body, 0, 0.05, -0.12), cyl(0.02, 0.6, dark, 0, 0.065, -0.68), cyl(0.032, 0.12, accent, 0, 0.065, -0.96),
