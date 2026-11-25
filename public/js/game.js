@@ -1537,8 +1537,10 @@ export class Game {
     if (!me.wp[L.slot]) { L.slot = [1, 2, 3].find(k => me.wp[k]) || 3; if (me.wp[L.slot]) this.setViewmodel(me.wp[L.slot][0]); }
     const w = me.wp[L.slot];
     if (w && this.vmWeaponId !== w[0]) { this.setViewmodel(w[0]); L.mag = w[1]; L.reserve = w[2]; L.reloadEnd = 0; }
-    if (w && tnow - L.lastShot > 0.4 && L.reloadEnd <= tnow) { L.mag = w[1]; L.reserve = w[2]; }
-    if (w && me.rl > 0 && L.reloadEnd <= tnow) L.reloadEnd = tnow + me.rl;
+    // juste après une recharge terminée côté joueur, le serveur peut encore envoyer l'ancien chargeur (vide) : on garde le nôtre
+    const justReloaded = tnow - (L.reloadDoneAt || -9) < 1.0;
+    if (w && !justReloaded && tnow - L.lastShot > 0.4 && L.reloadEnd <= tnow) { L.mag = w[1]; L.reserve = w[2]; }
+    if (w && !justReloaded && me.rl > 0 && L.reloadEnd <= tnow) L.reloadEnd = tnow + me.rl;
 
     for (const p of s.players) {
       if (p.i === this.myId) { this.self = p; continue; }
@@ -1829,6 +1831,7 @@ export class Game {
     if (L.reloadEnd && now >= L.reloadEnd) {
       if (this.reloadSlot === L.slot && def.mag) { const take = Math.min(def.mag - L.mag, L.reserve); L.mag += take; L.reserve -= take; }
       L.reloadEnd = 0;
+      L.reloadDoneAt = now; // le serveur peut encore annoncer « en recharge » quelques instants : on ne le croit pas
       L.lastShot = now - 0.2;
     }
     // envoi des entrées (30 Hz)

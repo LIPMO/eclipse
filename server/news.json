@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.22.4",
+    "date": "2026-11-25",
+    "title": "Correction de la recharge",
+    "items": [
+      "Corrigé : la recharge repartait en boucle quand le chargeur était vide, avec l'animation qui se répétait."
+    ]
+  },
+  {
     "version": "1.22.3",
     "date": "2026-11-25",
     "title": "Mesure d'audience",
