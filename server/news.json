@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.15.1",
+    "date": "2026-11-25",
+    "title": "Nouveau salon de groupe plein écran",
+    "items": [
+      "Le salon prend tout l'écran Jouer : toi au centre, tes amis autour de toi sur des socles lumineux, avec leur pseudo, leur niveau et « PRÊT » au-dessus de la tête.",
+      "Places libres en hologramme avec un « + » pour inviter un ami directement.",
+      "Carte de la partie en bas à droite et gros bouton JOUER. Clique sur la carte pour ouvrir « Choisis ta partie » : grands visuels des modes, bots ou autres joueurs, niveau des bots et carte avec aperçu.",
+      "Ton personnage fête ça quand tu te mets PRÊT, et un grand compte à rebours s'affiche avant le départ.",
+      "Chat de groupe et boutons Inviter / Quitter le groupe en bas à gauche. Fonctionne aussi sur téléphone et en anglais."
+    ]
+  },
+  {
     "version": "1.15.0",
     "date": "2026-11-25",
     "title": "Salon de groupe, moments et blagues de l'admin",

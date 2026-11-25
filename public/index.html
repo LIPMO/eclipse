@@ -96,27 +96,41 @@
   <section id="tab-play" class="tab">
     <div id="motd" class="motd hidden"></div>
     <div id="event-banner" class="event-banner hidden"></div>
-    <!-- SALON DE GROUPE (1.15) : jusqu'à 4 amis, le chef choisit la partie, chacun se met PRÊT -->
-    <div id="lobby" class="lobby panel">
-      <div class="lb-stage">
-        <canvas id="lobby-canvas"></canvas>
-        <div id="lobby-slots" class="lb-slots"></div>
-        <div id="lobby-count" class="lb-count hidden"></div>
+    <!-- SALON DE GROUPE (1.15) : scène plein écran, toi au centre et tes amis autour, le chef choisit la partie -->
+    <div id="lobby" class="lobby">
+      <canvas id="lobby-canvas"></canvas>
+      <div id="lobby-slots" class="lb-tags"></div>
+      <div class="lb-top">
+        <div class="lb-chip" id="lb-chip">SALON DE GROUPE</div>
+        <div id="lobby-who" class="lb-who"></div>
       </div>
-      <div class="lb-side">
-        <h2>SALON DE GROUPE</h2>
-        <div id="lobby-who" class="lb-who muted small"></div>
-        <label>Mode de jeu</label>
-        <div class="seg lb-seg" id="lb-mode"></div>
-        <label>Adversaires</label>
-        <div class="seg lb-seg" id="lb-fill"><button data-v="0">🤖 CONTRE DES BOTS</button><button data-v="1">🌍 AVEC D'AUTRES JOUEURS</button></div>
-        <div class="row lb-row">
-          <label id="lb-diff-l">Bots<select id="lb-diff"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option><option value="cible">Champ de tir (cibles)</option></select></label>
-          <label>Carte<select id="lb-map"></select></label>
-        </div>
-        <button id="lb-play" class="btn primary lb-play">JOUER</button>
-        <div id="lb-hint" class="lb-hint muted small"></div>
+      <div class="lb-left">
         <div id="lb-chat" class="lb-chat hidden"><div id="lb-chat-log" class="lb-chat-log"></div><form id="lb-chat-form"><input id="lb-chat-in" maxlength="140" placeholder="Message au groupe…" autocomplete="off"><button class="btn ghost small" type="submit">➤</button></form></div>
+        <div class="lb-actions"><button id="lb-invite" class="btn ghost small">＋ INVITER DES AMIS</button><button id="lb-leave" class="btn ghost small hidden">QUITTER LE GROUPE</button></div>
+      </div>
+      <div class="lb-right">
+        <button id="lb-mode-card" class="lb-mode-card" title="Changer de partie">
+          <canvas id="lb-map-thumb" width="120" height="84"></canvas>
+          <div class="lb-mc-txt"><div class="lb-mc-k" id="lb-mc-k">PARTIE CHOISIE</div><div class="lb-mc-t" id="lb-mc-t">MÊLÉE</div><div class="lb-mc-s" id="lb-mc-s"></div></div>
+          <span class="lb-mc-chg" id="lb-mc-chg">CHANGER</span>
+        </button>
+        <button id="lb-play" class="lb-play">JOUER</button>
+        <div id="lb-hint" class="lb-hint"></div>
+      </div>
+      <div id="lobby-count" class="lb-count hidden"></div>
+      <!-- choix de la partie (chef du groupe ou joueur seul) -->
+      <div id="lb-modes" class="lb-modes hidden">
+        <div class="lb-modes-in">
+          <div class="lb-modes-head"><h2>CHOISIS TA PARTIE</h2><button class="mx" id="lb-modes-x">✕</button></div>
+          <div class="lb-mode-grid" id="lb-mode"></div>
+          <div class="lb-opt-row">
+            <div><div class="lb-opt-k">ADVERSAIRES</div><div class="lb-fill" id="lb-fill"><button data-v="0"><b>🤖 CONTRE DES BOTS</b><span>Partie privée, lancée tout de suite</span></button><button data-v="1"><b>🌍 AVEC D'AUTRES JOUEURS</b><span>Partie publique, complétée par des bots</span></button></div></div>
+            <div id="lb-diff-l"><div class="lb-opt-k">NIVEAU DES BOTS</div><div class="seg lb-diff" id="lb-diff"><button data-v="easy">FACILE</button><button data-v="normal">NORMAL</button><button data-v="hard">DIFFICILE</button><button data-v="expert">EXPERT</button><button data-v="cible">CIBLES</button></div></div>
+          </div>
+          <div class="lb-opt-k">CARTE</div>
+          <div class="lb-map-grid" id="lb-map"></div>
+          <div class="lb-modes-foot"><button class="btn primary" id="lb-modes-ok">VALIDER</button></div>
+        </div>
       </div>
     </div>
     <div class="play-grid">

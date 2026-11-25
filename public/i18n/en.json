@@ -1605,7 +1605,34 @@
 "Seul le chef du groupe lance la partie : clique sur PRÊT.": "Only the party leader starts the match: click READY.",
 "Le duel se joue à deux : choisis un autre mode.": "A duel is for two players: pick another mode.",
 "Le duel se joue à deux : quittez le groupe à plus de deux.": "A duel is for two players: more than two of you are in the party.",
-"Choisi par le chef": "Chosen by the leader"
+"Choisi par le chef": "Chosen by the leader",
+"PARTIE CHOISIE": "SELECTED MATCH",
+"TOI": "YOU",
+"INVITER DES AMIS": "INVITE FRIENDS",
+"Carte aléatoire": "Random map",
+"Contre des bots": "Against bots",
+"Avec d'autres joueurs": "With other players",
+"CHOISIS TA PARTIE": "CHOOSE YOUR MATCH",
+"NIVEAU DES BOTS": "BOT LEVEL",
+"Partie privée, lancée tout de suite": "Private match, starts right away",
+"Partie publique, complétée par des bots": "Public match, filled with bots",
+"VALIDER": "CONFIRM",
+"Chacun pour soi": "Every player for themselves",
+"Une nouvelle arme à chaque élimination": "A new weapon with every kill",
+"Le premier qui élimine au couteau gagne": "First to get a knife kill wins",
+"Pose ou désamorce le noyau": "Plant or defuse the core",
+"En équipe": "In teams",
+"Trois vies chacun": "Three lives each",
+"Le dernier en vie gagne": "Last one alive wins",
+"Face à face": "Head to head",
+"seul ou à deux": "solo or as a pair",
+"Clique sur PRÊT quand tu es prêt à jouer.": "Click READY when you're ready to play.",
+"Quitter le groupe ?": "Leave the party?",
+"Changer de partie": "Change match",
+"8 joueurs": "8 players",
+"premier à 25 éliminations": "first to 25 kills",
+"premier à 7 manches": "first to 7 rounds",
+"Premier à 5 manches": "First to 5 rounds"
 },
 "patterns": [
 [
@@ -2055,6 +2082,22 @@
 [
 "^Lancement annulé par (.+)\\.$",
 "Launch cancelled by $1."
+],
+[
+"^CHOISIE PAR (.+)$",
+"CHOSEN BY $1"
+],
+[
+"^En attente du lancement par (.+)\\. Clique pour annuler\\.$",
+"Waiting for $1 to start. Click to cancel."
+],
+[
+"^Partie choisie par (.+) \\(chef du groupe\\)\\.$",
+"Match chosen by $1 (party leader)."
+],
+[
+"^GROUPE (\\d)/(\\d)$",
+"PARTY $1/$2"
 ],
 [
 "^★(\\d) (.+)$",

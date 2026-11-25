@@ -470,100 +470,188 @@ function previewLoop(t) {
 requestAnimationFrame(previewLoop);
 
 // ======================= SALON DE GROUPE (1.15) =======================
-// Comme dans les jeux de groupe : les personnages du groupe côte à côte, le chef choisit la partie,
-// chacun clique sur PRÊT, puis compte à rebours de 3 secondes et tout le groupe part ensemble.
-const LB_MODES = [['ffa', 'MÊLÉE'], ['gungame', 'GUN GAME'], ['assault', 'ASSAUT 5v5'], ['lives', 'DERNIER DEBOUT'], ['duel', 'DUEL 1v1']];
-const lobby = { sig: '', cdEnd: 0, cdTimer: null, chars: [], cfg: (() => { const d = { mode: 'ffa', fill: false, diff: 'normal', map: 'random' }; try { return { ...d, ...JSON.parse(localStorage.getItem('eclipse_lobby_v1') || '{}') }; } catch { return d; } })() };
+// Scène plein écran : toi au centre, tes amis autour, pseudo au-dessus de chaque tête, « + » pour inviter.
+// Le chef choisit la partie (carte en bas à droite), chacun clique sur PRÊT, compte à rebours, départ ensemble.
+const LB_MODES = [
+  ['ffa', 'MÊLÉE', 'Chacun pour soi', '8 joueurs · premier à 25 éliminations', '✸', '#8b5cff'],
+  ['gungame', 'GUN GAME', 'Une nouvelle arme à chaque élimination', 'Le premier qui élimine au couteau gagne', '⟫', '#ff8a3d'],
+  ['assault', 'ASSAUT 5v5', 'Pose ou désamorce le noyau', 'En équipe · premier à 7 manches', '◆', '#19e3c4'],
+  ['lives', 'DERNIER DEBOUT', 'Trois vies chacun', 'Le dernier en vie gagne', '♥', '#ff4f6d'],
+  ['duel', 'DUEL 1v1', 'Face à face', 'Premier à 5 manches · seul ou à deux', '⚔', '#ffcf5a'],
+];
+const LB_DIFF = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert', cible: 'Cibles' };
+// toi au centre (devant), puis à gauche, à droite, et plus loin à gauche
+const LB_POS = [[0, 0, 0.4], [-1.65, 0, -0.35], [1.65, 0, -0.35], [-3.2, 0, -1.15]];
+const lobby = { sig: '', cdEnd: 0, cdTimer: null, slots: [], env: false, cfg: (() => { const d = { mode: 'ffa', fill: false, diff: 'normal', map: 'random' }; try { return { ...d, ...JSON.parse(localStorage.getItem('eclipse_lobby_v1') || '{}') }; } catch { return d; } })() };
 function saveLobbyCfg() { try { localStorage.setItem('eclipse_lobby_v1', JSON.stringify(lobby.cfg)); } catch { /* stockage indisponible */ } }
 const lobbyParty = () => hub.party;
 const lobbyCanEdit = () => !lobbyParty() || lobbyParty().lead;
 const lobbyCfgNow = () => (lobbyParty() && !lobbyParty().lead && lobbyParty().cfg) ? lobbyParty().cfg : lobby.cfg;
+// toi d'abord (au centre), puis les autres membres dans l'ordre du groupe
 function lobbyMembers() {
   const p = lobbyParty();
-  if (p) return p.members;
+  if (p) return [...p.members.filter(m => m.me), ...p.members.filter(m => !m.me)];
   return [{ name: profile.name || '—', me: true, leader: true, ready: true, agent: profile.agent, skin: profile.equipped?.lancer || 'default', level: profile.progress?.level || 1, title: null, solo: true }];
+}
+// décor de la scène (créé une seule fois) : sol lumineux, anneaux, colonnes au loin, particules
+function lobbyEnv(pv) {
+  if (lobby.env) return; lobby.env = true;
+  const sc = pv.scene;
+  sc.fog = new THREE.Fog('#0b0d18', 9, 24);
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  const g = cv.getContext('2d'); const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0, 'rgba(139,92,255,0.55)'); gr.addColorStop(0.45, 'rgba(60,40,140,0.25)'); gr.addColorStop(1, 'rgba(10,12,24,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 64), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
+  floor.rotation.x = -Math.PI / 2; floor.position.y = 0.001; sc.add(floor);
+  for (const [r, o] of [[3.2, 0.35], [5.2, 0.18], [7.4, 0.1]]) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.03, 96), new THREE.MeshBasicMaterial({ color: '#8b5cff', transparent: true, opacity: o, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002; sc.add(ring);
+  }
+  // colonnes lumineuses au fond
+  const colMat = new THREE.MeshStandardMaterial({ color: '#151a30', roughness: 0.6, metalness: 0.3 });
+  for (let i = 0; i < 14; i++) {
+    const a = -1.25 + i * (2.5 / 13), r = 11 + (i % 3) * 1.6, h = 2.5 + ((i * 37) % 7) * 0.9;
+    const col = new THREE.Mesh(new THREE.BoxGeometry(0.7, h, 0.7), colMat);
+    col.position.set(Math.sin(a) * r, h / 2, -Math.cos(a) * r); sc.add(col);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.06, 0.72), new THREE.MeshBasicMaterial({ color: i % 2 ? '#19e3c4' : '#8b5cff' }));
+    edge.position.set(col.position.x, h, col.position.z); sc.add(edge);
+  }
+  // particules qui montent doucement
+  const N = 160, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 16; pos[i * 3 + 1] = Math.random() * 6; pos[i * 3 + 2] = -Math.random() * 9 + 2; }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  lobby.dust = new THREE.Points(geo, new THREE.PointsMaterial({ color: '#c4b0ff', size: 0.05, transparent: true, opacity: 0.7, depthWrite: false }));
+  sc.add(lobby.dust);
 }
 function buildLobbyStage(members) {
   if (!previews.lobby) { previews.lobby = new Preview($('lobby-canvas')); previews.lobby.fixed = true; previews.lobby.onFrame = lobbyFrame; }
+  const pv = previews.lobby; lobbyEnv(pv);
   const g = new THREE.Group();
-  lobby.chars = [];
-  members.forEach((m, i) => {
-    const holder = new THREE.Group();
-    const ch = buildCharacter(m.agent || 'ignis', '#19e3c4');
-    const w = buildWeapon('rifle', m.skin || 'default'); w.scale.setScalar(1.1); ch.hand.add(w);
+  const old = new Map(lobby.slots.map(s => [s.member?.name, s]));
+  lobby.slots = [];
+  for (let i = 0; i < 4; i++) {
+    const m = members[i] || null;
+    const holder = new THREE.Group(); holder.position.set(...LB_POS[i]);
+    let ch;
+    if (m) {
+      ch = buildCharacter(m.agent || 'ignis', '#19e3c4');
+      const w = buildWeapon('rifle', m.skin || 'default'); w.scale.setScalar(1.1); ch.hand.add(w);
+    } else {
+      // place libre : silhouette holographique
+      ch = buildCharacter('ignis', '#8b5cff');
+      const ghost = new THREE.MeshBasicMaterial({ color: '#8b5cff', transparent: true, opacity: 0.1, depthWrite: false });
+      ch.root.traverse(o => { if (o.isMesh) o.material = ghost; });
+      ch.ghostMat = ghost;
+    }
     holder.add(ch.root);
-    // socle lumineux : vert quand le joueur est prêt, doré pour le chef
-    const col = m.leader ? '#ffcf5a' : m.ready ? '#3dff8a' : '#6b7290';
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 0.06, 40), new THREE.MeshStandardMaterial({ color: '#141828', emissive: col, emissiveIntensity: 0.55, roughness: 0.4 }));
-    disc.position.y = -0.03; holder.add(disc);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.025, 8, 48), new THREE.MeshBasicMaterial({ color: col }));
-    ring.rotation.x = Math.PI / 2; ring.position.y = 0.01; holder.add(ring);
+    const col = !m ? '#4a3d8c' : m.leader ? '#ffcf5a' : m.ready ? '#3dff8a' : '#6b7290';
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.72, 0.08, 48), new THREE.MeshStandardMaterial({ color: '#141828', emissive: col, emissiveIntensity: m ? 0.5 : 0.2, roughness: 0.35, metalness: 0.4 }));
+    disc.position.y = 0.04; holder.add(disc);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.022, 8, 56), new THREE.MeshBasicMaterial({ color: col }));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.085; holder.add(ring);
     g.add(holder);
-    lobby.chars.push({ holder, root: ch.root, slot: i, phase: Math.random() * 6 });
-  });
-  previews.lobby.set(g, [0, 1.25, 7.2], [0, 1.0, 0]);
-}
-// place chaque personnage au-dessus de sa carte (4 colonnes égales) et les fait bouger un peu
-function lobbyFrame() {
-  const pv = previews.lobby; if (!pv) return;
-  const cam = pv.camera, D = 7.2;
-  const halfW = D * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * cam.aspect;
-  const t = performance.now() / 1000;
-  for (const c of lobby.chars) {
-    c.holder.position.set(-halfW + (c.slot + 0.5) * (2 * halfW / 4), 0.15, 0);
-    c.root.rotation.y = Math.PI + Math.sin(t * 0.7 + c.phase) * 0.3; // face à la caméra, léger balancement
-    c.root.position.y = Math.sin(t * 1.6 + c.phase) * 0.015;
+    const prev = m && old.get(m.name);
+    lobby.slots.push({ holder, ch, member: m, phase: prev?.phase ?? Math.random() * 6, cheer: m && m.ready && !m.leader && !(prev?.member?.ready) ? 2.4 : 0 });
   }
+  pv.set(g, [0, 1.55, 7], [0, 1.15, -0.4]);
+}
+// animations : balancement, joie quand on se met PRÊT, silhouettes qui pulsent ; pseudos suivent les têtes
+function lobbyFrame(dt) {
+  const pv = previews.lobby; if (!pv) return;
+  const cam = pv.camera, t = performance.now() / 1000;
+  const z = 7 * Math.max(1, 1.55 / cam.aspect); // écran étroit : la caméra recule pour garder tout le groupe
+  cam.position.set(0, 1.55 + (z - 7) * 0.12, z); cam.lookAt(0, 1.15, -0.4);
+  for (const s of lobby.slots) {
+    const ch = s.ch;
+    if (!s.member) { ch.root.rotation.y = Math.PI + Math.sin(t * 0.5 + s.phase) * 0.6; if (ch.ghostMat) ch.ghostMat.opacity = 0.07 + Math.sin(t * 2 + s.phase) * 0.04; continue; }
+    ch.root.rotation.y = Math.PI + Math.sin(t * 0.6 + s.phase) * 0.22;
+    ch.root.position.y = Math.sin(t * 1.5 + s.phase) * 0.012;
+    if (s.cheer > 0) {
+      s.cheer -= dt;
+      const k = Math.min(1, s.cheer * 2);
+      ch.arms[0].rotation.x = -2.8 * k + Math.sin(t * 12) * 0.25 * k; ch.arms[1].rotation.x = -2.8 * k - Math.sin(t * 12) * 0.25 * k;
+      ch.root.position.y += Math.abs(Math.sin(t * 8)) * 0.18 * k;
+      if (s.cheer <= 0) { ch.arms[0].rotation.x = 0; ch.arms[1].rotation.x = 0; }
+    }
+  }
+  if (lobby.dust) { const a = lobby.dust.geometry.attributes.position; for (let i = 0; i < a.count; i++) { let y = a.getY(i) + dt * 0.25; if (y > 6) y = 0; a.setY(i, y); } a.needsUpdate = true; }
+  // pseudos au-dessus des têtes (projection 3D → écran)
+  const W = pv.canvas.clientWidth, H = pv.canvas.clientHeight, ox = pv.canvas.offsetLeft, oy = pv.canvas.offsetTop, tags = $('lobby-slots').children, v = new THREE.Vector3();
+  lobby.slots.forEach((s, i) => {
+    const el = tags[i]; if (!el) return;
+    v.set(s.holder.position.x, s.member ? 2.3 : 1.35, s.holder.position.z).project(cam);
+    el.style.transform = `translate(${(ox + (v.x + 1) / 2 * W).toFixed(1)}px, ${(oy + (1 - v.y) / 2 * H).toFixed(1)}px) translate(-50%, -100%)`;
+  });
 }
 function renderLobby() {
   const root = $('lobby'); if (!root) return;
   const p = lobbyParty(), cfg = lobbyCfgNow(), edit = lobbyCanEdit();
   const members = lobbyMembers();
   const me = members.find(m => m.me) || members[0];
-  // scène 3D : reconstruite seulement si les personnages changent
   const sig = members.map(m => [m.name, m.agent, m.skin, m.ready, m.leader].join(':')).join('|');
   if (sig !== lobby.sig) { lobby.sig = sig; try { buildLobbyStage(members); } catch (e) { console.warn('Salon : aperçu 3D indisponible', e); } }
-  // cartes des joueurs
+  // pseudos (un par place, dans le même ordre que la scène)
   let html = '';
   for (let i = 0; i < 4; i++) {
     const m = members[i];
     if (m) {
-      const st = m.leader ? '👑 CHEF' : m.busy ? '⏳ EN PARTIE' : m.ready ? '✔ PRÊT' : '… PAS PRÊT';
+      const st = m.leader ? (m.solo ? 'TOI' : '👑 CHEF') : m.busy ? '⏳ EN PARTIE' : m.ready ? '✔ PRÊT' : 'PAS PRÊT';
       const acts = p?.lead && !m.me ? `<div class="lb-acts"><button class="btn ghost small" data-lb="promote" data-n="${esc(m.name)}" title="Nommer chef">👑</button><button class="btn ghost small" data-lb="kick" data-n="${esc(m.name)}" title="Retirer du groupe">✕</button></div>` : '';
-      html += `<div class="lb-slot ${m.leader ? 'lead' : m.ready ? 'ready' : ''} ${m.me ? 'me' : ''}"><div class="lb-name">${esc(m.name)}${m.me && !m.solo ? ' <span class="muted small">(toi)</span>' : ''}</div><div class="lb-sub">NIV. ${m.level || 1}${m.title ? ' · ' + esc(m.title) : ''}${m.clan ? ' · [' + esc(m.clan) + ']' : ''}</div><div class="lb-state">${st}</div>${acts}</div>`;
+      html += `<div class="lb-slot ${m.leader ? 'lead' : m.ready ? 'ready' : ''} ${m.me ? 'me' : ''}"><div class="lb-tag-top"><span class="lvl">${m.level || 1}</span>${esc(m.name)}</div><div class="lb-tag-sub">${m.title ? esc(m.title) : ''}${m.clan ? ' [' + esc(m.clan) + ']' : ''}</div><div class="lb-tag-st">${st}</div>${acts}</div>`;
     } else if (state.guest) html += `<div class="lb-slot empty locked" title="Crée un compte pour jouer en groupe"><b>🔒</b>COMPTE REQUIS</div>`;
     else if (edit) html += `<button class="lb-slot empty" data-lb="invite"><b>＋</b>INVITER UN AMI</button>`;
     else html += `<div class="lb-slot empty locked"><b>·</b>PLACE LIBRE</div>`;
   }
   $('lobby-slots').innerHTML = html;
-  // texte d'aide
+  lobbyFrame(0);
+  // en-tête
+  $('lb-chip').textContent = p ? `GROUPE ${p.members.length}/${p.max}` : 'SALON DE GROUPE';
   $('lobby-who').innerHTML = !p ? (state.guest ? 'Tu joues seul. Crée un compte pour inviter jusqu\'à 3 amis.' : 'Tu es seul : invite jusqu\'à 3 amis pour jouer ensemble, ou lance une partie directement.')
     : p.lead ? `Tu es le chef du groupe (${p.members.length}/${p.max}) : choisis la partie puis clique sur JOUER quand tout le monde est prêt.`
     : `Partie choisie par <b>${esc(p.leader)}</b> (chef du groupe). Clique sur PRÊT.`;
-  // réglages (le chef seul peut les changer)
-  $('lb-mode').innerHTML = LB_MODES.map(([v, l]) => `<button data-v="${v}" class="${cfg.mode === v ? 'active' : ''}">${l}</button>`).join('');
-  $('lb-mode').classList.toggle('ro', !edit); $('lb-fill').classList.toggle('ro', !edit);
-  $('lb-fill').querySelectorAll('button').forEach(b => b.classList.toggle('active', (b.dataset.v === '1') === !!cfg.fill));
-  $('lb-diff').value = cfg.diff; $('lb-diff').disabled = !edit;
-  $('lb-diff-l').style.display = cfg.fill ? 'none' : '';
+  $('lb-invite').classList.toggle('hidden', state.guest || !edit || (p && p.members.length >= p.max));
+  $('lb-leave').classList.toggle('hidden', !p);
+  // carte de la partie
+  const md = LB_MODES.find(x => x[0] === cfg.mode) || LB_MODES[0];
   const maps = mapsForMode(cfg.mode);
-  $('lb-map').innerHTML = `<option value="random">🎲 Aléatoire</option>` + maps.map(id => `<option value="${id}">${esc(MAP_INFO[id]?.name || id)}</option>`).join('');
-  $('lb-map').value = maps.includes(cfg.map) ? cfg.map : 'random'; $('lb-map').disabled = !edit;
+  const mapName = maps.includes(cfg.map) ? (MAP_INFO[cfg.map]?.name || cfg.map) : 'Carte aléatoire';
+  $('lb-mc-t').textContent = md[1];
+  $('lb-mc-s').textContent = `${cfg.fill ? 'Avec d\'autres joueurs' : `Contre des bots · ${LB_DIFF[cfg.diff] || cfg.diff}`} · ${mapName}`;
+  $('lb-mc-k').textContent = edit ? 'PARTIE CHOISIE' : `CHOISIE PAR ${String(p?.leader || '').toUpperCase()}`;
+  $('lb-mode-card').classList.toggle('ro', !edit);
+  const sigMap = cfg.mode + ':' + cfg.map;
+  if (lobby.thumb !== sigMap) { lobby.thumb = sigMap; const cv = $('lb-map-thumb'); const id = maps.includes(cfg.map) ? cfg.map : maps[0]; try { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); drawMapPreview(cv, parseMap(id), { labels: false }); if (!maps.includes(cfg.map)) { const g = cv.getContext('2d'); g.fillStyle = 'rgba(10,12,24,.6)'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = '#fff'; g.font = 'bold 34px sans-serif'; g.textAlign = 'center'; g.fillText('?', cv.width / 2, cv.height / 2 + 12); } } catch { /* aperçu indisponible */ } }
+  renderLobbyModes(cfg, edit);
   // bouton principal
   const btn = $('lb-play'), hint = $('lb-hint');
   const counting = p && p.countdown > 0;
-  btn.classList.remove('ready', 'wait');
-  if (counting) { btn.textContent = 'ANNULER'; hint.textContent = 'Lancement en cours…'; }
+  btn.classList.remove('ready', 'wait', 'cancel');
+  if (counting) { btn.textContent = 'ANNULER'; btn.classList.add('cancel'); hint.textContent = 'Lancement en cours…'; }
   else if (!p || p.lead) {
     const waiting = p ? p.members.filter(m => !m.leader && !m.ready).map(m => m.name) : [];
     btn.textContent = 'JOUER'; btn.classList.toggle('wait', waiting.length > 0);
     hint.textContent = waiting.length ? `En attente : ${waiting.join(', ')}` : cfg.mode === 'duel' && p && p.members.length > 2 ? 'Le duel se joue à deux.' : cfg.fill ? 'Recherche d\'une partie publique (ou création, complétée par des bots).' : 'Partie privée contre des bots.';
-  } else { btn.textContent = me?.ready ? '✔ PRÊT (ANNULER)' : 'PRÊT'; btn.classList.toggle('ready', !!me?.ready); hint.textContent = me?.ready ? `En attente du lancement par ${p.leader}.` : ''; }
-  // compte à rebours
+  } else { btn.textContent = me?.ready ? '✔ PRÊT' : 'PRÊT'; btn.classList.toggle('ready', !!me?.ready); hint.textContent = me?.ready ? `En attente du lancement par ${p.leader}. Clique pour annuler.` : 'Clique sur PRÊT quand tu es prêt à jouer.'; }
   if (counting) { lobby.cdEnd = performance.now() + p.countdown * 1000; if (!lobby.cdTimer) { lobby.cdTimer = setInterval(tickLobbyCount, 100); tickLobbyCount(); } }
   else stopLobbyCount();
-  // chat du groupe
   $('lb-chat').classList.toggle('hidden', !p);
+}
+// écran « choisis ta partie »
+function renderLobbyModes(cfg, edit) {
+  const size = lobbyParty()?.members.length || 1;
+  $('lb-mode').innerHTML = LB_MODES.map(([v, l, d, sub, ic, c]) => `<button data-v="${v}" class="lb-mode-tile ${cfg.mode === v ? 'active' : ''} ${v === 'duel' && size > 2 ? 'off' : ''}" style="--bg: radial-gradient(ellipse at 30% 20%, ${c}66, transparent 70%), linear-gradient(160deg, ${c}33, #0d1020)"><span class="ic">${ic}</span><b>${l}</b><span>${d}</span><small>${sub}</small></button>`).join('');
+  for (const id of ['lb-mode', 'lb-fill', 'lb-diff', 'lb-map']) $(id).classList.toggle('ro', !edit);
+  $('lb-fill').querySelectorAll('button').forEach(b => b.classList.toggle('active', (b.dataset.v === '1') === !!cfg.fill));
+  $('lb-diff').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === cfg.diff));
+  $('lb-diff-l').style.visibility = cfg.fill ? 'hidden' : '';
+  const maps = mapsForMode(cfg.mode);
+  const key = cfg.mode + ':' + cfg.map;
+  if ($('lb-map').dataset.k !== key) {
+    $('lb-map').dataset.k = key;
+    $('lb-map').innerHTML = `<button class="lb-map-tile ${maps.includes(cfg.map) ? '' : 'active'}" data-v="random"><div class="rnd">🎲</div>ALÉATOIRE</button>` + maps.map(id => `<button class="lb-map-tile ${cfg.map === id ? 'active' : ''}" data-v="${id}"><canvas width="160" height="96"></canvas>${esc(MAP_INFO[id]?.name || id)}</button>`).join('');
+    $('lb-map').querySelectorAll('canvas').forEach(cv => { try { drawMapPreview(cv, parseMap(cv.parentElement.dataset.v), { labels: false }); } catch { /* */ } });
+  }
 }
 function tickLobbyCount() {
   const el = $('lobby-count'); const left = Math.ceil((lobby.cdEnd - performance.now()) / 1000);
@@ -587,10 +675,16 @@ function openLobbyInvite() {
   openModal(`<h2>INVITER DANS MON GROUPE</h2><p class="muted small">Jusqu'à 4 joueurs. Tes amis te suivent dans tes parties, dans ton équipe.</p>${online.length ? online.map(f => `<div class="fr-row on"><span class="dot on"></span><b>${esc(f.name)}</b><span class="muted small">${esc(f.status || '')}</span><span class="grow"></span><button class="btn primary small" data-lbi="${esc(f.name)}">INVITER</button></div>`).join('') : '<p class="muted">Aucun ami connecté. Ajoute des amis dans l\'onglet AMIS.</p>'}`);
   $('mmodal-in').onclick = e => { const b = e.target.closest('[data-lbi]'); if (b) { net.send('partyInvite', { name: b.dataset.lbi, cfg: lobby.cfg }); b.disabled = true; b.textContent = 'INVITÉ'; } };
 }
+const lobbyModes = show => $('lb-modes').classList.toggle('hidden', !show);
+$('lb-mode-card').onclick = () => { if (lobbyCanEdit()) lobbyModes(true); else toast(`Partie choisie par ${lobbyParty()?.leader} (chef du groupe).`); };
+$('lb-modes-x').onclick = $('lb-modes-ok').onclick = () => lobbyModes(false);
+$('lb-modes').addEventListener('keydown', e => { if (e.key === 'Escape') lobbyModes(false); });
 $('lb-mode').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ mode: b.dataset.v }); };
 $('lb-fill').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ fill: b.dataset.v === '1' }); };
-$('lb-diff').onchange = e => lobbySetCfg({ diff: e.target.value });
-$('lb-map').onchange = e => lobbySetCfg({ map: e.target.value });
+$('lb-diff').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ diff: b.dataset.v }); };
+$('lb-map').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ map: b.dataset.v }); };
+$('lb-invite').onclick = () => openLobbyInvite();
+$('lb-leave').onclick = () => { if (confirm('Quitter le groupe ?')) net.send('partyLeave'); };
 $('lb-play').onclick = () => {
   SFX.initAudio();
   const p = lobbyParty();
@@ -613,6 +707,7 @@ net.on('party', m => {
   // le chef garde ses propres réglages ; un membre devenu chef reprend ceux du groupe
   if (p?.lead && p.cfg && lobby.wasMember) { lobby.cfg = { ...p.cfg }; saveLobbyCfg(); }
   lobby.wasMember = !!p && !p.lead;
+  if (!p?.lead) lobbyModes(false);
   // groupe créé depuis la liste d'amis : le chef impose ses réglages du salon
   if (p?.lead && p.cfg && JSON.stringify(p.cfg) !== JSON.stringify(lobby.cfg) && !p.countdown && lobby.synced !== JSON.stringify(lobby.cfg)) { lobby.synced = JSON.stringify(lobby.cfg); net.send('partySet', { cfg: lobby.cfg }); }
   renderLobby();
