@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { SKINS, WEAPONS, ROUND, DUEL, AGENTS, SKINNABLE, isFfa } from '../shared/data.js';
+import { SKINS, WEAPONS, ROUND, DUEL, AGENTS, SKINNABLE, isFfa, MOMENTS } from '../shared/data.js';
 import { MAP_INFO, mapsForMode } from '../shared/maps.js';
 import { QUESTS, QUEST_REWARD, TITLES, STAFF_TITLES, RANKS, rankOf, levelOf, levelInfo, ELO_START, REPORT_REASONS, ACHIEVEMENTS } from '../shared/progress.js';
 import { addXp, setLevel, ensureUser, titlesOf, rankFor, weekKey } from './progression.js';
@@ -38,6 +38,9 @@ const DEFAULT_CONFIG = {
   clanMinLevel: 3,
   // déplacement : glissade (s'accroupir en courant)
   slide: true,
+  // 1.15 : XP des moments (×), blagues de l'administrateur (autorisées, durée max en s), événements serveur,
+  // alertes Discord des moments rares, message envoyé aux nouveaux comptes
+  momentXp: 1, trollsOn: true, trollMax: 30, eventBigHead: false, eventLowGrav: false, eventTurbo: false, discordMoments: true, welcomeMsg: '',
 };
 // filtre proposé au premier lancement (modifiable dans Modération → Filtre de mots)
 const DEFAULT_FILTER = ['connard', 'connasse', 'salope', 'pute', 'enculé', 'encule', 'fdp', 'ntm', 'nique ta mère', 'niquetamere', 'batard', 'bâtard', 'pédé', 'tg', 'ta gueule'];
@@ -53,6 +56,7 @@ const CONFIG_RULES = {
   anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool',
   alertSuspectLogin: 'bool', maxAccountsPerIp: [0, 50], weekendXp: 'bool',
   perfAlerts: 'bool', perfTickMs: [5, 200], discordPerf: 'bool', autoBackup: 'bool', backupKeep: [1, 30], rateChat: [2, 30], rateSocial: [4, 60], clanMinLevel: [1, 50], slide: 'bool',
+  momentXp: [0, 5], trollsOn: 'bool', trollMax: [5, 120], eventBigHead: 'bool', eventLowGrav: 'bool', eventTurbo: 'bool', discordMoments: 'bool', welcomeMsg: ['str', 300],
 };
 // libellés lisibles de la configuration (historique des modifications)
 const CONFIG_LABELS = {
@@ -65,14 +69,23 @@ const CONFIG_LABELS = {
   discordCheat: 'Discord : triche', discordReports: 'Discord : signalements', discordBans: 'Discord : bans', discordTournaments: 'Discord : tournois', alertSuspectLogin: 'Alerte compte surveillé',
   maxAccountsPerIp: 'Comptes par IP', weekendXp: 'XP du week-end', perfAlerts: 'Alertes de lenteur', perfTickMs: 'Seuil de lenteur (ms)', discordPerf: 'Discord : lenteur',
   autoBackup: 'Sauvegarde automatique', backupKeep: 'Sauvegardes conservées', rateChat: 'Limite du chat', rateSocial: 'Limite des actions sociales', clanMinLevel: 'Niveau requis pour créer un clan', slide: 'Glissade',
+  momentXp: 'XP des moments', trollsOn: 'Blagues autorisées', trollMax: 'Durée max. des blagues', eventBigHead: 'Événement grosses têtes', eventLowGrav: 'Événement gravité basse', eventTurbo: 'Événement turbo',
+  discordMoments: 'Discord : moments rares', welcomeMsg: 'Message d\'accueil des nouveaux comptes',
+};
+// blagues de l'administrateur (1.15) : all = visible par toute la partie, max = durée plafonnée (s)
+export const TROLLS = {
+  upside: { name: 'Écran à l\'envers' }, spin: { name: 'Vertige' }, drunk: { name: 'Caméra ivre' }, invert: { name: 'Commandes inversées' },
+  pixel: { name: 'Écran pixelisé' }, rainbow: { name: 'Arc-en-ciel' }, bighead: { name: 'Grosse tête', all: true }, tiny: { name: 'Minuscule', all: true },
+  duck: { name: 'Tirs « coin-coin »', all: true }, fakeban: { name: 'Faux bannissement', max: 8 }, fakedc: { name: 'Fausse déconnexion', max: 8 },
+  confetti: { name: 'Confettis', all: true }, dance: { name: 'Danse forcée', all: true }, flash: { name: 'Flash blanc', max: 3 }, freeze: { name: 'Gel sur place', max: 5 },
 };
 const BACKUP_RE = /^eclipse-\d{4}-\d{2}-\d{2}(-\d{6})?\.json$/;
-const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul']);
+const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul', 'momentXp']);
 export const ACCOUNT_TAGS = { surveille: 'Surveillé', suspect: 'Suspect', vip: 'VIP', testeur: 'Testeur', createur: 'Créateur', partenaire: 'Partenaire' };
 const DISCORD_RE = /^https:\/\/(discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)\/api\/webhooks\/\d{5,25}\/[\w-]{20,100}$/;
 const LINK_RE = /(https?:\/\/|www\.|discord\.gg|\b[a-z0-9-]{2,}\.(com|net|org|fr|io|gg|xyz|ru|info|me|be|co)\b)/i;
 const WEAPON_DEFAULTS = Object.fromEntries(Object.entries(WEAPONS).map(([id, w]) => [id, { damage: w.damage, headMul: w.headMul }]));
-const DEFAULT_STATS = () => ({ matches: 0, kills: 0, headshots: 0, modes: {}, maps: {}, agents: {}, weapons: {}, regsByDay: {}, matchesByDay: {}, peak: 0, peakAt: 0, agentWins: {}, earnByDay: {}, spendByDay: {}, skinSales: {}, weaponHs: {}, hourly: Array(24).fill(0), hourlyN: Array(24).fill(0) });
+const DEFAULT_STATS = () => ({ matches: 0, kills: 0, headshots: 0, modes: {}, maps: {}, agents: {}, weapons: {}, regsByDay: {}, matchesByDay: {}, peak: 0, peakAt: 0, agentWins: {}, earnByDay: {}, spendByDay: {}, skinSales: {}, weaponHs: {}, hourly: Array(24).fill(0), hourlyN: Array(24).fill(0), moments: {}, slides: 0, adsShots: 0 });
 
 function fail(msg, status = 400) { const e = new Error(msg); e.status = status; throw e; }
 const str = (v, n) => String(v ?? '').replace(/[<>]/g, '').trim().slice(0, n);
@@ -109,6 +122,8 @@ export class Admin {
       season: saved.season || { n: 1, name: 'Saison 1', started: Date.now() }, seasonsHistory: saved.seasonsHistory || [],
       matches: saved.matches || [], suspects: saved.suspects || {}, schedule: saved.schedule || [], nameWords: saved.nameWords || [],
       configHistory: saved.configHistory || [], maintSchedule: saved.maintSchedule || null, lastBackup: saved.lastBackup || 0,
+      // 1.15 : journal des blagues, retours des joueurs (bugs et idées), sondage du jour
+      trollLog: saved.trollLog || [], feedback: saved.feedback || [], poll: saved.poll || null, pollsHistory: saved.pollsHistory || [],
     };
     this.clientErrors = []; this.slowSamples = 0; this.lastPerfAlert = 0; this.pendingRestart = null;
     this.logs = []; this.chat = []; this.seq = 1; this.errors = []; this.errCount = 0; this.chatStrikes = new Map();
@@ -116,6 +131,7 @@ export class Admin {
     this.net = { out: 0, outMsgs: 0, inMsgs: 0 };
     this.rates = { outKBs: 0, outMsgs: 0, inMsgs: 0, cpu: 0 };
     this.ticks = [];
+    this.recentMoments = []; // derniers moments (tableau de bord)
     this.loginTries = new Map();
     this.lastCpu = process.cpuUsage(); this.lastSample = Date.now(); this.lastHistory = 0;
     this.applyConfig();
@@ -198,7 +214,7 @@ export class Admin {
   mul() {
     const c = this.state.config, ev = this.eventActive();
     const wd = new Date().getDay(), weekend = c.weekendXp && (wd === 0 || wd === 6);
-    return { xp: c.xpMul * (ev ? c.eventXpMul : 1) * (weekend ? 1.5 : 1), eclats: c.rewardMul * (ev ? c.eventEclatsMul : 1) };
+    return { xp: c.xpMul * (ev ? c.eventXpMul : 1) * (weekend ? 1.5 : 1), eclats: c.rewardMul * (ev ? c.eventEclatsMul : 1), moment: c.momentXp ?? 1 };
   }
   economy(kind, v) {
     const st = this.state.stats, d = today();
@@ -280,7 +296,7 @@ export class Admin {
   discord(kind, text) {
     const cfg = this.state.config;
     if (!cfg.discordWebhook || !DISCORD_RE.test(cfg.discordWebhook)) return;
-    const flag = { cheat: 'discordCheat', report: 'discordReports', ban: 'discordBans', tournament: 'discordTournaments', perf: 'discordPerf' }[kind];
+    const flag = { cheat: 'discordCheat', report: 'discordReports', ban: 'discordBans', tournament: 'discordTournaments', perf: 'discordPerf', moments: 'discordMoments' }[kind];
     if (flag && cfg[flag] === false) return;
     this.discordQ ||= [];
     if (this.discordQ.length >= 30) return;
@@ -434,6 +450,17 @@ export class Admin {
     return out;
   }
   levelOf(c) { const u = c.account && this.ctx.accounts.get(c.account); return LEVEL[u?.role || 'player'] || 0; }
+  pollView(p, key = null) {
+    if (!p) return null;
+    const counts = p.opts.map(() => 0); for (const v of Object.values(p.votes)) if (counts[v] !== undefined) counts[v]++;
+    return { id: p.id, q: p.q, opts: p.opts, counts, total: Object.keys(p.votes).length, created: p.created, by: p.by, mine: key && key in p.votes ? p.votes[key] : null };
+  }
+  closePoll() {
+    const p = this.state.poll; if (!p) return;
+    this.state.pollsHistory.unshift({ ...this.pollView(p), closed: Date.now() });
+    if (this.state.pollsHistory.length > 50) this.state.pollsHistory.length = 50;
+    this.state.poll = null; this.save();
+  }
   activeBan(type, value) { const now = Date.now(); return this.state.bans.find(b => b.type === type && b.value === value && (!b.until || b.until > now)); }
   banText(b) {
     return `Tu es banni ${b.until ? `jusqu'au ${new Date(b.until).toLocaleString('fr-FR')}` : 'définitivement'}. Raison : ${b.reason || 'non précisée'}.`;
@@ -468,6 +495,8 @@ export class Admin {
   }
   onRegister(user, c) {
     if (c) user.regIp = c.ip;
+    const wm = this.state.config.welcomeMsg;
+    if (wm && c) setTimeout(() => { if (c.ws?.readyState === 1) this.ctx.send(c.id, { type: 'system', kind: 'pm', from: 'ECLIPSE', text: wm }); }, 2500);
     const d = today(); this.state.stats.regsByDay[d] = (this.state.stats.regsByDay[d] || 0) + 1;
     this.log('auth', `Nouveau compte : ${user.name}`); this.save();
   }
@@ -533,6 +562,15 @@ export class Admin {
   }
 
   // Événements de partie (statistiques)
+  // moment réalisé en partie (1.15) : statistiques, tableau de bord, Discord pour les moments rares
+  momentEvent(d) {
+    const st = this.state.stats; st.moments ||= {};
+    st.moments[d.k] = (st.moments[d.k] || 0) + 1;
+    const label = MOMENTS[d.k]?.name || (d.k === 'ace' ? 'ACE' : d.k);
+    this.recentMoments.unshift({ t: Date.now(), name: d.name, k: d.k, label, x: d.x ?? null, room: d.room?.name || '' });
+    if (this.recentMoments.length > 30) this.recentMoments.length = 30;
+    if (d.rare) this.discord('moments', `🎉 **${d.name}** : ${label}${d.x ? ` (${d.x})` : ''} dans « ${d.room?.name || '?'} »`);
+  }
   matchEvent(type, d) {
     const st = this.state.stats;
     if (type === 'start') {
@@ -558,6 +596,7 @@ export class Admin {
       // victoires par agent (équilibrage)
       if (m) for (const p of m.players.values()) {
         if (p.isBot) continue;
+        st.slides = (st.slides || 0) + (p.slides || 0); st.adsShots = (st.adsShots || 0) + (p.adsShots || 0);
         const won = isFfa(r.mode) ? d.winner === p.id : d.winner === p.team;
         const a = st.agentWins[p.agent] || (st.agentWins[p.agent] = { played: 0, won: 0, kills: 0, deaths: 0 });
         a.played++; if (won) a.won++; a.kills += p.kills; a.deaths += p.deaths;
@@ -728,6 +767,8 @@ const ACTIONS = {
       recentSanctions: this.state.audit.filter(a => /^(Bannissement|Réduction au silence|Expulsion|Avertissement|Sanction annulée)/.test(a.action)).slice(-8).reverse(),
       pendingRestart: this.pendingRestart, maintSchedule: this.state.maintSchedule ? { at: this.state.maintSchedule.at, msg: this.state.maintSchedule.msg, by: this.state.maintSchedule.by } : null,
       lastBackup: this.state.lastBackup || 0,
+      recentMoments: this.recentMoments.slice(0, 15), topMoments: top(st.moments || {}, k => MOMENTS[k]?.name || k),
+      usage: { slides: st.slides || 0, adsShots: st.adsShots || 0, matches: st.matches || 0 },
     };
   } },
   history: { level: 1, fn() { return { points: this.history }; } },
@@ -821,7 +862,8 @@ const ACTIONS = {
       friends: u.friends.map(k => A.get(k)?.name).filter(Boolean), notes: u.notes || [], seasons: u.seasons || [],
       agentStats: u.agentStats, mapStats: u.mapStats, daily: u.daily, suspect: sus ? { count: sus.count, alerts: sus.alerts.slice(0, 8) } : null,
       reports: this.state.reports.filter(r => r.targetAccount === key || r.target?.toLowerCase() === key).length,
-      sanctions: u.sanctions || [], tags: u.tags || [], avg: this.serverAverages(), regIp: lvl >= 2 ? u.regIp || null : null };
+      sanctions: u.sanctions || [], tags: u.tags || [], avg: this.serverAverages(), regIp: lvl >= 2 ? u.regIp || null : null,
+      moments: u.stats?.moments || {}, winStreak: u.winStreak || 0, aimBest: u.aimBest || 0, customTitle: u.customTitle || '' };
   } },
   rooms: { level: 1, fn() { return [...this.ctx.rooms.values()].map(r => this.roomInfo(r)); } },
   room: { level: 1, fn({ q }) { return this.roomInfo(this.room(q.get('id')), true); } },
@@ -926,6 +968,77 @@ const ACTIONS = {
     this.ctx.send(c.id, { type: 'system', kind: 'pm', from: user.name, text });
     return { _detail: `à ${c.name} : ${text}` };
   } },
+  // ---------- blagues de l'administrateur (1.15) : effets visuels limités dans le temps, journalisés ----------
+  troll: { level: 2, post: true, label: 'Blague', fn({ body, user, lvl }) {
+    const cfg = this.state.config;
+    if (cfg.trollsOn === false) fail('Les blagues sont désactivées (Configuration → Blagues et événements).');
+    const kind = String(body.kind || '');
+    if (kind !== 'stop' && !TROLLS[kind]) fail('Blague inconnue');
+    const secs = Math.max(3, Math.min(cfg.trollMax || 30, Math.round(Number(body.seconds) || 10)));
+    const A = this.ctx.accounts;
+    let targets;
+    if (body.room) {
+      // toute une partie : tous les joueurs humains du salon
+      const r = this.ctx.rooms.get(String(body.room)); if (!r || !r.match) fail('Ce salon n\'a pas de partie en cours.');
+      targets = [...r.members.values()].filter(m => !m.isBot).map(m => this.ctx.clients.get(m.id)).filter(Boolean);
+    } else if (body.self) {
+      // tester sur soi-même : la session de jeu ouverte avec ce compte
+      const c = this.clientsOf(A.key(user.name)).find(x => x.name); if (!c) fail('Ouvre le jeu avec ton compte pour tester une blague sur toi.');
+      targets = [c];
+    } else {
+      const c = this.findClient(body.id);
+      if (c.account) this.guard(lvl, this.findUser(c.account), user);
+      targets = [c];
+    }
+    let done = 0;
+    for (const c of targets) {
+      const r = c.roomId && this.ctx.rooms.get(c.roomId);
+      // pas de blague pendant un tournoi ni un duel classé (Elo) : la compétition reste équitable
+      if (kind !== 'stop' && r && (r.tournament || (r.mode === 'duel' && r.match && [...r.members.values()].filter(m => !m.isBot && this.ctx.clients.get(m.id)?.account).length >= 2))) continue;
+      const s = TROLLS[kind]?.max ? Math.min(TROLLS[kind].max, secs) : secs;
+      this.ctx.send(c.id, { type: 'troll', kind, s, by: user.name });
+      // effets visibles par tous les joueurs de la partie (grosse tête, minuscule, confettis, danse, coin-coin)
+      if (r?.match && (kind === 'stop' || TROLLS[kind]?.all)) r.match.broadcast({ type: 'trollFx', kind, i: c.id, s });
+      if (kind === 'freeze' && r?.match) { const p = r.match.players.get(c.id); if (p) p.trollFreeze = r.match.time + s; }
+      done++;
+    }
+    if (!done) fail('Impossible ici (tournoi ou duel classé) : aucune blague envoyée.');
+    const label = kind === 'stop' ? 'Arrêt des blagues' : TROLLS[kind].name;
+    const who = body.room ? `toute la partie (${done} joueur${done > 1 ? 's' : ''})` : targets[0].name;
+    this.state.trollLog.unshift({ t: Date.now(), by: user.name, target: who, kind, label, s: kind === 'stop' ? 0 : secs });
+    if (this.state.trollLog.length > 100) this.state.trollLog.length = 100;
+    this.save();
+    return { ok: true, sent: done, _detail: `${label} → ${who}${kind === 'stop' ? '' : ` (${secs} s)`}` };
+  } },
+  trollLog: { level: 2, fn() { return { log: this.state.trollLog.slice(0, 50), kinds: Object.entries(TROLLS).map(([k, v]) => ({ k, name: v.name, all: !!v.all, max: v.max || null })), max: this.state.config.trollMax || 30, on: this.state.config.trollsOn !== false }; } },
+  // titre personnalisé affiché à la place du titre débloqué (vide = retirer)
+  customTitle: { level: 2, post: true, label: 'Titre personnalisé', fn({ body, user, lvl }) {
+    const u = this.findUser(body.name); this.guard(lvl, u, user);
+    const t = str(body.title, 24);
+    if (t && this.filterText(t).hits.length) fail('Ce titre contient un mot interdit.');
+    if (t) u.customTitle = t; else delete u.customTitle;
+    this.ctx.accounts.save();
+    for (const c of this.clientsOf(this.ctx.accounts.key(u.name))) this.ctx.send(c.id, { type: 'profile', profile: this.ctx.accounts.publicProfile(u) });
+    return { ok: true, _detail: `${u.name} : ${t || '(retiré)'}` };
+  } },
+  // retours des joueurs : bugs et idées
+  feedback: { level: 1, fn() { return { items: this.state.feedback.slice(0, 200) }; } },
+  feedbackDone: { level: 1, post: true, label: 'Retour traité', fn({ body }) {
+    const f = this.state.feedback.find(x => x.id === body.id); if (!f) fail('Introuvable', 404);
+    if (body.remove) this.state.feedback = this.state.feedback.filter(x => x !== f); else f.done = !f.done;
+    this.save(); return { ok: true, _detail: `${f.kind === 'bug' ? 'Bug' : 'Idée'} de ${f.name}` };
+  } },
+  // sondage du jour : création, clôture, résultats
+  polls: { level: 2, fn() { return { poll: this.pollView(this.state.poll), history: this.state.pollsHistory.slice(0, 20) }; } },
+  pollCreate: { level: 2, post: true, label: 'Sondage créé', fn({ body, user }) {
+    const q = str(body.question, 140); const opts = (Array.isArray(body.options) ? body.options : []).map(o => str(o, 60)).filter(Boolean).slice(0, 4);
+    if (q.length < 5 || opts.length < 2) fail('Une question et au moins 2 réponses.');
+    if (this.state.poll) this.closePoll();
+    this.state.poll = { id: crypto.randomUUID().slice(0, 8), q, opts, votes: {}, created: Date.now(), by: user.name };
+    this.save(); this.ctx.onPoll?.();
+    return { ok: true, _detail: q };
+  } },
+  pollClose: { level: 2, post: true, label: 'Sondage clos', fn() { if (!this.state.poll) fail('Aucun sondage en cours.'); const q = this.state.poll.q; this.closePoll(); this.ctx.onPoll?.(); return { ok: true, _detail: q }; } },
   slay: { level: 1, post: true, label: 'Élimination forcée', fn({ body }) {
     const c = this.findClient(body.id);
     const r = c.roomId && this.ctx.rooms.get(c.roomId);

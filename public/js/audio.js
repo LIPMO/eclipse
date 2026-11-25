@@ -12,13 +12,17 @@ const listener = { x: 0, y: 0, z: 0, yaw: 0 };
 export function initAudio() {
   if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
   ctx = new (window.AudioContext || window.webkitAudioContext)();
-  master = ctx.createGain(); master.gain.value = volume; master.connect(ctx.destination);
+  master = ctx.createGain(); master.gain.value = muted ? 0 : volume; master.connect(ctx.destination);
   for (const n of CATS) { catNode[n] = ctx.createGain(); catNode[n].gain.value = catVol[n]; catNode[n].connect(master); }
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 }
-export function setVolume(v) { volume = v; if (master) master.gain.value = v; }
+export function setVolume(v) { volume = v; if (master) master.gain.value = muted ? 0 : v; }
+// touche « couper tout le son » (1.15) : coupe le volume général sans toucher au réglage
+let muted = false;
+export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : volume; if (muted && typeof speechSynthesis !== 'undefined') try { speechSynthesis.cancel(); } catch { /* */ } return muted; }
+export const isMuted = () => muted;
 export function setListener(p, yaw) { listener.x = p[0]; listener.y = p[1]; listener.z = p[2]; listener.yaw = yaw; }
 
 function out(pos, maxDist = 60, cat = 'weapons') {
@@ -83,6 +87,14 @@ export function playHit(head, kill) {
   else if (head) tone(C('ui'), t, 0.12, 2400, 2000, 'sine', 0.25);
   else noise(C('ui'), t, 0.05, 3000, 2, 'bandpass', 0.35);
 }
+// son d'élimination au choix (1.15)
+export function playKillSound(kind) {
+  if (!ctx) return; const t = ctx.currentTime, o = C('ui');
+  if (kind === 'ding') { tone(o, t, 0.5, 1760, 1760, 'sine', 0.22); tone(o, t, 0.5, 2637, 2637, 'sine', 0.08); }
+  else if (kind === 'coin') { tone(o, t, 0.09, 988, 988, 'square', 0.1); tone(o, t + 0.08, 0.35, 1319, 1319, 'square', 0.1); }
+  else if (kind === 'bell') { [1047, 1568, 2093].forEach((f, i) => tone(o, t, 0.9 - i * 0.2, f, f * 0.995, 'sine', 0.12 / (i + 1))); }
+  else if (kind === 'laser') { tone(o, t, 0.25, 2400, 300, 'sawtooth', 0.09); }
+}
 export function playHurt() { if (!ctx) return; noise(C('weapons'), ctx.currentTime, 0.15, 300, 1, 'lowpass', 0.6); }
 export function playReload() {
   if (!ctx) return;
@@ -145,6 +157,21 @@ export function playStreak(n) {
   const base = [0, 660, 784, 880, 1047, 1319][Math.min(5, n)] || 1319;
   for (let i = 0; i < Math.min(n, 5); i++) tone(C('ui'), t + i * 0.07, 0.18, base * (1 + i * 0.12), base * (1 + i * 0.12), 'triangle', 0.16);
 }
+// blague « coin-coin » : un tir qui cancane
+export function playQuack(pos) {
+  if (!ctx) return; const t = ctx.currentTime, o = pos ? out(pos, 60, 'weapons') : C('weapons');
+  const osc = ctx.createOscillator(); osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(820, t); osc.frequency.exponentialRampToValueAtTime(420, t + 0.16);
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 3;
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.32, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  osc.connect(f); f.connect(g); g.connect(o); osc.start(t); osc.stop(t + 0.22);
+}
+// moment réalisé (1.15) : arpège montant et scintillement
+export function playMoment() {
+  if (!ctx) return; const t = ctx.currentTime;
+  [784, 988, 1175, 1568].forEach((f, i) => tone(C('ui'), t + i * 0.06, 0.22, f, f, 'triangle', 0.14));
+  noise(C('ui'), t + 0.22, 0.35, 6000, 0.7, 'highpass', 0.08);
+}
 export function playEmpty() { if (!ctx) return; const t = ctx.currentTime; noise(C('weapons'), t, 0.025, 5000, 6, 'bandpass', 0.3); noise(C('weapons'), t + 0.05, 0.02, 3500, 6, 'bandpass', 0.2); }
 export function playSwitch() { if (!ctx) return; const t = ctx.currentTime; noise(C('weapons'), t, 0.04, 2200, 3, 'bandpass', 0.22); noise(C('weapons'), t + 0.08, 0.05, 1400, 3, 'bandpass', 0.18); }
 export function playJump(self = true) { if (!ctx) return; noise(C('steps'), ctx.currentTime, 0.08, 400, 1, 'lowpass', self ? 0.18 : 0.1); }
@@ -158,6 +185,8 @@ export function playSlide(pos = null) {
 export function playLand(hard = false) { if (!ctx) return; const t = ctx.currentTime; noise(C('steps'), t, hard ? 0.18 : 0.1, 260, 1, 'lowpass', hard ? 0.55 : 0.28); }
 export function playHeartbeat() { if (!ctx) return; const t = ctx.currentTime; tone(C('ui'), t, 0.12, 60, 40, 'sine', 0.5); tone(C('ui'), t + 0.18, 0.12, 55, 38, 'sine', 0.35); }
 export function playLevelUp() { if (!ctx) return; const t = ctx.currentTime; [523, 659, 784, 1047].forEach((f, i) => tone(C('ui'), t + i * 0.09, 0.35, f, f, 'triangle', 0.22)); tone(C('ui'), t + 0.36, 0.6, 1568, 1568, 'sine', 0.12); }
+// compte à rebours du salon de groupe (1.15)
+export function playCountdown(go) { if (!ctx) return; const t = ctx.currentTime; tone(C('ui'), t, go ? 0.45 : 0.15, go ? 1320 : 880, go ? 1320 : 880, 'square', 0.08); }
 export function playNotify() { if (!ctx) return; const t = ctx.currentTime; tone(C('notif'), t, 0.12, 880, 880, 'sine', 0.18); tone(C('notif'), t + 0.1, 0.18, 1320, 1320, 'sine', 0.15); }
 export function playPromote() { if (!ctx) return; const t = ctx.currentTime; tone(C('ui'), t, 0.15, 600, 1200, 'square', 0.08); tone(C('ui'), t + 0.12, 0.25, 1200, 1200, 'triangle', 0.18); }
 export function playWhoosh() { if (!ctx) return; const t = ctx.currentTime; noise(C('ui'), t, 0.6, 900, 0.7, 'bandpass', 0.5); tone(C('ui'), t, 0.5, 200, 60, 'sine', 0.25); }

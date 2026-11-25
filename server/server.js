@@ -11,7 +11,7 @@ import { Admin } from './admin.js';
 import { Parties } from './party.js';
 import { Bucket, Strikes, baseHeaders, gameCsp, originAllowed } from './security.js';
 import crypto from 'node:crypto';
-import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE, isFfa, GUN_LADDER } from '../shared/data.js';
+import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE, isFfa, GUN_LADDER, MOMENTS } from '../shared/data.js';
 import { Social } from './social.js';
 import { Clans } from './clans.js';
 import { Tournaments } from './tournaments.js';
@@ -191,14 +191,14 @@ function roomCode() {
 }
 function memberInfo(c) {
   const u = c.account && accounts.get(c.account);
-  return { level: u ? levelOf(u.xp) : 1, title: u?.title ? TITLES[u.title] : null, clan: c.account ? clans.tagOf(c.account) : null };
+  return { level: u ? levelOf(u.xp) : 1, title: u?.customTitle || (u?.title ? TITLES[u.title] : null), clan: c.account ? clans.tagOf(c.account) : null };
 }
 
 function roomSummary(r) {
-  return { id: r.id, name: r.name, mapId: r.mapId, mode: r.mode, players: r.members.size, humans: [...r.members.values()].filter(m => !m.isBot).length, max: r.maxPlayers, state: r.state, quick: !!r.quick, official: !!r.official };
+  return { id: r.id, name: r.name, mapId: r.mapId, mode: r.mode, players: r.members.size, humans: [...r.members.values()].filter(m => !m.isBot).length, max: r.maxPlayers, state: r.state, quick: !!r.quick, official: !!r.official, locked: !!r.password };
 }
 function roomState(r) {
-  return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: r.opts || {}, tournament: !!r.tournament,
+  return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: r.opts || {}, tournament: !!r.tournament, hasPassword: !!r.password,
     members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
 }
 // les salons privés n'apparaissent pas dans la liste publique
@@ -317,9 +317,20 @@ function startMatch(r) {
     send, sendRaw,
     // fin de la retransmission en différé pour un ami spectateur
     onFriendSpecEnd: cid => { const cl = clients.get(cid); if (cl) cl.watchMatch = null; },
+    // joueur inactif (1.15) : retiré de la partie (en Assaut, un bot le remplace)
+    onAfk: id => { const cl = clients.get(id); if (cl && cl.roomId === r.id) { leaveRoom(cl); send(cl.id, { type: 'left' }); send(cl.id, { type: 'system', kind: 'notice', text: 'Tu as été retiré de la partie pour inactivité.' }); admin.log('partie', `${cl.name} retiré pour inactivité de « ${r.name} »`); } },
+    // moment réalisé (1.15) : tableau de bord, Discord, et amis prévenus pour les moments rares
+    onMoment: (p, k, x, team) => {
+      const rare = k === 'ace' || !!MOMENTS[k]?.rare;
+      admin.momentEvent({ room: r, name: team ? team.map(q => q.name).join(', ') : p.name, k, x, rare });
+      if (rare) for (const q of team || [p]) if (q.account) social.notifyFriendsMoment(q.account, q.name, k);
+    },
     onEvent: (type, data) => admin.matchEvent(type, { room: r, ...data }),
     rewardMul: () => admin.mul().eclats,
     weaponUnlocks: () => admin.state.config.weaponUnlocks,
+    eventLowGrav: () => !!admin.state.config.eventLowGrav,
+    eventBigHead: () => !!admin.state.config.eventBigHead,
+    eventTurbo: () => !!admin.state.config.eventTurbo,
     slideEnabled: () => admin.state.config.slide !== false,
     onOver: () => {
       if (r.tournament) return;
@@ -350,6 +361,7 @@ function startMatch(r) {
         admin.economy('earn', sum.eclatsTotal);
         const mem = r.members.get(res.id); if (mem) mem.level = sum.level;
         if (sum.achievements.length) admin.log('partie', `${u.name} débloque : ${sum.achievements.map(a => a.label).join(', ')}`);
+        if (sum.level > sum.levelBefore) social.notifyFriendsLevel(res.account, u.name, sum.level);
         if (c) { send(c.id, { type: 'profile', profile: accounts.publicProfile(u) }); send(c.id, { type: 'matchSummary', summary: sum }); }
       }
       if (r.tournament) tournaments.onResults(r, results);
@@ -393,6 +405,43 @@ function newRoom(c, { name, mode, mapId, difficulty, priv = false, quick = false
   };
   rooms.set(room.id, room);
   return room;
+}
+// ---------- salon de groupe (1.15) : lancement solo ou en groupe ----------
+// réglages choisis dans le salon : mode, contre des bots ou avec d'autres joueurs, difficulté, carte
+function cleanLobbyCfg(o) {
+  o = o && typeof o === 'object' ? o : {};
+  const mode = MODE_CFG[o.mode] ? o.mode : 'ffa';
+  return { mode, fill: !!o.fill, diff: validDiff(o.diff) ? o.diff : 'normal', map: mapsForMode(mode).includes(o.map) ? o.map : 'random' };
+}
+// c = chef (ou joueur seul) ; party = groupe (ses membres suivent le chef grâce à parties.follow)
+function lobbyLaunch(c, cfg, party) {
+  const size = party ? party.members.length : 1;
+  const mapId = cfg.map === 'random' ? null : cfg.map;
+  const humansOf = x => [...x.members.values()].filter(m => !m.isBot).length;
+  if (cfg.mode === 'duel') {
+    if (size > 2) { send(c.id, { type: 'error', text: 'Le duel se joue à deux : quittez le groupe à plus de deux.' }); return false; }
+    if (size === 1 && cfg.fill) { handleLobby(c, { type: 'quickDuel' }); return true; }
+  }
+  if (cfg.fill && cfg.mode !== 'duel') {
+    // avec d'autres joueurs : une partie publique de ce mode avec assez de place pour tout le groupe
+    const open = [...rooms.values()].find(x => x.mode === cfg.mode && !x.private && !x.password && !x.tournament && !x.quick && (!mapId || x.mapId === mapId)
+      && humansOf(x) + size <= x.maxPlayers && (x.state === 'lobby' || (x.match && x.match.phase !== 'over')));
+    if (open) {
+      if (c.roomId) leaveRoom(c);
+      joinRoom(c, open);
+      if (open.state === 'lobby' && !open.official && open.hostId === c.id) { fillRoom(open); startMatch(open); }
+      return c.roomId === open.id;
+    }
+  }
+  const deny = admin.canCreateRoom(c); if (deny) { send(c.id, { type: 'error', text: deny }); return false; }
+  if (c.roomId) leaveRoom(c);
+  const label = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout' }[cfg.mode];
+  const room = newRoom(c, { name: `${label} — ${party ? 'groupe de ' : ''}${c.name}`, mode: cfg.mode, mapId, difficulty: cfg.diff, priv: !cfg.fill });
+  joinRoom(c, room);
+  // duel entre les deux membres du groupe (le suivi automatique ne concerne pas les salons à deux)
+  if (cfg.mode === 'duel' && party) for (const id of party.members) { const m = clients.get(id); if (m && m !== c && !(m.roomId && rooms.get(m.roomId)?.match)) { m.invites ||= new Set(); m.invites.add(room.id); joinRoom(m, room); } }
+  fillRoom(room); startMatch(room);
+  return true;
 }
 function fillRoom(room) { while (room.members.size < room.maxPlayers) { const before = room.members.size; addBot(room, pickTeam(room)); if (room.members.size === before) break; } }
 
@@ -455,6 +504,7 @@ function handleLobby(c, msg) {
       c.clanTag = clans.tagOf(c.account);
       send(c.id, clans.payload(res.user));
       send(c.id, tournaments.payloadFor(c));
+      if (admin.state.poll) send(c.id, { type: 'poll', poll: admin.pollView(admin.state.poll, c.account) });
       clans.onLogin(c, res.user);
       // prévient les amis connectés
       for (const fk of res.user.friends || []) { const fc = social.clientOfKey(fk); if (fc && fc !== c) send(fc.id, { type: 'friendOnline', name: c.name }); }
@@ -503,13 +553,21 @@ function handleLobby(c, msg) {
       if (!roomLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends quelques secondes.' }); break; }
       if (c.roomId) leaveRoom(c);
       const qmode = msg.type === 'quickGun' ? 'gungame' : 'ffa';
-      const open = [...rooms.values()].find(x => x.mode === qmode && !x.private && !x.tournament && [...x.members.values()].filter(m => !m.isBot).length < x.maxPlayers);
+      const open = [...rooms.values()].find(x => x.mode === qmode && !x.private && !x.password && !x.tournament && [...x.members.values()].filter(m => !m.isBot).length < x.maxPlayers);
       if (open) { joinRoom(c, open); if (open.state === 'lobby' && !open.official && open.hostId === c.id) startMatch(open); break; }
       const deny = admin.canCreateRoom(c); if (deny) { send(c.id, { type: 'error', text: deny }); break; }
       const room = newRoom(c, { name: qmode === 'gungame' ? 'Gun Game rapide' : 'Mêlée rapide', mode: qmode });
       joinRoom(c, room);
       for (let i = 0; i < 5; i++) addBot(room, 'ffa');
       startMatch(room);
+      break;
+    }
+    // bouton JOUER du salon de groupe (seul, ou chef d'un groupe : compte à rebours puis tout le groupe part)
+    case 'lobbyPlay': {
+      const p = parties.partyOf(c);
+      if (p) { parties.launch(c); break; }
+      if (!roomLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends quelques secondes.' }); break; }
+      lobbyLaunch(c, cleanLobbyCfg(msg.cfg), null);
       break;
     }
     case 'joinCode': {
@@ -535,6 +593,8 @@ function handleLobby(c, msg) {
       const rr = rooms.get(msg.id);
       if (!rr) { send(c.id, { type: 'error', text: 'Salon introuvable.' }); break; }
       if (rr.private && !c.invites?.has(rr.id) && admin.levelOf(c) < 1) { send(c.id, { type: 'error', text: 'Ce salon est privé : demande son code ou une invitation.' }); break; }
+      // salon protégé par mot de passe : les invités et les amis (REJOINDRE) entrent sans
+      if (rr.password && !c.invites?.has(rr.id) && admin.levelOf(c) < 1 && String(msg.password ?? '') !== rr.password) { send(c.id, { type: 'roomPassword', id: rr.id, name: rr.name, wrong: msg.password != null }); break; }
       joinRoom(c, rr);
       break;
     }
@@ -547,9 +607,10 @@ function handleLobby(c, msg) {
       pushRoom(r); break;
     }
     case 'setAgent': {
-      if (!r || !AGENTS[msg.agent]) break;
+      if (!AGENTS[msg.agent]) break;
       c.prefAgent = msg.agent;
       if (c.account) { const u = accounts.get(c.account); if (u) accounts.setAgent(u, msg.agent); }
+      if (!r) { parties.push(parties.partyOf(c)); break; }
       if (r.state !== 'lobby') break;
       const m = r.members.get(c.id);
       const taken = !isFfa(r.mode) && [...r.members.values()].some(o => o !== m && o.team === m.team && o.agent === msg.agent);
@@ -560,6 +621,7 @@ function handleLobby(c, msg) {
       if (!c.account) c.skins = cleanSkins(msg.skins);
       else { const u = accounts.get(c.account); c.skins = cleanSkins(u?.equipped, u?.owned); }
       if (r) { const m = r.members.get(c.id); if (m) { m.skins = c.skins; if (r.match) r.match.updateMember(m); } }
+      else parties.push(parties.partyOf(c));
       break;
     }
     case 'setReady': if (r) { const m = r.members.get(c.id); m.ready = !!msg.ready; pushRoom(r); } break;
@@ -580,7 +642,9 @@ function handleLobby(c, msg) {
       const t = parseInt(msg.target, 10);
       if (t) r.target = Math.max(MODE_CFG[r.mode].tmin, Math.min(MODE_CFG[r.mode].tmax, t));
       // options de partie (salon personnalisé)
-      if (msg.opts && typeof msg.opts === 'object') { r.opts = r.opts || {}; for (const k of ['infAmmo', 'noAbilities', 'headOnly', 'lowGrav', 'randomMap']) if (k in msg.opts) r.opts[k] = !!msg.opts[k]; }
+      if (msg.opts && typeof msg.opts === 'object') { r.opts = r.opts || {}; for (const k of ['infAmmo', 'noAbilities', 'headOnly', 'lowGrav', 'randomMap', 'friendlyFire']) if (k in msg.opts) r.opts[k] = !!msg.opts[k]; }
+      // mot de passe du salon (1.15) : vide = aucun
+      if (typeof msg.password === 'string') r.password = clean(msg.password, 20) || null;
       pushRoom(r); break;
     }
     // vote de la prochaine carte / revanche (écran de fin)
@@ -702,6 +766,14 @@ function handleLobby(c, msg) {
       }
       break;
     }
+    case 'staffTroll': {
+      if (admin.levelOf(c) < 2 || !c.spectating) break;
+      const room = rooms.get(c.spectating); const tm = room && room.members.get(String(msg.id || ''));
+      if (!tm || tm.isBot) { send(c.id, { type: 'specNotice', text: 'Joueur introuvable (ou bot).' }); break; }
+      try { admin.staffRun(c, 'troll', { id: tm.id, kind: String(msg.kind || ''), seconds: msg.seconds }); send(c.id, { type: 'specNotice', text: msg.kind === 'stop' ? `Blagues arrêtées pour ${tm.name}.` : `Blague envoyée à ${tm.name}.` }); }
+      catch (e) { send(c.id, { type: 'specNotice', text: e.message || 'Blague refusée.' }); }
+      break;
+    }
     case 'staffAction': {
       if (admin.levelOf(c) < 1 || !c.spectating) break;
       const room = rooms.get(c.spectating); const tm = room && room.members.get(String(msg.id || ''));
@@ -763,13 +835,14 @@ const admin = new Admin({
   accounts, clients, rooms, dataDir: DATA_DIR, root: ROOT, version: PKG_VERSION, MODE_CFG, DIFFICULTIES,
   send, kick, closeRoom, createRoom: createOfficialRoom, addBot, pickTeam, pushRoom, broadcastRooms, startMatch,
   limits: { chat: chatLimit, social: socialLimit }, verified: () => VERIFIED ? VERIFIED.size : 0,
+  onPoll: () => { for (const cl of clients.values()) if (cl.name) send(cl.id, { type: 'poll', poll: admin.pollView(admin.state.poll, cl.account) }); },
 });
 admin.applyConfig();
 const social = new Social({ accounts, clients, rooms, send, joinRoom, admin, chatLimit });
 admin.ctx.social = social;
 const clans = new Clans({ accounts, clients, send, admin, chatLimit, social, onTagChange: c => { const r = c.roomId && rooms.get(c.roomId); const m = r && r.members.get(c.id); if (m) { m.clan = c.clanTag || null; pushRoom(r); r.match?.updateMember(m); } } });
 admin.ctx.clans = clans; social.clans = clans;
-const parties = new Parties({ accounts, clients, rooms, send, joinRoom, pushRoom, social, admin, chatLimit, isFfa });
+const parties = new Parties({ accounts, clients, rooms, send, joinRoom, pushRoom, social, admin, chatLimit, isFfa, memberInfo, cleanCfg: cleanLobbyCfg, launch: lobbyLaunch });
 social.parties = parties;
 // salon d'un match de tournoi : privé, sans bots, réservé aux deux joueurs du match
 function createTourRoom(t, m, name) {

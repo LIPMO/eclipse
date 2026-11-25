@@ -45,7 +45,8 @@ export class Social {
       const st = this.status(this.clientOfKey(key));
       // regarder sa partie (en différé) : amis réciproques, sauf si le joueur l'a refusé dans son profil
       const watch = st.status === 'en partie' && !f.noWatch && (f.friends || []).includes(this.A.key(u.name)) && !(f.blocked || []).includes(this.A.key(u.name));
-      return { name: f.name, level: levelOf(f.xp), title: f.title ? TITLES[f.title] : null, lastSeen: f.lastSeen || f.created, pinned: (u.pinned || []).includes(key), lfg: !!f.lfg, clan: f.clan ? this.A.data.clans?.[f.clan]?.tag || null : null, ...st, watch };
+      return { customStatus: f.customStatus || '', dnd: !!f.dnd, alias: (u.aliases || {})[key] || '', note: (u.pnotes || {})[key] || '',
+        name: f.name, level: levelOf(f.xp), title: f.customTitle || (f.title ? TITLES[f.title] : null), lastSeen: f.lastSeen || f.created, pinned: (u.pinned || []).includes(key), lfg: !!f.lfg, clan: f.clan ? this.A.data.clans?.[f.clan]?.tag || null : null, ...st, watch };
     };
     const friends = u.friends.map(row).filter(Boolean).sort((a, b) => (b.pinned - a.pinned) || (b.online - a.online) || a.name.localeCompare(b.name));
     return { type: 'friends', friends, incoming: u.friendReq.map(k => this.A.get(k)?.name).filter(Boolean), blocked: u.blocked.map(k => this.A.get(k)?.name).filter(Boolean) };
@@ -55,6 +56,16 @@ export class Social {
   pushFriendsOf(key) {
     const u = key && this.A.get(key); if (!u) return;
     for (const fk of u.friends) { const fc = this.clientOfKey(fk); if (fc) this.sendFriends(fc); }
+  }
+  // moment rare d'un ami (ACE, remontada, domination) : les amis connectés reçoivent une notification
+  notifyFriendsMoment(key, name, k) {
+    const u = this.A.get(key); if (!u) return;
+    for (const fk of u.friends || []) { const fc = this.clientOfKey(fk); if (fc) this.ctx.send(fc.id, { type: 'friendMoment', name, k }); }
+  }
+  // montée de niveau : les amis connectés sont prévenus
+  notifyFriendsLevel(key, name, level) {
+    const u = this.A.get(key); if (!u) return;
+    for (const fk of u.friends || []) { const fc = this.clientOfKey(fk); if (fc) this.ctx.send(fc.id, { type: 'friendLevel', name, level }); }
   }
   blocks(ownerKey, otherKey) { const u = ownerKey && this.A.get(ownerKey); return !!(u && otherKey && u.blocked.includes(otherKey)); }
 
@@ -150,7 +161,7 @@ export class Social {
     const t = this.target(c, msg.name); if (!t) return;
     const tk = this.A.key(t.name);
     if (!u.friends.includes(tk)) return this.err(c, 'Tu ne peux inviter que tes amis.');
-    if (t.blockInvites) return this.err(c, `${t.name} n'accepte pas les invitations pour le moment.`);
+    if (t.blockInvites || t.dnd) return this.err(c, `${t.name} n'accepte pas les invitations pour le moment.`);
     const tc = this.clientOfKey(tk);
     if (!tc) return this.err(c, `${t.name} n'est pas connecté.`);
     if (tc.roomId === r.id) return this.err(c, `${t.name} est déjà dans ton salon.`);
@@ -178,6 +189,8 @@ export class Social {
     if (!tc) return this.err(c, 'Ce joueur n\'est pas connecté.');
     if (tc === c) return this.err(c, 'Tu ne peux pas t\'écrire à toi-même.');
     if (this.blocks(tc.account, c.account)) return this.err(c, 'Ce joueur n\'accepte pas tes messages.');
+    const tu = tc.account && this.A.get(tc.account);
+    if (tu?.dnd && this.ctx.admin.levelOf(c) < 1) return this.info(c, `⛔ ${tc.name} ne souhaite pas être dérangé pour le moment (réponse automatique).`);
     if (!this.ctx.chatLimit.take(c.id)) return this.err(c, 'Doucement, tu envoies trop de messages.');
     const admin = this.ctx.admin;
     const mute = admin.activeMute(c);
@@ -197,6 +210,8 @@ export class Social {
     const card = publicCard(t, !!this.clientOfKey(tk));
     const cl = t.clan && this.A.data.clans?.[t.clan];
     card.clan = cl ? { tag: cl.tag, name: cl.name } : null;
+    if (u) { card.myNote = (u.pnotes || {})[tk] || ''; card.myAlias = (u.aliases || {})[tk] || ''; }
+    card.customStatus = t.customStatus || ''; card.dnd = !!t.dnd;
     card.relation = !u ? 'guest' : tk === c.account ? 'self' : u.friends.includes(tk) ? 'friend' : u.friendReq.includes(tk) ? 'incoming' : (t.friendReq || []).includes(c.account) ? 'pending' : u.blocked.includes(tk) ? 'blocked' : 'none';
     this.ctx.send(c.id, { type: 'playerProfile', profile: card });
   }
@@ -207,18 +222,19 @@ export class Social {
     const wk = weekKey();
     const val = {
       level: u => u.xp, elo: u => u.elo, week: u => (u.week?.key === wk ? u.week.xp : 0), kills: u => u.stats.kills, wins: u => u.stats.wins,
+      moments: u => Object.values(u.stats.moments || {}).reduce((a, n) => a + (typeof n === 'number' ? n : 0), 0),
     }[kind] || (u => u.xp);
     let users = Object.values(this.A.data.users).filter(u => u && u.stats);
     if (kind === 'elo') users = users.filter(u => u.seasonDuels > 0);
-    if (kind === 'week') users = users.filter(u => val(u) > 0);
-    const rows = users.map(u => ({ name: u.name, key: this.A.key(u.name), v: val(u), level: levelOf(u.xp), title: u.title ? TITLES[u.title] : null, elo: u.elo, rank: rankFor(u).name, rankColor: rankFor(u).color }))
+    if (kind === 'week' || kind === 'moments') users = users.filter(u => val(u) > 0);
+    const rows = users.map(u => ({ name: u.name, key: this.A.key(u.name), v: val(u), level: levelOf(u.xp), title: u.customTitle || (u.title ? TITLES[u.title] : null), elo: u.elo, rank: rankFor(u).name, rankColor: rankFor(u).color }))
       .sort((a, b) => b.v - a.v || a.name.localeCompare(b.name));
     rows.forEach((r, i) => { r.pos = i + 1; });
     this.lbCache.set(kind, { t: Date.now(), rows });
     return rows;
   }
   m_leaderboard(c, msg) {
-    const kind = ['level', 'elo', 'week', 'kills', 'wins'].includes(msg.kind) ? msg.kind : 'level';
+    const kind = ['level', 'elo', 'week', 'kills', 'wins', 'moments'].includes(msg.kind) ? msg.kind : 'level';
     let rows = this.leaderboardRows(kind);
     const u = this.userOf(c);
     if (msg.scope === 'friends' && u) { const set = new Set([c.account, ...u.friends]); rows = rows.filter(r => set.has(r.key)).map((r, i) => ({ ...r, pos: i + 1 })); }
@@ -271,13 +287,82 @@ export class Social {
     const out = {};
     let n = 0;
     for (const [k, v] of Object.entries(st)) {
-      if (++n > 120 || !/^[A-Za-z0-9]{1,24}$/.test(k)) break;
-      if (k === 'keys' && v && typeof v === 'object') { out.keys = {}; for (const [a, code] of Object.entries(v).slice(0, 40)) if (/^[A-Za-z0-9]{1,24}$/.test(a) && typeof code === 'string' && /^[A-Za-z0-9]{0,24}$/.test(code)) out.keys[a] = code; continue; }
+      if (++n > 200 || !/^[A-Za-z0-9]{1,24}$/.test(k)) break;
+      if (k === 'keys' && v && typeof v === 'object') { out.keys = {}; for (const [a, code] of Object.entries(v).slice(0, 80)) if (/^[A-Za-z0-9]{1,24}$/.test(a) && typeof code === 'string' && /^[A-Za-z0-9]{0,24}$/.test(code)) out.keys[a] = code; continue; }
       if (typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) out[k] = v;
       else if (typeof v === 'string' && v.length <= 40 && !/[<>"'`]/.test(v)) out[k] = v;
     }
     u.settings = out; u.settingsAt = now;
     this.A.save();
+  }
+  // note privée sur un joueur (visible seulement par toi)
+  m_setNote(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const t = this.A.get(clean(msg.name, 16)); if (!t) return this.err(c, 'Joueur introuvable.');
+    const tk = this.A.key(t.name); if (tk === c.account) return;
+    const text = String(msg.text || '').replace(/[<>]/g, '').trim().slice(0, 200);
+    u.pnotes ||= {};
+    if (text) { if (!(tk in u.pnotes) && Object.keys(u.pnotes).length >= 200) return this.err(c, '200 notes au maximum.'); u.pnotes[tk] = text; } else delete u.pnotes[tk];
+    this.A.save(); this.ctx.send(c.id, { type: 'noteSaved', name: t.name, text }); this.sendFriends(c);
+  }
+  // surnom d'un ami (visible seulement par toi, dans ta liste d'amis)
+  m_setAlias(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const tk = this.A.key(clean(msg.name, 16)); if (!u.friends.includes(tk)) return this.err(c, 'Ce joueur n\'est pas dans tes amis.');
+    const a = String(msg.alias || '').replace(/[<>]/g, '').trim().slice(0, 16);
+    u.aliases ||= {}; if (a) u.aliases[tk] = a; else delete u.aliases[tk];
+    this.A.save(); this.sendFriends(c);
+  }
+  // rareté des succès : % des comptes (ayant joué au moins une partie) qui les possèdent, recalculée toutes les 10 min
+  m_achRarity(c) {
+    if (!this.rarity || Date.now() - this.rarity.t > 600000) {
+      const users = Object.values(this.A.data.users).filter(u => u?.stats?.matches > 0);
+      const counts = {}; for (const u of users) for (const id of u.achievements || []) counts[id] = (counts[id] || 0) + 1;
+      const pct = {}; for (const [id, n] of Object.entries(counts)) pct[id] = Math.round(n / Math.max(1, users.length) * 1000) / 10;
+      this.rarity = { t: Date.now(), pct, total: users.length };
+    }
+    this.ctx.send(c.id, { type: 'achRarity', pct: this.rarity.pct, total: this.rarity.total });
+  }
+  // sondage du jour : un vote par compte (modifiable tant que le sondage est ouvert)
+  m_pollVote(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const p = this.ctx.admin.state.poll;
+    if (!p || p.id !== msg.id) return this.err(c, 'Ce sondage est terminé.');
+    const i = Math.round(Number(msg.idx)); if (!(i >= 0 && i < p.opts.length)) return;
+    p.votes[c.account] = i; this.ctx.admin.save();
+    this.ctx.send(c.id, { type: 'poll', poll: this.ctx.admin.pollView(p, c.account) });
+  }
+  // signaler un bug ou proposer une idée (comptes uniquement, 1 par minute, 10 par jour)
+  m_feedback(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const text = String(msg.text || '').replace(/[<>]/g, '').trim().slice(0, 500);
+    if (text.length < 10) return this.err(c, 'Décris un peu plus (10 caractères minimum).');
+    const now = Date.now(), day = new Date().toISOString().slice(0, 10);
+    if (now - (u.fbLast || 0) < 60000) return this.err(c, 'Attends une minute avant d\'envoyer un autre message.');
+    if (u.fbDay !== day) { u.fbDay = day; u.fbN = 0; }
+    if (u.fbN >= 10) return this.err(c, 'Tu as déjà envoyé 10 messages aujourd\'hui. Merci !');
+    u.fbLast = now; u.fbN++; this.A.save();
+    const kind = msg.kind === 'bug' ? 'bug' : 'idea';
+    const st = this.ctx.admin.state;
+    st.feedback.unshift({ id: now.toString(36) + Math.random().toString(36).slice(2, 6), t: now, name: u.name, kind, text, done: false, where: String(msg.where || '').slice(0, 40) });
+    if (st.feedback.length > 300) st.feedback.length = 300;
+    this.ctx.admin.save();
+    this.ctx.admin.log('retour', `${kind === 'bug' ? 'Bug' : 'Idée'} de ${u.name} : ${text.slice(0, 80)}`);
+    this.ctx.send(c.id, { type: 'feedbackOk', kind });
+  }
+  // équipements favoris de la boutique (3 emplacements) sauvegardés sur le compte
+  m_saveLoadouts(c, msg) {
+    const u = this.userOf(c); if (!u || !Array.isArray(msg.loadouts)) return;
+    const now = Date.now(); if (now - (c.lastLoadoutSave || 0) < 800) return; c.lastLoadoutSave = now;
+    const id = v => (typeof v === 'string' && /^[a-z]{2,12}$/.test(v) ? v : null);
+    u.loadouts = [0, 1, 2].map(i => { const l = msg.loadouts[i]; return l && typeof l === 'object' && (id(l.w1) || id(l.w2) || id(l.armor)) ? { w1: id(l.w1), w2: id(l.w2), armor: id(l.armor) } : null; });
+    this.A.save();
+  }
+  // record du défi de visée (champ de tir), affiché dans le profil
+  m_aimRecord(c, msg) {
+    const u = this.userOf(c); if (!u) return;
+    const s = Math.round(Number(msg.score)); if (!(s > 0 && s < 100000)) return;
+    if (s > (u.aimBest || 0)) { u.aimBest = s; this.A.save(); }
   }
   // ---------- profil : bannière, devise, vitrine, options ----------
   m_setProfile(c, msg) {
@@ -296,6 +381,13 @@ export class Social {
     }
     if (Array.isArray(msg.showcase)) u.showcase = [...new Set(msg.showcase.filter(id => typeof id === 'string' && u.achievements.includes(id)))].slice(0, 3);
     if (typeof msg.blockInvites === 'boolean') u.blockInvites = msg.blockInvites;
+    if (typeof msg.dnd === 'boolean') { u.dnd = msg.dnd; this.pushFriendsOf(this.A.key(u.name)); }
+    if (typeof msg.status === 'string') {
+      const st = msg.status.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+      const f = this.ctx.admin.filterText(st);
+      if (f.hits.length || f.link) return this.err(c, 'Ton statut contient un mot interdit ou un lien.');
+      u.customStatus = st; this.pushFriendsOf(this.A.key(u.name));
+    }
     if (typeof msg.noWatch === 'boolean') { u.noWatch = msg.noWatch; this.pushFriendsOf(this.A.key(u.name)); }
     if (typeof msg.lfg === 'boolean') { u.lfg = msg.lfg; this.pushFriendsOf(c.account); }
     this.A.save();
@@ -364,6 +456,12 @@ export class Social {
   m_myProfile(c) { const u = this.userOf(c); if (u) this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); }
 
   // ---------- commandes de chat ----------
+  // message système dans le salon (dé, pièce, /me), sauf pour ceux qui ont bloqué l'auteur ou qui sont réduits au silence
+  roomSay(c, r, text, me = false) {
+    if (!r) return;
+    if (this.ctx.admin.activeMute(c)) { this.info(c, 'Tu ne peux pas envoyer de message pour le moment (silence).'); return; }
+    for (const o of r.members.values()) { if (o.isBot || (o.account && this.blocks(o.account, c.account))) continue; this.ctx.send(o.id, { type: 'chat', from: 'SYSTÈME', text, system: true, me }); }
+  }
   command(c, r, text) {
     const m = text.match(/^\/(\S+)\s*(.*)$/s);
     if (!m) return false;
@@ -371,7 +469,7 @@ export class Social {
     const [first, ...rest] = arg.split(/\s+/);
     switch (cmd) {
       case 'aide': case 'help':
-        this.info(c, 'Commandes : /mp pseudo message · /r message (répondre) · /ami pseudo · /inviter pseudo · /bloquer pseudo · /debloquer pseudo · /stats [pseudo] · /c message (chat de clan) · /g message (chat de groupe) · /groupe pseudo (inviter dans ton groupe) · /signaler pseudo raison');
+        this.info(c, 'Commandes : /mp pseudo message · /r message (répondre) · /ami pseudo · /inviter pseudo · /bloquer pseudo · /debloquer pseudo · /stats [pseudo] · /c message (chat de clan) · /g message (chat de groupe) · /groupe pseudo (inviter dans ton groupe) · /signaler pseudo raison · /roll [max] · /pile · /me action · /ff (vote d\'abandon)');
         return true;
       case 'mp': case 'w': case 'msg': if (!first || !rest.length) this.info(c, 'Utilisation : /mp pseudo message'); else this.whisper(c, first, rest.join(' ')); return true;
       case 'r': if (!c.lastWhisper) this.info(c, 'Personne ne t\'a encore écrit.'); else if (arg) this.whisper(c, c.lastWhisper, arg); return true;
@@ -390,6 +488,28 @@ export class Social {
         ensureUser(t);
         const s = t.stats, kd = s.deaths ? (s.kills / s.deaths).toFixed(2) : s.kills;
         this.info(c, `${t.name} · niveau ${levelOf(t.xp)} · ${s.matches} parties · ${s.wins} victoires · K/D ${kd} · ${t.seasonDuels > 0 ? `Elo ${t.elo} (${rankFor(t).name})` : 'non classé en duel'}`);
+        return true;
+      }
+      // 1.15 : dé, pile ou face, action, vote d'abandon
+      case 'roll': case 'de': case 'dé': {
+        const max = Math.max(2, Math.min(1000, parseInt(first, 10) || 6));
+        this.roomSay(c, r, `🎲 ${c.name} lance un dé (1-${max}) : ${1 + Math.floor(Math.random() * max)}`);
+        return true;
+      }
+      case 'pile': case 'face': case 'coin': this.roomSay(c, r, `🪙 ${c.name} lance une pièce : ${Math.random() < 0.5 ? 'PILE' : 'FACE'}`); return true;
+      case 'me': {
+        const t = arg.replace(/[<>]/g, '').slice(0, 100);
+        if (!t) { this.info(c, 'Utilisation : /me action (ex. : /me danse)'); return true; }
+        const f = this.ctx.admin.filterText(t);
+        if (f.hits.length || f.link) { this.info(c, 'Message refusé (mot interdit ou lien).'); return true; }
+        this.roomSay(c, r, `* ${c.name} ${t}`, true);
+        return true;
+      }
+      case 'ff': case 'abandon': case 'surrender': {
+        if (!r?.match) { this.info(c, 'Le vote d\'abandon se fait pendant une partie.'); return true; }
+        if (r.tournament) { this.info(c, 'Pas d\'abandon en tournoi.'); return true; }
+        const p = r.match.players.get(c.id); if (!p) return true;
+        const e = r.match.voteSurrender(p); if (e) this.info(c, e);
         return true;
       }
       default: return false; // /signaler et les commandes inconnues sont traitées ailleurs

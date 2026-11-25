@@ -40,6 +40,9 @@ export const WEAPONS = {
 export const WEAPON_ORDER = ['spark', 'hornet', 'viper', 'brute', 'tempest', 'lancer', 'longbow'];
 export const SKINNABLE = ['knife', 'spark', 'hornet', 'viper', 'brute', 'tempest', 'lancer', 'longbow'];
 
+// kit de désamorçage (1.15) : défenseurs en Assaut, désamorçage plus rapide
+export const KIT = { id: 'kit', name: 'Kit de désamorçage', cost: 400, defuseTime: 4 };
+
 export const ARMOR = {
   light: { id: 'light', name: 'Gilet léger', cost: 400, value: 25 },
   heavy: { id: 'heavy', name: 'Gilet lourd', cost: 1000, value: 50 },
@@ -223,6 +226,29 @@ export const RARITY = {
 export const rarityOf = s => !s ? 'common' : s.level ? 'exclusive' : s.price >= 1400 ? 'legendary' : s.price >= 800 ? 'epic' : s.price >= 400 ? 'rare' : 'common';
 
 export const REWARDS = { kill: 10, roundWin: 15, matchWin: 150, matchPlayed: 50 };
+
+// moments annoncés en partie (1.15) : nom affiché, XP de base (× réglage de l'administration),
+// rare = les amis connectés et le salon Discord sont prévenus
+export const MOMENTS = {
+  revenge: { name: 'VENGEANCE', xp: 15 },
+  domination: { name: 'DOMINATION', xp: 25, rare: true },
+  afterlife: { name: 'DEPUIS L\'AU-DELÀ', xp: 25 },
+  noscope: { name: 'NO-SCOPE', xp: 30 },
+  airborne: { name: 'EN PLEIN VOL', xp: 15 },
+  slidekill: { name: 'GLISSADE MORTELLE', xp: 15 },
+  humiliation: { name: 'HUMILIATION', xp: 20 },
+  longshot: { name: 'TIR DE LOIN', xp: 20 },
+  blind: { name: 'À L\'AVEUGLE', xp: 20 },
+  lastbullet: { name: 'DERNIÈRE BALLE', xp: 15 },
+  hsstreak: { name: 'TÊTES EN SÉRIE', xp: 25 },
+  rescue: { name: 'SAUVETAGE', xp: 20 },
+  perfect: { name: 'MANCHE PARFAITE', xp: 20, team: true },
+  ninja: { name: 'DÉSAMORÇAGE NINJA', xp: 35 },
+  clutchdefuse: { name: 'AU DERNIER MOMENT', xp: 35 },
+  eco: { name: 'ÉCO GAGNANTE', xp: 25, team: true },
+  remontada: { name: 'REMONTADA', xp: 60, rare: true, team: true },
+};
+export const momentCount = m => Object.values(m || {}).reduce((a, n) => a + (typeof n === 'number' ? n : 0), 0);
 
 export function sideOf(team, half) {
   if (team === 'ffa') return 'ffa';

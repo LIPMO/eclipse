@@ -1432,7 +1432,180 @@
 "viseur / lunette": "sight / scope",
 "viseur": "sight",
 "lunette": "scope",
-"Clic droit avec le Viper, le Brute, le Tempest ou le Lancer : tu vises au viseur, plus précis mais plus lent.": "Right click with the Viper, Brute, Tempest or Lancer: you aim down the sight, more accurate but slower."
+"Clic droit avec le Viper, le Brute, le Tempest ou le Lancer : tu vises au viseur, plus précis mais plus lent.": "Right click with the Viper, Brute, Tempest or Lancer: you aim down the sight, more accurate but slower.",
+"écran à l'envers": "upside-down screen",
+"vertige": "dizzy",
+"caméra ivre": "drunk camera",
+"commandes inversées": "inverted controls",
+"écran pixelisé": "pixelated screen",
+"arc-en-ciel": "rainbow",
+"grosse tête": "big head",
+"minuscule": "tiny",
+"tirs « coin-coin »": "“quack” shots",
+"faux bannissement": "fake ban",
+"fausse déconnexion": "fake disconnect",
+"confettis": "confetti",
+"danse": "dance",
+"gel sur place": "freeze",
+"TU AS ÉTÉ BANNI": "YOU HAVE BEEN BANNED",
+"Raison : comportement suspect · durée : définitive": "Reason: suspicious behavior · duration: permanent",
+"Connexion perdue…": "Connection lost…",
+"Reconnexion au serveur en cours": "Reconnecting to the server",
+"C'EST UNE BLAGUE !": "IT'S A PRANK!",
+"Blague (10 s)": "Prank (10 s)",
+"Joueur introuvable (ou bot).": "Player not found (or bot).",
+"Blague refusée.": "Prank refused.",
+"ÉVÉNEMENT": "EVENT",
+"TURBO (VITESSE ×1,3)": "TURBO (SPEED ×1.3)",
+"GROSSES TÊTES": "BIG HEADS",
+"GRAVITÉ BASSE": "LOW GRAVITY",
+"Kit de désamorçage": "Defuse kit",
+"désamorçage en 4 s (défense)": "defuse in 4 s (defenders)",
+"ADVERSAIRES": "OPPONENTS",
+"OMÉGA": "OMEGA",
+"Proposer à ton équipe d'abandonner la partie ? (vote, à partir de la manche 4)": "Propose to your team to surrender the match? (vote, from round 4)",
+"Ami": "Friend",
+"Ce joueur t'a éliminé 3 fois de suite": "This player killed you 3 times in a row",
+"Némésis": "Nemesis",
+"★ Tes moments": "★ Your moments",
+"PROPOSER L'ABANDON (/ff)": "PROPOSE SURRENDER (/ff)",
+"Tir allié (dégâts divisés par deux)": "Friendly fire (half damage)",
+"Glissade : recharge": "Slide: cooldown",
+"DERNIER ENNEMI EN VIE": "LAST ENEMY ALIVE",
+"INACTIF : BOUGE OU TU SERAS RETIRÉ DE LA PARTIE": "INACTIVE: MOVE OR YOU WILL BE REMOVED FROM THE MATCH",
+"Tu as été retiré de la partie pour inactivité.": "You were removed from the match for inactivity.",
+"Le vote d'abandon n'est possible qu'en Assaut, pendant la partie.": "Surrender votes are only possible in Assault, during the match.",
+"Le vote d'abandon est possible à partir de la manche 4.": "Surrender votes are possible from round 4.",
+"Un vote d'abandon a déjà eu lieu récemment : attends 2 manches.": "A surrender vote happened recently: wait 2 rounds.",
+"Le vote d'abandon se fait pendant une partie.": "The surrender vote happens during a match.",
+"Pas d'abandon en tournoi.": "No surrendering in tournaments.",
+"VENGEANCE": "REVENGE",
+"DEPUIS L'AU-DELÀ": "FROM BEYOND THE GRAVE",
+"EN PLEIN VOL": "MID-AIR",
+"GLISSADE MORTELLE": "DEADLY SLIDE",
+"TIR DE LOIN": "LONG SHOT",
+"À L'AVEUGLE": "BLIND SHOT",
+"DERNIÈRE BALLE": "LAST BULLET",
+"TÊTES EN SÉRIE": "HEADSHOT STREAK",
+"SAUVETAGE": "RESCUE",
+"MANCHE PARFAITE": "FLAWLESS ROUND",
+"DÉSAMORÇAGE NINJA": "NINJA DEFUSE",
+"AU DERNIER MOMENT": "LAST-SECOND DEFUSE",
+"ÉCO GAGNANTE": "ECO WIN",
+"REMONTADA": "COMEBACK",
+"Réaliser 2 moments (vengeance, no-scope…)": "Pull off 2 moments (revenge, no-scope…)",
+"Réaliser 12 moments": "Pull off 12 moments",
+"Spectaculaire": "Spectacular",
+"Réaliser 25 moments en partie": "Pull off 25 moments in matches",
+"Vengeur": "Avenger",
+"25 vengeances": "25 revenges",
+"Sans lunette": "No scope",
+"Une élimination au Longbow sans la lunette": "A Longbow kill without the scope",
+"Œil de faucon": "Hawk eye",
+"10 tirs à la tête à plus de 40 m": "10 headshots from over 40 m",
+"Glisseur fou": "Slide maniac",
+"25 éliminations en glissade": "25 kills while sliding",
+"Remontada": "Comeback",
+"Gagner une partie après avoir été mené de 4 manches": "Win a match after trailing by 4 rounds",
+"Polyvalent": "All-rounder",
+"Explorateur": "Explorer",
+"Roi de la remontada": "Comeback king",
+"Son rétabli": "Sound restored",
+"Protégé par un mot de passe": "Password protected",
+"Mot de passe du salon (facultatif)": "Room password (optional)",
+"Mot de passe enregistré : les invités et les amis entrent sans.": "Password saved: invited players and friends get in without it.",
+"Mot de passe retiré.": "Password removed.",
+"Protégé — nouveau mot de passe (vide = retirer)": "Protected — new password (empty = remove)",
+"Merci ! Ton signalement a été envoyé à l'équipe.": "Thanks! Your report has been sent to the team.",
+"Merci ! Ton idée a été envoyée à l'équipe.": "Thanks! Your idea has been sent to the team.",
+"tu peux changer ton vote en cliquant": "you can change your vote by clicking",
+"Crée un compte pour voter.": "Create an account to vote.",
+"Clique sur ta réponse.": "Click your answer.",
+"Maîtrise": "Mastery",
+"Points : éliminations + 4 par partie + 6 par victoire": "Points: kills + 4 per match + 6 per win",
+"maîtrise maximale": "max mastery",
+"Crée un compte pour envoyer un message à l'équipe.": "Create an account to send a message to the team.",
+"Décris ce qui s'est passé (carte, mode, ce que tu faisais) ou ton idée…": "Describe what happened (map, mode, what you were doing) or your idea…",
+"Décris un peu plus (10 caractères minimum).": "Please describe a bit more (10 characters minimum).",
+"Ne pas déranger": "Do not disturb",
+"Ne pas déranger (messages privés et invitations refusés, réponse automatique)": "Do not disturb (private messages and invitations refused, automatic reply)",
+"Note privée (visible seulement par toi)": "Private note (only visible to you)",
+"Ex. : bon coéquipier, joue Ignis": "E.g.: good teammate, plays Ignis",
+"Ton statut (visible par tes amis) : « dispo pour un duel »…": "Your status (visible to your friends): “up for a duel”…",
+"Glissades": "Slides",
+"Tirs au viseur": "Aimed shots",
+"Record du défi de visée": "Aim challenge record",
+"Victoires d'affilée": "Wins in a row",
+"Nombre": "Count",
+"Vengeance, no-scope, tir de loin, glissade mortelle… Réalise ton premier moment en partie !": "Revenge, no-scope, long shot, deadly slide… Pull off your first moment in a match!",
+"Part des joueurs qui ont ce succès": "Share of players who have this achievement",
+"Statut enregistré.": "Status saved.",
+"Donner un surnom (visible seulement par toi)": "Give a nickname (only visible to you)",
+"UN BUG ? UNE IDÉE ?": "A BUG? AN IDEA?",
+"SIGNALER UN BUG": "REPORT A BUG",
+"PROPOSER UNE IDÉE": "SUGGEST AN IDEA",
+"L'équipe lit tous les messages. Merci !": "The team reads every message. Thanks!",
+"SIGNALER UN BUG / PROPOSER UNE IDÉE": "REPORT A BUG / SUGGEST AN IDEA",
+"Couper / remettre tout le son": "Mute / unmute all sound",
+"Inclinaison de la caméra pendant la glissade": "Camera tilt while sliding",
+"Zoom du viseur": "Sight zoom",
+"0 = pas de zoom, 1 = normal, 2 = double": "0 = no zoom, 1 = normal, 2 = double",
+"Annonces des moments (vengeance, no-scope…)": "Moment announcements (revenge, no-scope…)",
+"Toutes": "All",
+"Seulement les miennes": "Only mine",
+"Aucune": "None",
+"Couleur du point du viseur": "Sight dot color",
+"Jaune": "Yellow",
+"Rose": "Pink",
+"Compteur de vitesse (m/s)": "Speedometer (m/s)",
+"Horloge (heure réelle)": "Clock (real time)",
+"Masquer les émotes des autres joueurs": "Hide other players' emotes",
+"Son d'élimination": "Kill sound",
+"Classique": "Classic",
+"Pièce": "Coin",
+"Cloche": "Bell",
+"Voix d'annonceur": "Announcer voice",
+"Une voix annonce tes séries et tes moments (synthèse vocale du navigateur)": "A voice announces your streaks and moments (browser speech synthesis)",
+"Volume de l'annonceur": "Announcer volume",
+"Glissade": "Slide",
+"200 notes au maximum.": "200 notes maximum.",
+"Ce sondage est terminé.": "This poll has ended.",
+"Attends une minute avant d'envoyer un autre message.": "Wait a minute before sending another message.",
+"Tu as déjà envoyé 10 messages aujourd'hui. Merci !": "You've already sent 10 messages today. Thanks!",
+"Ton statut contient un mot interdit ou un lien.": "Your status contains a banned word or a link.",
+"Commandes : /mp pseudo message · /r message (répondre) · /ami pseudo · /inviter pseudo · /bloquer pseudo · /debloquer pseudo · /stats [pseudo] · /c message (chat de clan) · /g message (chat de groupe) · /groupe pseudo (inviter dans ton groupe) · /signaler pseudo raison · /roll [max] · /pile · /me action · /ff (vote d'abandon)": "Commands: /mp name message · /r message (reply) · /ami name (add friend) · /inviter name (invite) · /bloquer name (block) · /debloquer name (unblock) · /stats [name] · /c message (clan chat) · /g message (party chat) · /groupe name (invite to your party) · /signaler name reason (report) · /roll [max] · /pile (coin flip) · /me action · /ff (surrender vote)",
+"Utilisation : /me action (ex. : /me danse)": "Usage: /me action (e.g.: /me dances)",
+"Message refusé (mot interdit ou lien).": "Message refused (banned word or link).",
+"SALON DE GROUPE": "PARTY LOBBY",
+"Mode de jeu": "Game mode",
+"Adversaires": "Opponents",
+"CONTRE DES BOTS": "AGAINST BOTS",
+"AVEC D'AUTRES JOUEURS": "WITH OTHER PLAYERS",
+"Bots": "Bots",
+"Aléatoire": "Random",
+"PRÊT (ANNULER)": "READY (CANCEL)",
+"PAS PRÊT": "NOT READY",
+"CHEF": "LEADER",
+"EN PARTIE": "IN A MATCH",
+"COMPTE REQUIS": "ACCOUNT REQUIRED",
+"PLACE LIBRE": "FREE SLOT",
+"Crée un compte pour jouer en groupe": "Create an account to play in a party",
+"Message au groupe…": "Message to the party…",
+"Lancement en cours…": "Launching…",
+"GO !": "GO!",
+"Partie privée contre des bots.": "Private match against bots.",
+"Recherche d'une partie publique (ou création, complétée par des bots).": "Looking for a public match (or creating one, filled with bots).",
+"Le duel se joue à deux.": "A duel is for two players.",
+"INVITER DANS MON GROUPE": "INVITE TO MY PARTY",
+"Jusqu'à 4 joueurs. Tes amis te suivent dans tes parties, dans ton équipe.": "Up to 4 players. Your friends follow you into your matches, on your team.",
+"Aucun ami connecté. Ajoute des amis dans l'onglet AMIS.": "No friends online. Add friends in the FRIENDS tab.",
+"Tu joues seul. Crée un compte pour inviter jusqu'à 3 amis.": "You're playing solo. Create an account to invite up to 3 friends.",
+"Tu es seul : invite jusqu'à 3 amis pour jouer ensemble, ou lance une partie directement.": "You're alone: invite up to 3 friends to play together, or start a match right away.",
+"Seul le chef du groupe choisit la partie.": "Only the party leader picks the match.",
+"Seul le chef du groupe lance la partie : clique sur PRÊT.": "Only the party leader starts the match: click READY.",
+"Le duel se joue à deux : choisis un autre mode.": "A duel is for two players: pick another mode.",
+"Le duel se joue à deux : quittez le groupe à plus de deux.": "A duel is for two players: more than two of you are in the party.",
+"Choisi par le chef": "Chosen by the leader"
 },
 "patterns": [
 [
@@ -1754,6 +1927,134 @@
 [
 "^Acheter le skin « (.+) » pour (\\d+) Éclats \\? \\(débloqué pour toutes les armes\\)$",
 "Buy the skin “$t1” for $2 Shards? (unlocked for every weapon)"
+],
+[
+"^😜 Blague de l'admin : (.+)$",
+"😜 Prank by the admin: $1"
+],
+[
+"^😜 Blague de (.+?) : (.+)$",
+"😜 Prank by $1: $2"
+],
+[
+"^(.+) t'a bien eu\\.$",
+"$1 got you good."
+],
+[
+"^Blagues arrêtées pour (.+)\\.$",
+"Pranks stopped for $1."
+],
+[
+"^Blague envoyée à (.+)\\.$",
+"Prank sent to $1."
+],
+[
+"^NÉMÉSIS : (.+)$",
+"NEMESIS: $1"
+],
+[
+"^★ Moments : \\+(\\d+) XP$",
+"★ Moments: +$1 XP"
+],
+[
+"^🔥 Série de (\\d+) victoires : \\+(\\d+) % d'XP$",
+"🔥 $1-win streak: +$2% XP"
+],
+[
+"^🔇 Son coupé \\((.+) pour le remettre\\)$",
+"🔇 Sound muted ($1 to restore)"
+],
+[
+"^Mot de passe incorrect\\. Le salon « (.+) » est protégé : mot de passe \\?$",
+"Wrong password. The room “$1” is protected: password?"
+],
+[
+"^Le salon « (.+) » est protégé : mot de passe \\?$",
+"The room “$1” is protected: password?"
+],
+[
+"^🎉 (.+) vient de réaliser : (.+)$",
+"🎉 $1 just pulled off: $t2"
+],
+[
+"^⬆ (.+) est passé niveau (\\d+) !$",
+"⬆ $1 reached level $2!"
+],
+[
+"^📝 Note enregistrée pour (.+)\\.$",
+"📝 Note saved for $1."
+],
+[
+"^Note supprimée pour (.+)\\.$",
+"Note removed for $1."
+],
+[
+"^Surnom pour (.+) \\(visible seulement par toi, vide = retirer\\) :$",
+"Nickname for $1 (only visible to you, empty = remove):"
+],
+[
+"^⛔ (.+) ne souhaite pas être dérangé pour le moment \\(réponse automatique\\)\\.$",
+"⛔ $1 doesn't want to be disturbed right now (automatic reply)."
+],
+[
+"^🎲 (.+) lance un dé \\(1-(\\d+)\\) : (\\d+)$",
+"🎲 $1 rolls a die (1-$2): $3"
+],
+[
+"^🪙 (.+) lance une pièce : PILE$",
+"🪙 $1 flips a coin: TAILS"
+],
+[
+"^🪙 (.+) lance une pièce : FACE$",
+"🪙 $1 flips a coin: HEADS"
+],
+[
+"^(.+) A ÉLIMINÉ UN ALLIÉ \\(−100\\)$",
+"$1 KILLED A TEAMMATE (−100)"
+],
+[
+"^VOTE D'ABANDON : (\\d+)/(\\d+) — TAPE /ff POUR ACCEPTER \\(30 s\\)$",
+"SURRENDER VOTE: $1/$2 — TYPE /ff TO ACCEPT (30 s)"
+],
+[
+"^L'ÉQUIPE (.+) ABANDONNE$",
+"TEAM $t1 SURRENDERS"
+],
+[
+"^(.+) n'accepte pas les invitations\\.$",
+"$1 doesn't accept invitations."
+],
+[
+"^Tu es le chef du groupe \\((\\d)/(\\d)\\) : choisis la partie puis clique sur JOUER quand tout le monde est prêt\\.$",
+"You're the party leader ($1/$2): pick the match, then click PLAY when everyone is ready."
+],
+[
+"^Partie choisie par (.+) \\(chef du groupe\\)\\. Clique sur PRÊT\\.$",
+"Match chosen by $1 (party leader). Click READY."
+],
+[
+"^En attente : (.+) \\(pas encore prêt\\)\\.$",
+"Waiting for: $1 (not ready yet)."
+],
+[
+"^En attente : (.+)$",
+"Waiting for: $1"
+],
+[
+"^En attente du lancement par (.+)\\.$",
+"Waiting for $1 to start."
+],
+[
+"^Encore en partie : (.+)\\.$",
+"Still in a match: $1."
+],
+[
+"^(.+) n'est plus prêt : lancement annulé\\.$",
+"$1 is no longer ready: launch cancelled."
+],
+[
+"^Lancement annulé par (.+)\\.$",
+"Launch cancelled by $1."
 ],
 [
 "^★(\\d) (.+)$",

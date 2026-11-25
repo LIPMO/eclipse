@@ -3,13 +3,14 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
-import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER } from '/shared/data.js';
+import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, MOMENTS, momentCount, KIT } from '/shared/data.js';
+import { tr } from './i18n.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm } from '/shared/physics.js';
 import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
 import * as SFX from './audio.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 import { pad } from './gamepad.js';
-import { emojify } from './hub.js';
+import { emojify, isFriendName, openFeedback } from './hub.js';
 import { profile, save } from './store.js';
 import { mountSettings, isRebinding, applyCrosshair, keyName } from './settings.js';
 import { WEAPON_UNLOCK, RADIO, REPORT_REASONS } from '/shared/progress.js';
@@ -17,6 +18,8 @@ import { WEAPON_UNLOCK, RADIO, REPORT_REASONS } from '/shared/progress.js';
 const $ = id => document.getElementById(id);
 let ALLY = '#19e3c4';
 const ENEMY = '#ff4f6d';
+const TROLL_NAMES = { upside: 'écran à l\'envers', spin: 'vertige', drunk: 'caméra ivre', invert: 'commandes inversées', pixel: 'écran pixelisé', rainbow: 'arc-en-ciel', bighead: 'grosse tête', tiny: 'minuscule', duck: 'tirs « coin-coin »', fakeban: 'faux bannissement', fakedc: 'fausse déconnexion', confetti: 'confettis', dance: 'danse', flash: 'flash', freeze: 'gel sur place' };
+const SIGHT_COLORS = { red: '#ff2a2a', green: '#3dff6a', blue: '#3da8ff', yellow: '#ffe14d', pink: '#ff4fd8', white: '#ffffff' };
 const EMOTES = ['👍 GG', '😂 Mdr', '🔥 En feu !', '😮 Oups', '👏 Bien joué', '😎 Trop facile', '🙏 Désolé', '💀 RIP'];
 const ULTS = new Set(['overdrive', 'megasmoke', 'hunt', 'fortress', 'phantom', 'firestorm', 'blizzard']);
 const TIPS = [
@@ -79,6 +82,8 @@ export class Game {
     this.syncSlot = true;
     this.scoped = false;
     this.ads = false; this.adsK = 0; // visée au viseur (armes avec ads, voir shared/data.js)
+    this.trolls = {}; this.trollFx = new Map(); // blagues de l'administrateur (1.15) : les miennes, et celles visibles sur les autres
+    this.bigHeadEvent = !!start.fx?.bigHead; // événement serveur « grosses têtes »
     this.boxes = this.map.boxes;
     this.wallMeshes = new Map(); this.smokeMeshes = new Map(); this.fireMeshes = new Map(); this.projMeshes = new Map();
     this.tracers = []; this.particles = [];
@@ -111,6 +116,8 @@ export class Game {
     this.bindNet();
     if (isTouchDevice() && !this.spec) this.touch = new TouchControls(this);
     if (this.spec) this.initSpectator();
+    // événements serveur (1.15) annoncés au début de la partie
+    { const ev = [start.fx?.turbo && 'TURBO (VITESSE ×1,3)', start.fx?.bigHead && 'GROSSES TÊTES', this.opts.lowGrav && 'GRAVITÉ BASSE'].filter(Boolean); if (ev.length) setTimeout(() => { if (!this.destroyed) this.centerMsg('ÉVÉNEMENT : ' + ev.join(' · '), 4); }, 1800); }
     pad.attach(this);
     this.applyRoster(start.players);
     $('game').classList.add('active');
@@ -185,7 +192,7 @@ export class Game {
 
   onResize() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ST().gfxPreset === 'ultra' ? 2 : ST().quality === 'high' ? 1.5 : 1) * ST().renderScale);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ST().gfxPreset === 'ultra' ? 2 : ST().quality === 'high' ? 1.5 : 1) * ST().renderScale * (this.trollOn?.('pixel') ? 0.12 : 1));
     this.renderer.setSize(w, h, false);
     if (this.composer) { this.composer.setPixelRatio(this.renderer.getPixelRatio()); this.composer.setSize(w, h); }
     this.aspect = w / h;
@@ -200,7 +207,7 @@ export class Game {
     let v = 2 * Math.atan(Math.tan(hfov / 2) / (this.aspect || 1.7)) * 180 / Math.PI;
     if (this.scoped) v /= WEAPONS.longbow.scope;
     else v *= this.fovKick || 1; // léger élargissement du champ de vision pendant une glissade
-    if (this.adsK > 0) v /= 1 + ((WEAPONS[this.curWeaponId()]?.ads?.zoom || 1) - 1) * this.adsK; // zoom du viseur
+    if (this.adsK > 0) v /= 1 + (this.adsZoom() - 1) * this.adsK; // zoom du viseur
     this.camera.fov = v;
     this.camera.updateProjectionMatrix();
   }
@@ -415,6 +422,8 @@ export class Game {
     if (def.model === 'knife') { w.rotation.set(0.2, -0.25, -0.5); }
     this.vmBase = VM_OFFSET[def.model] || VM_OFFSET.rifle;
     this.vmSight = w.userData.sight || null; // centre de la fenêtre du viseur (visée)
+    const sc = SIGHT_COLORS[ST().sightColor] || SIGHT_COLORS.red;
+    w.traverse(o => { if (o.userData?.sightDot) { o.material = o.material.clone(); o.material.color.set(sc); } });
     this.local.switchT = 0.35;
   }
 
@@ -548,13 +557,13 @@ export class Game {
       ['PM & POMPE', ['viper', 'brute']],
       ['FUSILS', ['tempest', 'lancer']],
       ['PRÉCISION', ['longbow']],
-      ['PROTECTION', ['light', 'heavy']],
+      ['PROTECTION', ['light', 'heavy', 'kit']],
     ];
     $('buy-cols').innerHTML = cols.map(([title, items]) => `<div class="buy-col"><h4>${title}</h4>${items.map(id => {
-      const w = WEAPONS[id], a = ARMOR[id];
+      const w = WEAPONS[id], a = ARMOR[id] || (id === KIT.id ? KIT : null);
       const name = w ? w.name : a.name;
       const cost = w ? w.cost : a.cost;
-      const stat = w ? `${w.damage}${w.pellets > 1 ? '×' + w.pellets : ''} dég · ${w.mag} balles · ${w.auto ? 'auto' : 'semi'}${w.ads ? ' · viseur' : w.scope ? ' · lunette' : ''}` : `+${a.value} armure`;
+      const stat = w ? `${w.damage}${w.pellets > 1 ? '×' + w.pellets : ''} dég · ${w.mag} balles · ${w.auto ? 'auto' : 'semi'}${w.ads ? ' · viseur' : w.scope ? ' · lunette' : ''}` : id === KIT.id ? `désamorçage en ${KIT.defuseTime} s (défense)` : `+${a.value} armure`;
       const lock = w && this.unlocks && (WEAPON_UNLOCK[id] || 1) > this.level;
       return `<div class="buy-item ${lock ? 'locked' : ''}" data-item="${id}"><div class="bn">${name}${lock ? ` <span class="lock">🔒 NIV. ${WEAPON_UNLOCK[id]}</span>` : ''}</div><div class="bp">${cost ? cost : 'GRATUIT'}</div><div class="bs">${stat}</div></div>`;
     }).join('')}</div>`).join('');
@@ -586,7 +595,7 @@ export class Game {
       else if (b.dataset.bact === 'ready') this.sendReady();
       else if (b.dataset.sell) this.sellItem(b.dataset.sell);
       else if (b.dataset.fav !== undefined) { const l = this.favs()[+b.dataset.fav]; if (l) this.buyLoadout(l); else this.centerMsg('FAVORI VIDE : CLIQUE SUR 💾 POUR L\'ENREGISTRER', 2); }
-      else if (b.dataset.favsave !== undefined) { const l = this.currentLoadout(); if (!l) { this.centerMsg('ACHÈTE D\'ABORD UNE ARME OU UN GILET', 2); return; } this.favs()[+b.dataset.favsave] = l; save(); this.renderFavs(); this.centerMsg(`FAVORI ${+b.dataset.favsave + 1} ENREGISTRÉ`, 1.5); }
+      else if (b.dataset.favsave !== undefined) { const l = this.currentLoadout(); if (!l) { this.centerMsg('ACHÈTE D\'ABORD UNE ARME OU UN GILET', 2); return; } this.favs()[+b.dataset.favsave] = l; save(); if (!this.isGuest) this.net.send('saveLoadouts', { loadouts: this.favs() }); this.renderFavs(); this.centerMsg(`FAVORI ${+b.dataset.favsave + 1} ENREGISTRÉ`, 1.5); }
     };
     this.renderFavs();
     this.buyCache = {};
@@ -754,6 +763,83 @@ export class Game {
     setTimeout(() => div.remove(), 7000);
   }
 
+  // ---- blagues de l'administrateur (1.15) ----
+  trollOn(k) { return (this.trolls[k] || 0) > performance.now() / 1000; }
+  fxOn(id, k) { return (this.trollFx.get(id)?.[k] || 0) > performance.now() / 1000; }
+  onTroll(m) {
+    const now = performance.now() / 1000;
+    if (m.kind === 'stop') { this.trolls = {}; document.querySelectorAll('.troll-ov').forEach(e => e.remove()); this.onResize(); return; }
+    this.trolls[m.kind] = now + m.s; this.trollBy = m.by || 'l\'admin';
+    if (m.kind === 'fakeban' || m.kind === 'fakedc') this.trollOverlay(m.kind, m.s, this.trollBy);
+    if (m.kind === 'flash') { this.local.flashUntil = now + m.s; this.local.flashDur = m.s; }
+    if (m.kind === 'confetti') this.domConfetti();
+    if (m.kind === 'pixel') this.onResize();
+  }
+  trollOverlay(kind, s, by) {
+    const el = document.createElement('div'); el.className = 'troll-ov ' + kind;
+    el.innerHTML = kind === 'fakeban'
+      ? '<div class="to-box ban"><h2>⛔ TU AS ÉTÉ BANNI</h2><p>Raison : comportement suspect · durée : définitive</p></div>'
+      : '<div class="to-box"><div class="to-spin"></div><h2>Connexion perdue…</h2><p>Reconnexion au serveur en cours</p></div>';
+    document.body.appendChild(el);
+    setTimeout(() => { el.innerHTML = `<div class="to-box joke"><h2>😜 C'EST UNE BLAGUE !</h2><p>${esc(by)} t'a bien eu.</p></div>`; }, Math.max(1500, Math.min(4, s - 1.5) * 1000));
+    setTimeout(() => el.remove(), s * 1000);
+  }
+  domConfetti() {
+    const box = document.createElement('div'); box.className = 'confetti';
+    const cols = ['#ff4f6d', '#19e3c4', '#ffcf5a', '#8b5cff', '#3d9bff', '#ffffff'];
+    box.innerHTML = Array.from({ length: 70 }, () => `<i style="left:${Math.random() * 100}%;background:${cols[(Math.random() * cols.length) | 0]};animation-delay:${(Math.random() * 0.8).toFixed(2)}s;animation-duration:${(1.8 + Math.random() * 1.4).toFixed(2)}s"></i>`).join('');
+    document.body.appendChild(box); setTimeout(() => box.remove(), 4000);
+  }
+  confettiAt(id) {
+    const o = this.others.get(id); const p = o?.cur?.p; if (!p) return;
+    const cols = ['#ff4f6d', '#19e3c4', '#ffcf5a', '#8b5cff', '#3d9bff'];
+    for (let i = 0; i < 14; i++) this.addImpact([p[0] + (Math.random() - 0.5) * 1.6, p[1] + 1.4 + Math.random() * 1.2, p[2] + (Math.random() - 0.5) * 1.6], cols[i % cols.length], 0.35, 0.9);
+  }
+  // pastille « blague en cours » (le joueur sait que c'est une blague)
+  updateTrollBadge() {
+    const now = performance.now() / 1000;
+    const act = Object.entries(this.trolls).filter(([, t]) => t > now).map(([k]) => TROLL_NAMES[k] || k);
+    let el = $('troll-badge');
+    if (!act.length) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'troll-badge'; $('hud').appendChild(el); }
+    const txt = `😜 Blague de ${this.trollBy || 'l\'admin'} : ${act.map(n => tr(n)).join(', ')}`;
+    if (el.textContent !== txt) el.textContent = txt;
+  }
+
+  // ---- moments (1.15) : bannière dorée, son, voix d'annonceur, fil des éliminations ----
+  onMoment(m) {
+    const def = MOMENTS[m.k]; if (!def) return;
+    const meT = this.roster.get(this.myId)?.team;
+    const mine = m.i === this.myId || (!!m.team && m.team === meT);
+    const pref = ST().moments || 'all';
+    const extra = m.k === 'longshot' && m.x ? `${m.x} m` : (m.k === 'domination' || m.k === 'rescue') && m.x ? String(m.x) : '';
+    if (pref === 'off') return;
+    if (mine) { this.momentPop(def.name, extra); SFX.playMoment(); this.announce(def.name); }
+    if (mine || pref === 'all') {
+      const who = m.team ? (m.team === meT ? 'TON ÉQUIPE' : 'ADVERSAIRES') : this.nameOf(m.i);
+      const ally = m.team ? m.team === meT : (m.i === this.myId || !this.isEnemyId(m.i));
+      const kf = $('killfeed'); const div = document.createElement('div');
+      div.className = 'kf moment' + (mine ? ' mine' : '');
+      div.innerHTML = `<span class="${ally ? 'ally' : 'enemy'}">${esc(who)}</span><span class="mo">★ ${esc(def.name)}${extra ? ' · ' + esc(extra) : ''}</span>`;
+      kf.prepend(div); while (kf.children.length > 6) kf.lastChild.remove(); setTimeout(() => div.remove(), 7000);
+    }
+  }
+  momentPop(title, sub = '') {
+    const el = $('moment-pop'); if (!el) return;
+    el.querySelector('.mp-t').textContent = title; el.querySelector('.mp-s').textContent = sub;
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(this.momentT); this.momentT = setTimeout(() => el.classList.remove('show'), 2300);
+  }
+  // voix d'annonceur (synthèse vocale du navigateur), désactivée par défaut
+  announce(text) {
+    if (!ST().announcer || !text || typeof speechSynthesis === 'undefined' || SFX.isMuted()) return;
+    try {
+      const u = new SpeechSynthesisUtterance(tr(String(text)).replace(/[!.]+$/, '').toLowerCase());
+      u.lang = (ST().lang || 'fr') === 'en' ? 'en-US' : 'fr-FR'; u.rate = 1.05; u.pitch = 0.85; u.volume = Math.max(0, Math.min(1, ST().announcerVol ?? 0.8));
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    } catch { /* synthèse vocale indisponible */ }
+  }
+
   addChat(m) {
     const log = $('game-chat').querySelector('.log');
     const d = document.createElement('div');
@@ -766,7 +852,7 @@ export class Game {
     const color = m.from === 'SYSTÈME' ? '#ffcf5a' : isFfa(this.mode) ? '#c4b0ff' : m.team === myTeam ? ALLY : ENEMY;
     const tag = m.party ? '<span class="tag party">GROUPE</span>' : m.radio ? '<span class="tag radio">RADIO</span>' : m.teamOnly ? '<span class="tag team">ÉQUIPE</span>' : '';
     d.className = m.radio ? 'radio' : m.teamOnly ? 'team' : '';
-    d.innerHTML = `${tag}<b style="color:${color}">${esc(m.from)}</b> : ${esc(emojify(m.text))}`;
+    d.innerHTML = m.me ? `<i style="color:#c4b0ff">${esc(m.text)}</i>` : `${tag}<b style="color:${color}">${esc(m.from)}</b> : ${esc(emojify(m.text))}`;
     log.appendChild(d);
     while (log.children.length > 8) log.firstChild.remove();
   }
@@ -919,7 +1005,7 @@ export class Game {
     this._mm = e => {
       if (document.pointerLockElement !== canvas) return;
       const s = ST().sens * 0.0022 * this.aimSensK();
-      L.yaw -= e.movementX * s;
+      L.yaw -= e.movementX * s * (this.trollOn('invert') ? -1 : 1);
       L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - e.movementY * s * (ST().sensY || 1) * (ST().invertY ? -1 : 1)));
       this.vmSwayX += e.movementX * 0.00025; this.vmSwayY += e.movementY * 0.00025;
     };
@@ -962,6 +1048,9 @@ export class Game {
     $('p-leave').onclick = () => { if (ST().confirmQuit && !this.ended && !this.spec && !confirm('Quitter la partie en cours ?')) return; this.leave(); };
     $('p-report').onclick = () => this.openReport();
     $('p-mute').onclick = () => this.openMute();
+    $('p-feedback').onclick = () => openFeedback(`${this.mode} · ${this.map?.id || ''}`);
+    $('p-surrender').style.display = this.mode === 'assault' && !this.spec ? '' : 'none';
+    $('p-surrender').onclick = () => { if (confirm('Proposer à ton équipe d\'abandonner la partie ? (vote, à partir de la manche 4)')) { this.net.send('chat', { text: '/ff' }); this.showPause(false); } };
     $('p-challenge').style.display = this.range ? '' : 'none';
     $('p-challenge').onclick = () => { this.lock(); this.startChallenge(); };
   }
@@ -986,6 +1075,8 @@ export class Game {
     if (all || key === 'fov') this.updateFov();
     if (all || key === 'touchSize' || key === 'touchOpacity') this.touch?.applyScale();
     if (all || key === 'vmFov') { this.vmCam.fov = ST().vmFov; this.vmCam.updateProjectionMatrix(); }
+    if ((all || key === 'sightColor') && this.vmWeaponId) { this.vmKey = null; this.setViewmodel(this.vmWeaponId); }
+    if (all || key === 'adsZoomMul') this.updateFov();
     if (all || key === 'renderScale' || key === 'quality') this.onResize();
     if (all || key === 'brightness') this.renderer.toneMappingExposure = ST().brightness;
     if (all || key === 'bloom' || key === 'gfxPreset') this.setupBloom();
@@ -1108,9 +1199,9 @@ export class Game {
       const ag = AGENTS[r.agent] || AGENTS.ignis;
       const ally = !isFfa(this.mode) && r.team === me?.team;
       const lvl = r.level ? `<span class="sb-lvl">${r.level}</span>` : '';
-      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan && !ST().streamer ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${p.i === this.leaderId && isFfa(this.mode) ? '👑 ' : ''}${esc(this.nameOf(p.i))}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : lives ? (p.lv > 0 ? '❤'.repeat(Math.min(p.lv, 5)) : 'éliminé') : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
+      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan && !ST().streamer ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${p.i === this.leaderId && isFfa(this.mode) ? '👑 ' : ''}${esc(this.nameOf(p.i))}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}${!r.bot && p.i !== this.myId && isFriendName(r.name) ? ' <span title="Ami">🤝</span>' : ''}${p.i === this.nemesisId ? ' <span class="sb-nem" title="Ce joueur t\'a éliminé 3 fois de suite">NÉMÉSIS</span>' : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : lives ? (p.lv > 0 ? '❤'.repeat(Math.min(p.lv, 5)) : 'éliminé') : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="sb-mo">${p.mo ? '★' + p.mo : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
     };
-    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : lives ? 'VIES' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span>PING</span></div>`;
+    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : lives ? 'VIES' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span title="Moments">★</span><span>PING</span></div>`;
     let html;
     if (this.mode === 'duel') html = `<h2>DUEL 1v1 — premier à ${this.target} manches</h2><br>${head}${players.map(row).join('')}`;
     else if (gun) html = `<h2>GUN GAME — chaque élimination donne l'arme suivante, le couteau pour finir</h2><br>${head}${players.map(row).join('')}`;
@@ -1182,9 +1273,11 @@ export class Game {
   aimSensK() {
     if (this.scoped) return ST().scopeSens / WEAPONS.longbow.scope;
     const k = this.adsK || 0; if (k < 0.01) return 1;
-    const z = 1 + ((WEAPONS[this.curWeaponId()]?.ads?.zoom || 1) - 1) * k;
+    const z = 1 + (this.adsZoom() - 1) * k;
     return (1 + ((ST().scopeSens ?? 1) - 1) * k) / z;
   }
+  // zoom du viseur de l'arme en main, × réglage du joueur (0 = aucun zoom)
+  adsZoom() { const z = WEAPONS[this.curWeaponId()]?.ads?.zoom || 1; return 1 + (z - 1) * (ST().adsZoomMul ?? 1); }
   aimDir() { return dirFromAngles(this.local.yaw, this.local.pitch + this.local.recoil); }
   eyePos() { const L = this.local; return [L.pos[0], L.pos[1] + L.eyeH, L.pos[2]]; }
 
@@ -1224,7 +1317,7 @@ export class Game {
       const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
       dirs.push(dirFromAngles(L.yaw + Math.cos(a) * r, L.pitch + L.recoil + Math.sin(a) * r));
     }
-    this.net.send('shoot', { d: dirs.map(d => d.map(v => Math.round(v * 10000) / 10000)) });
+    this.net.send('shoot', { d: dirs.map(d => d.map(v => Math.round(v * 10000) / 10000)), ...(this.scoped ? { z: 1 } : {}), ...(this.adsK > 0.6 ? { a: 1 } : {}) });
     if (this.chal && def.type !== 'melee') this.chal.shots++;
     this.pad?.rumble(def.type === 'sniper' || def.type === 'shotgun' ? 0.5 : 0.18, 60);
     L.lastShot = now;
@@ -1237,7 +1330,7 @@ export class Game {
     }
     // effets locaux
     const type = def.type === 'pistol' ? 'pistol' : def.type;
-    SFX.playShot(type, null);
+    if (this.trollOn('duck') && def.type !== 'melee') SFX.playQuack(null); else SFX.playShot(type, null);
     this.vmKick = def.type === 'melee' ? 1 : Math.min(1, 0.35 + def.recoil * 12);
     if (def.type !== 'melee') {
       this.vmFlash.visible = true; this.vmFlash.material.rotation = Math.random() * 6;
@@ -1319,7 +1412,10 @@ export class Game {
         hm.style.opacity = 1;
         this.hitT = 0.18;
       }
-      if (ST().hitSound || m.k) SFX.playHit(m.h, m.k);
+      // son d'élimination au choix (1.15)
+      const ks = ST().killSound || 'classic';
+      if (m.k && ks !== 'classic') { if (ST().hitSound) SFX.playHit(m.h, false); if (ks !== 'off') SFX.playKillSound(ks); }
+      else if (ST().hitSound || m.k) SFX.playHit(m.h, m.k);
     });
     on('hurt', m => { this.local.hurtT = 0.4; SFX.playHurt(); if (m.from) this.showDamageDir(m.from); this.pad?.rumble(Math.min(1, 0.3 + (m.d || 0) / 100), 180); });
     on('kill', m => {
@@ -1332,7 +1428,7 @@ export class Game {
         const now = performance.now() / 1000;
         this.streak = now - (this.streakT || 0) < 4 ? (this.streak || 0) + 1 : 1;
         this.streakT = now;
-        if (this.streak >= 2) { SFX.playStreak(this.streak); this.centerMsg(['', '', 'DOUBLE ÉLIMINATION', 'TRIPLE ÉLIMINATION', 'QUADRUPLE !', 'ACE !'][Math.min(5, this.streak)], 1.4); }
+        if (this.streak >= 2) { const sm = ['', '', 'DOUBLE ÉLIMINATION', 'TRIPLE ÉLIMINATION', 'QUADRUPLE !', 'ACE !'][Math.min(5, this.streak)]; SFX.playStreak(this.streak); this.centerMsg(sm, 1.4); this.announce(sm); }
       }
       if (m.v === this.myId) {
         this.killedBy = m.k;
@@ -1385,6 +1481,10 @@ export class Game {
       if (ULTS.has(m.k) && this.isEnemyId(m.i)) { const w = $('ult-warn'); w.textContent = `⚠ ULTIME ENNEMIE : ${this.nameOf(m.i)}`; clearTimeout(this.ultT); this.ultT = setTimeout(() => { w.textContent = ''; }, 2500); }
     });
     on('notice', m => this.centerMsg(m.text, 2.5));
+    on('moment', m => this.onMoment(m));
+    on('troll', m => this.onTroll(m));
+    on('trollFx', m => { if (m.kind === 'stop') { this.trollFx.delete(m.i); return; } const e = this.trollFx.get(m.i) || {}; e[m.kind] = performance.now() / 1000 + m.s; this.trollFx.set(m.i, e); if (m.kind === 'confetti') this.confettiAt(m.i); });
+    on('nemesis', m => { this.nemesisId = m.i || null; if (m.i) { this.centerMsg(`NÉMÉSIS : ${String(m.n || '').toUpperCase()}`, 3); this.announce('Némésis'); } if (this.sbOpen) this.renderScoreboard(); });
     on('bought', m => { if (m.slot) { this.pendingSwitch = m.slot; this.bought['s' + m.slot] = m.item; } else if (ARMOR[m.item]) this.bought.armor = m.item; });
     on('sold', m => { const n = WEAPONS[m.item]?.name || ARMOR[m.item]?.name || ''; this.centerMsg(`${n.toUpperCase()} REVENDU · +${m.refund}`, 1.5); SFX.playUI('buy'); if (m.slot) delete this.bought['s' + m.slot]; else delete this.bought.armor; this.buyCache = {}; });
     on('dropped', m => { this.centerMsg(`${(WEAPONS[m.item]?.name || '').toUpperCase()} LÂCHÉ`, 1.2); SFX.playSwitch(); });
@@ -1567,7 +1667,7 @@ export class Game {
     const o = this.others.get(m.i);
     const def = WEAPONS[m.w];
     const type = def ? def.type : 'rifle';
-    SFX.playShot(type === 'pistol' ? 'pistol' : type, m.o);
+    if (this.fxOn(m.i, 'duck') && type !== 'melee') SFX.playQuack(m.o); else SFX.playShot(type === 'pistol' ? 'pistol' : type, m.o);
     if (this.isEnemyId(m.i)) this.caption(type === 'melee' ? 'Couteau ennemi' : 'Tir ennemi', m.o, 'shot');
     let start = new THREE.Vector3(...m.o);
     if (o && o.ch.weapon && o.ch.root.visible) {
@@ -1662,7 +1762,7 @@ export class Game {
     if (!alive) return;
     const ph = this.snap?.ph;
     const def = WEAPONS[this.curWeaponId()];
-    const frozen = ph === 'warmup' || ph === 'over' || (this.interacting && this.me?.pr) || this.chatOpen;
+    const frozen = ph === 'warmup' || ph === 'over' || (this.interacting && this.me?.pr) || this.chatOpen || this.trollOn('freeze');
     L.crouch = H.has('crouch') && !frozen;
     let f = 0, s = 0;
     if (!frozen) { f = (H.has('forward') ? 1 : 0) - (H.has('back') ? 1 : 0); s = (H.has('right') ? 1 : 0) - (H.has('left') ? 1 : 0); }
@@ -1670,6 +1770,7 @@ export class Game {
     const tm = this.touch?.move || (this.padActive ? this.padMove : null);
     let stickMag = 0;
     if (tm && !frozen && !this.paused) { stickMag = Math.min(1, Math.hypot(tm.x, tm.y)); if (stickMag > 0.15) { f = -tm.y; s = tm.x; } }
+    if (this.trollOn('invert')) s = -s; // blague : gauche et droite inversées
     let wx = -Math.sin(L.yaw) * f + Math.cos(L.yaw) * s, wz = -Math.cos(L.yaw) * f - Math.sin(L.yaw) * s;
     const wl = Math.hypot(wx, wz);
     if (wl > 0) { wx /= wl; wz /= wl; }
@@ -1809,6 +1910,10 @@ export class Game {
       ch.head.rotation.x = st.pt * 0.6;
       ch.arms[0].rotation.x = -1.2 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
       ch.arms[1].rotation.x = -1.35 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
+      // blagues visibles par tous : grosse tête (ou événement serveur), minuscule, danse
+      { const hs = this.bigHeadEvent || this.fxOn(o.id, 'bighead') ? 2.3 : 1; ch.head.scale.setScalar(ch.head.scale.x + (hs - ch.head.scale.x) * Math.min(1, dt * 8));
+        const rs = this.fxOn(o.id, 'tiny') ? 0.45 : 1; ch.root.scale.setScalar(ch.root.scale.x + (rs - ch.root.scale.x) * Math.min(1, dt * 8));
+        if (this.fxOn(o.id, 'dance')) { const tn = performance.now() / 1000; ch.root.rotation.y = st.y + tn * 5; ch.arms[0].rotation.x = -2.9 + Math.sin(tn * 9) * 0.4; ch.arms[1].rotation.x = -2.9 - Math.sin(tn * 9) * 0.4; ch.root.position.y += Math.abs(Math.sin(tn * 9)) * 0.12; } }
       ch.hand.position.y = 0.3 + st.pt * 0.3;
       ch.hand.rotation.x = st.pt * 0.9;
       if (o.fireT > 0) o.fireT -= dt;
@@ -1928,6 +2033,11 @@ export class Game {
     if (this.adsK < 0.002) this.adsK = 0;
     if (Math.abs(this.adsK - (this.adsFovK || 0)) > 0.002 || (this.adsK === 0 && this.adsFovK)) { this.adsFovK = this.adsK; this.updateFov(); }
     $('crosshair').classList.toggle('ads', this.adsK > 0.6);
+    // blagues : arc-en-ciel, écran pixelisé, pastille
+    { const cv = this.renderer.domElement; const tn = performance.now() / 1000;
+      if (this.trollOn('rainbow')) cv.style.filter = `hue-rotate(${(tn * 200) % 360}deg) saturate(1.8)`; else if (cv.style.filter) cv.style.filter = '';
+      const px = this.trollOn('pixel'); if (px !== !!this.pixelOn) { this.pixelOn = px; cv.style.imageRendering = px ? 'pixelated' : ''; this.onResize(); }
+      this.updateTrollBadge(); }
     if (this.spec) {
       const e = this.eyePos();
       if (this.spec.third) {
@@ -1941,11 +2051,16 @@ export class Game {
     } else if (this.me?.al || !this.me) {
       const e = this.eyePos();
       cam.position.set(e[0], e[1], e[2]);
-      const sliding = L.slideT > 0 && !ST().reduceMotion;
+      const sliding = L.slideT > 0 && !ST().reduceMotion && ST().slideTilt !== false;
       L.slideRoll = (L.slideRoll || 0) + ((sliding ? 0.075 : 0) - (L.slideRoll || 0)) * Math.min(1, dt * 10);
       const kick = sliding && !this.scoped ? 1.07 : 1;
       if (Math.abs((this.fovKick || 1) - kick) > 0.002) { this.fovKick = (this.fovKick || 1) + (kick - (this.fovKick || 1)) * Math.min(1, dt * 8); this.updateFov(); }
-      cam.rotation.set(L.pitch + L.recoil + (Math.random() - 0.5) * shake, L.yaw + (Math.random() - 0.5) * shake, L.slideRoll);
+      const tn = performance.now() / 1000;
+      let roll = L.slideRoll, tp = 0;
+      if (this.trollOn('upside')) roll += Math.PI;
+      if (this.trollOn('spin')) roll += (tn * 2.4) % (Math.PI * 2);
+      if (this.trollOn('drunk')) { roll += Math.sin(tn * 1.3) * 0.22; tp = Math.sin(tn * 0.9) * 0.06; }
+      cam.rotation.set(L.pitch + L.recoil + tp + (Math.random() - 0.5) * shake, L.yaw + (Math.random() - 0.5) * shake, roll);
       this.specTarget = null;
     } else {
       // mode spectateur
@@ -2083,8 +2198,9 @@ export class Game {
       const canBuy = isFfa(this.mode) || s.ph === 'buy';
       for (const it of document.querySelectorAll('.buy-item')) {
         const id = it.dataset.item, w = WEAPONS[id], a = ARMOR[id];
-        const cost = w ? w.cost : a.cost;
-        const owned = w ? me.wp[w.slot]?.[0] === id : me.ar >= a.value;
+        if (id === KIT.id) { it.style.display = this.mode === 'assault' && me.side === 'def' ? '' : 'none'; }
+        const cost = w ? w.cost : a ? a.cost : KIT.cost;
+        const owned = w ? me.wp[w.slot]?.[0] === id : a ? me.ar >= a.value : !!me.kt;
         it.classList.toggle('owned', owned);
         it.classList.toggle('poor', !canBuy || (!isFfa(this.mode) && cost > me.$ && !owned));
       }
@@ -2113,6 +2229,12 @@ export class Game {
     const L = this.local;
     const me = this.me;
     if (!me) return;
+    // 1.15 : compteur de vitesse, jauge de glissade, horloge
+    { const sp = $('speedo'); const on = ST().showSpeed && me.al && !this.spec; sp.style.display = on ? '' : 'none'; if (on) sp.textContent = `${Math.hypot(L.vel[0], L.vel[2]).toFixed(1)} m/s`;
+      const g = $('slide-gauge'); const left = (L.slideReady || 0) - now; const show = this.slideOn && ST().slide !== false && me.al && left > 0 && !this.spec;
+      g.style.display = show ? '' : 'none'; if (show) g.firstChild.style.width = `${Math.round((1 - left / MOVE.slideCooldown) * 100)}%`;
+      const ck = $('hud-clock'); ck.style.display = ST().showClock ? '' : 'none';
+      if (ST().showClock && (!this.clockT || now - this.clockT > 1)) { this.clockT = now; const d = new Date(); ck.textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; } }
     // série en cours
     const st = this.self?.st || 0;
     $('streak').textContent = me.al && st >= 2 ? `SÉRIE ×${st}` : '';
@@ -2182,6 +2304,7 @@ export class Game {
   // ---- émotes ----
   showEmote(m) {
     const text = EMOTES[m.e]; if (!text) return;
+    if (ST().hideEmotes && m.i !== this.myId) return;
     if (this.muted.has(this.roster.get(m.i)?.name)) return;
     this.addChat({ from: this.nameOf(m.i), text, team: this.roster.get(m.i)?.team, emote: true });
     if (m.i === this.myId) return;
@@ -2256,9 +2379,9 @@ export class Game {
     const c = this.chal; this.chal = null;
     const acc = c.shots ? c.hits / c.shots : 0;
     const score = c.kills * 100 + c.hs * 50 + Math.round(acc * 300);
-    let best = 0; try { best = +localStorage.getItem('eclipse_aim_best') || 0; } catch { /* stockage indisponible */ }
+    let best = profile.progress?.aimBest || 0; try { best = Math.max(best, +localStorage.getItem('eclipse_aim_best') || 0); } catch { /* stockage indisponible */ }
     const rec = score > best;
-    if (rec) try { localStorage.setItem('eclipse_aim_best', String(score)); } catch { /* stockage indisponible */ }
+    if (rec) { try { localStorage.setItem('eclipse_aim_best', String(score)); } catch { /* stockage indisponible */ } if (!this.isGuest) { this.net.send('aimRecord', { score }); if (profile.progress) profile.progress.aimBest = score; } }
     $('chal').innerHTML = `<div class="ch-t">${rec ? '🏆 NOUVEAU RECORD !' : 'DÉFI TERMINÉ'}</div><div>Score <b>${score}</b> · ${c.kills} cibles · ${c.hs} à la tête · ${Math.round(acc * 100)} % de précision</div><div class="muted">Record : ${Math.max(score, best)} · ${esc(KB('ready'))} pour recommencer</div>`;
     this.banner(rec ? 'NOUVEAU RECORD' : 'DÉFI TERMINÉ', `Score : ${score}`, rec ? 'win' : '', 3);
     SFX.playUI(rec ? 'win' : 'roundStart');
@@ -2328,6 +2451,7 @@ export class Game {
       <div class="sp-row"><button class="btn small" data-sp="xray" id="sp-xray">Rayons X : non</button><button class="btn small" data-sp="third" id="sp-third">Vue : 1re personne</button></div>
       <div class="sp-row sp-mod"><input id="sp-reason" maxlength="200" placeholder="Raison (facultatif)"></div>
       <div class="sp-row sp-mod"><button class="btn small" data-sp="warn">Avertir</button><button class="btn small" data-sp="mute">Silence 10 min</button><button class="btn small danger" data-sp="kick">Expulser</button><button class="btn small danger" data-sp="ban">Bannir 24 h</button></div>
+      <div class="sp-row sp-mod"><select id="sp-troll">${Object.entries(TROLL_NAMES).map(([k, n]) => `<option value="${k}">😜 ${esc(n)}</option>`).join('')}</select><button class="btn small" data-sp="troll">Blague (10 s)</button><button class="btn small ghost" data-sp="trollstop">Stop</button></div>
       <div id="sp-notice" class="muted small"></div>
       <div class="sp-row"><button class="btn small ghost wide" data-sp="quit">Quitter l'observation</button></div>
       <p class="muted small">Touches : ← → changer de joueur · X rayons X · V vue · Échap quitter</p>`;
@@ -2374,6 +2498,8 @@ export class Game {
     } else if (a === 'xray') { sp.xray = !sp.xray; $('sp-xray').textContent = `Rayons X : ${sp.xray ? 'oui' : 'non'}`; }
     else if (a === 'third') { sp.third = !sp.third; $('sp-third').textContent = `Vue : ${sp.third ? '3e personne' : '1re personne'}`; }
     else if (a === 'quit') { this.net.send('spectateStop'); this.destroy(); this.onExit && this.onExit('spec'); }
+    else if (a === 'troll') this.net.send('staffTroll', { id: this.myId, kind: $('sp-troll').value, seconds: 10 });
+    else if (a === 'trollstop') this.net.send('staffTroll', { id: this.myId, kind: 'stop' });
     else if (['warn', 'mute', 'kick', 'ban'].includes(a)) {
       const name = sp.info?.p?.name || '?';
       const label = { warn: 'avertir', mute: 'rendre muet 10 min', kick: 'expulser', ban: 'bannir 24 h' }[a];
@@ -2627,8 +2753,11 @@ export class Game {
     $('end-progress').innerHTML = this.isGuest ? '<div class="muted">Crée un compte pour gagner de l\'XP, monter de niveau et accomplir des quêtes.</div>' : '<div class="muted">Calcul de la progression…</div>';
     const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
     const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[id] || '—';
-    const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
-    $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span>ARME FAVORITE</span></div>${rows}`;
+    const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span>${momentCount(s.mo) ? '★' + momentCount(s.mo) : ''}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
+    $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span title="Moments">★</span><span>ARME FAVORITE</span></div>${rows}`;
+    // tes moments de la partie
+    const myMo = Object.entries(mine.mo || {}).filter(([k, n]) => MOMENTS[k] && n > 0);
+    if (myMo.length) $('end-mvp').insertAdjacentHTML('beforeend', `<div class="end-mo">★ Tes moments : ${myMo.map(([k, n]) => `<b>${esc(MOMENTS[k].name)}</b>${n > 1 ? ' ×' + n : ''}`).join(' · ')}</div>`);
     this.myVote = null; this.myRematch = false;
     // recommander un joueur de la partie (comptes uniquement)
     if (!this.isGuest) {
@@ -2649,6 +2778,8 @@ export class Game {
     if (!m.summary) return;
     const s = m.summary;
     const parts = [`<div class="ep-row"><b class="xp">+${s.xp + s.questXp} XP</b>${s.questXp ? ` <span class="muted">(dont ${s.questXp} de quêtes)</span>` : ''}${s.acc != null ? ` · précision ${s.acc} %` : ''}${s.eloDelta != null ? ` · Elo <b class="${s.eloDelta >= 0 ? 'up' : 'down'}">${s.eloDelta >= 0 ? '+' : ''}${s.eloDelta}</b> (${s.elo})` : ''}</div>`];
+    if (s.momentXp) parts.push(`<div class="ep-row">★ Moments : +${s.momentXp} XP</div>`);
+    if (s.streakBonus) parts.push(`<div class="ep-row">🔥 Série de ${s.winStreak} victoires : +${Math.round(s.streakBonus * 100)} % d'XP</div>`);
     if (s.level > s.levelBefore) parts.push(`<div class="ep-row lvlup">NIVEAU ${s.level} ATTEINT ! <span class="gem small"></span> +${s.levelEclats}${s.skins.length ? ` · skin débloqué : ${s.skins.map(esc).join(', ')}` : ''}</div>`);
     for (const q of s.questsDone) parts.push(`<div class="ep-row quest">✔ Quête terminée : ${esc(q.label)} <span class="gem small"></span> +${q.eclats} · +${q.xp} XP</div>`);
     for (const a of s.achievements) parts.push(`<div class="ep-row ach">🏆 Succès : ${esc(a.label)} <span class="gem small"></span> +${a.reward}${a.title ? ` · titre « ${esc(a.title)} »` : ''}</div>`);

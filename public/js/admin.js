@@ -1,5 +1,6 @@
 // Panneau d'administration ECLIPSE
-import { AGENTS, SKINS, WEAPONS, isFfa } from '/shared/data.js';
+import { AGENTS, SKINS, WEAPONS, isFfa, MOMENTS } from '/shared/data.js';
+import { masteryOf } from '/shared/progress.js';
 import { MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { TITLES, REPORT_REASONS, RANKS } from '/shared/progress.js';
 
@@ -175,6 +176,9 @@ const VIEWS = {
         <div class="card"><h3>Rapport des 7 derniers jours</h3>${S.week ? `<dl class="kv"><dt>Nouveaux comptes</dt><dd>${S.week.newAccounts}</dd><dt>Joueurs actifs</dt><dd>${S.week.active}</dd><dt>Parties</dt><dd>${S.week.matches}</dd><dt>Pic de connexions</dt><dd>${S.week.peak}</dd><dt>Signalements</dt><dd>${S.week.reports}</dd><dt>Bans</dt><dd>${S.week.bans}</dd><dt>Meilleurs joueurs</dt><dd>${S.week.top.map(t => `${h(t.name)} <span class="muted small">(${t.xp} XP)</span>`).join(', ') || '—'}</dd></dl>` : ''}</div>
         <div class="card"><h3>Dernières sanctions</h3>${o.recentSanctions?.length ? `<table><tbody>${o.recentSanctions.map(a => `<tr><td class="small">${fmtDate(a.t)}</td><td><b>${h(a.action)}</b><div class="muted small">${h(a.detail)}</div></td><td class="small">${h(a.by)}</td></tr>`).join('')}</tbody></table>` : '<div class="muted small">Aucune sanction récente.</div>'}</div>
         <div class="card"><h3>Observations en cours</h3>${S.specs?.length ? S.specs.map(x => `<div class="small">👁 <b>${h(x.staff)}</b> observe <b>${h(x.target)}</b> <span class="muted">(${h(x.room)})</span></div>`).join('') : '<div class="muted small">Personne n\'observe de partie.</div>'}</div>
+        <div class="card"><h3>Moments récents</h3>${o.recentMoments?.length ? `<table><tbody>${o.recentMoments.map(x => `<tr><td class="small">${fmtDate(x.t)}</td><td><b>${h(x.name)}</b></td><td class="gold">★ ${h(x.label)}${x.x ? ` <span class="muted">(${h(String(x.x))})</span>` : ''}</td><td class="muted small">${h(x.room)}</td></tr>`).join('')}</tbody></table>` : '<div class="muted small">Aucun moment depuis le démarrage du serveur.</div>'}</div>
+        <div class="card"><h3>Moments les plus fréquents</h3>${bars(o.topMoments)}</div>
+        <div class="card"><h3>Glissades et viseurs</h3>${o.usage ? `<dl class="kv"><dt>Glissades</dt><dd>${o.usage.slides.toLocaleString('fr-FR')} <span class="muted small">(${o.usage.matches ? (o.usage.slides / o.usage.matches).toFixed(1) : 0} par partie)</span></dd><dt>Tirs au viseur</dt><dd>${o.usage.adsShots.toLocaleString('fr-FR')} <span class="muted small">(${o.usage.matches ? (o.usage.adsShots / o.usage.matches).toFixed(1) : 0} par partie)</span></dd></dl>` : ''}</div>
         <div class="card"><h3>Inscriptions par jour</h3>${bars(o.regsByDay.map(([d, v]) => ({ label: d.slice(5).split('-').reverse().join('/'), value: v })))}</div>
         <div class="card"><h3>Parties par jour</h3>${bars(o.matchesByDay.map(([d, v]) => ({ label: d.slice(5).split('-').reverse().join('/'), value: v })))}</div>
         <div class="card" style="grid-column:1/-1"><h3>Serveur</h3><dl class="kv">
@@ -198,7 +202,7 @@ const VIEWS = {
     title: 'Joueurs connectés', live: true,
     async load() { S.players = await api('players'); },
     render() {
-      return `<div class="toolbar"><input class="grow" data-input="playerQ" placeholder="Rechercher un joueur, une IP, un salon…" value="${h(S.playerQ || '')}"><span class="muted" id="pl-count"></span></div><div id="list"></div>`;
+      return `<div class="toolbar"><input class="grow" data-input="playerQ" placeholder="Rechercher un joueur, une IP, un salon…" value="${h(S.playerQ || '')}"><span class="muted" id="pl-count"></span>${lvl() >= 2 ? '<button class="btn small" data-act="trollSelf" title="Le jeu doit être ouvert avec ton compte">😜 Tester une blague sur moi</button>' : ''}</div><div id="list"></div>`;
     },
     update() {
       const q = (S.playerQ || '').toLowerCase();
@@ -218,6 +222,7 @@ const VIEWS = {
             <button class="btn small" data-act="mute" data-id="${h(p.id)}" data-name="${h(p.name)}">Silence</button>
             <button class="btn small danger" data-act="ban" data-id="${h(p.id)}" data-name="${h(p.name)}">Bannir</button>
             ${p.match?.alive ? `<button class="btn small" data-act="slay" data-id="${h(p.id)}" data-name="${h(p.name)}">Éliminer</button>` : ''}
+            ${lvl() >= 2 ? `<button class="btn small" data-act="troll" data-id="${h(p.id)}" data-name="${h(p.name)}">😜 Blague</button>` : ''}
             ${p.account ? `<button class="btn small ghost" data-act="openAccount" data-name="${h(p.name)}">Fiche</button>` : ''}
           </div></td></tr>`).join('')}</tbody></table></div>` : '<div class="tbl-wrap"><div class="empty">Aucun joueur connecté.</div></div>';
     },
@@ -451,6 +456,15 @@ const VIEWS = {
           ${chk('weekendXp', 'Bonus d\'XP du week-end (×1,5 le samedi et le dimanche)')}
           ${num('clanMinLevel', 'Niveau requis pour créer un clan', 1, 50, 1, '1 = tout le monde peut créer un clan dès l\'inscription.')}
           <button class="btn primary" data-act="cfgSave" data-section="regs">Enregistrer</button></div>
+        <div class="card" data-section="fun"><h3>Blagues, moments et événements</h3>
+          ${chk('trollsOn', 'Blagues de l\'administrateur autorisées', 'Effets visuels temporaires envoyés depuis le panneau. Jamais en tournoi ni en duel classé.')}
+          ${num('trollMax', 'Durée maximale d\'une blague (secondes)', 5, 120)}
+          ${num('momentXp', 'Multiplicateur d\'XP des moments (vengeance, no-scope…)', 0, 5, 0.1, '0 = aucun bonus, 1 = normal, 2 = double.')}
+          ${chk('discordMoments', 'Discord : annoncer les moments rares (ACE, remontada, domination)')}
+          ${chk('eventBigHead', 'Événement « grosses têtes » (toutes les parties)')}${chk('eventLowGrav', 'Événement « gravité basse » (toutes les parties)')}${chk('eventTurbo', 'Événement « turbo » : vitesse ×1,3 (toutes les parties)')}
+          <div class="field"><label>Message d'accueil des nouveaux comptes</label><input data-k="welcomeMsg" value="${h(c.welcomeMsg || '')}" maxlength="300" placeholder="Bienvenue sur ECLIPSE ! Rejoins notre Discord…"><div class="help">Envoyé en message privé juste après l'inscription. Vide = aucun message.</div></div>
+          <p class="muted small">Les événements s'appliquent aux nouvelles parties.</p>
+          <button class="btn primary" data-act="cfgSave" data-section="fun">Enregistrer</button></div>
         <div class="card" data-section="perf"><h3>Performances, sauvegardes et limites</h3>
           ${chk('perfAlerts', 'Alerter le staff quand le serveur ralentit', 'Message au staff connecté (et sur Discord si coché) quand le calcul du jeu dépasse le seuil pendant 15 s, ou si la mémoire dépasse 85 %. Au plus une alerte toutes les 10 minutes.')}
           ${num('perfTickMs', 'Seuil de lenteur (ms par image de jeu)', 5, 200, 1, 'Le budget est de 33 ms. 30 ms = le jeu commence à saccader.')}
@@ -618,6 +632,28 @@ const VIEWS = {
     },
   },
 
+  feedback: {
+    title: 'Bugs et idées', live: false,
+    async load() { S.fb = (await api('feedback')).items; },
+    render() {
+      const f = S.fb || [], open = f.filter(x => !x.done);
+      return `<div class="toolbar"><span class="muted">${open.length} à traiter · ${f.length} au total</span></div>
+      <div class="tbl-wrap">${f.length ? `<table><thead><tr><th>Date</th><th>Joueur</th><th>Type</th><th>Message</th><th></th></tr></thead><tbody>${f.map(x => `<tr class="${x.done ? 'muted' : ''}"><td class="small">${fmtDate(x.t)}</td><td><a data-act="openAccount" data-name="${h(x.name)}">${h(x.name)}</a></td><td>${x.kind === 'bug' ? '<span class="badge danger">🐞 Bug</span>' : '<span class="badge ok">💡 Idée</span>'}</td><td>${h(x.text)}${x.where ? ` <span class="muted small">(${h(x.where)})</span>` : ''}</td><td><div class="acts"><button class="btn small" data-act="fbDone" data-id="${h(x.id)}">${x.done ? 'Rouvrir' : '✔ Traité'}</button><button class="btn small ghost" data-act="fbDel" data-id="${h(x.id)}">Supprimer</button></div></td></tr>`).join('')}</tbody></table>` : '<div class="empty">Aucun retour pour le moment. Les joueurs peuvent écrire depuis le menu pause ou l\'onglet PROFIL.</div>'}</div>`;
+    },
+  },
+  polls: {
+    title: 'Sondage du jour', live: false,
+    async load() { S.polls = await api('polls'); },
+    render() {
+      const p = S.polls?.poll, hist = S.polls?.history || [];
+      const res = x => x.opts.map((o, i) => { const n = x.counts[i] || 0, pc = x.total ? Math.round(n / x.total * 100) : 0; return `<div class="bar"><span>${h(o)}</span><div class="t"><i style="width:${pc}%"></i></div><span class="n">${n} (${pc} %)</span></div>`; }).join('');
+      return `<div class="grid cols-2"><div class="card"><h3>Sondage en cours</h3>${p ? `<p><b>${h(p.q)}</b></p><div class="bars">${res(p)}</div><p class="muted small">${p.total} vote(s) · créé par ${h(p.by)} le ${fmtDate(p.created)}</p><button class="btn danger small" data-act="pollClose">Clore le sondage</button>` : '<p class="muted">Aucun sondage en cours.</p>'}</div>
+        <div class="card"><h3>Nouveau sondage</h3><div class="field"><label>Question</label><input id="poll-q" maxlength="140" placeholder="Quelle carte voulez-vous voir arriver ?"></div>
+          ${[1, 2, 3, 4].map(i => `<div class="field"><label>Réponse ${i}${i > 2 ? ' (facultative)' : ''}</label><input id="poll-o${i}" maxlength="60"></div>`).join('')}
+          <button class="btn primary" data-act="pollCreate">Publier (remplace le sondage en cours)</button><p class="muted small">Le sondage s'affiche dans l'onglet JOUER de tous les joueurs connectés.</p></div>
+        <div class="card" style="grid-column:1/-1"><h3>Sondages précédents</h3>${hist.length ? hist.map(x => `<div style="margin-bottom:12px"><b>${h(x.q)}</b> <span class="muted small">${x.total} vote(s) · clos le ${fmtDate(x.closed)}</span><div class="bars">${res(x)}</div></div>`).join('') : '<p class="muted small">Aucun.</p>'}</div></div>`;
+    },
+  },
   economy: {
     title: 'Économie', live: false,
     async load() { S.eco = await api('economy'); },
@@ -711,6 +747,7 @@ async function openAccount(name) {
       <div class="acts-grid">
         ${btn('accBan', 'Bannir', 'danger')}${btn('accMute', 'Silence')}
         ${btn('accWarn', 'Avertir')}${btn('accNote', 'Ajouter une note')}${btn('accUndo', 'Annuler une sanction')}
+        ${L >= 2 ? btn('accCustomTitle', 'Titre personnalisé') : ''}
         ${L >= 2 ? btn('accXp', 'Niveau / XP') + btn('accElo', 'Elo') + btn('accTitle', 'Titres') + (a.warnings ? btn('accWarnReset', 'Effacer les avertissements') : '') + btn('accEclats', 'Éclats') + btn('accSkin', 'Offrir un skin') + btn('accSkinsNone', 'Retirer les skins') + btn('accResetStats', 'Remettre les stats à zéro') + btn('accResetPw', 'Nouveau mot de passe') + btn('accRename', 'Renommer') + btn('accRole', 'Changer le rôle') + btn('accLogout', 'Déconnecter partout') + btn('accDelete', 'Supprimer le compte', 'danger') : ''}
       </div>
       <h3>PROGRESSION</h3><dl class="kv">
@@ -719,7 +756,12 @@ async function openAccount(name) {
         <dt>Titre</dt><dd>${h(a.title || '—')} <span class="muted small">${a.titles.length} débloqué(s)</span></dd>
         <dt>Succès</dt><dd>${a.achievements.length ? a.achievements.map(h).join(', ') : '<span class="muted">aucun</span>'}</dd>
         <dt>Amis</dt><dd>${a.friends.length ? a.friends.map(h).join(', ') : '<span class="muted">aucun</span>'}</dd>
-        <dt>Série de connexion</dt><dd>${a.daily?.streak || 0} jour(s) (record ${a.daily?.best || 0})</dd></dl>
+        <dt>Série de connexion</dt><dd>${a.daily?.streak || 0} jour(s) (record ${a.daily?.best || 0})</dd>
+        <dt>Titre personnalisé</dt><dd>${a.customTitle ? h(a.customTitle) : '<span class="muted">aucun</span>'}</dd>
+        <dt>Victoires d'affilée</dt><dd>${a.winStreak || 0}</dd><dt>Record du défi de visée</dt><dd>${a.aimBest || '—'}</dd></dl>
+      <h3>MOMENTS ET MAÎTRISE</h3><dl class="kv">
+        <dt>Moments</dt><dd>${Object.entries(a.moments || {}).filter(([, n]) => n > 0).map(([k, n]) => `${h(MOMENTS[k]?.name || k)} ×${n}`).join(' · ') || '<span class="muted">aucun</span>'}</dd>
+        <dt>Maîtrise des agents</dt><dd>${Object.entries(a.agentStats || {}).map(([id, s]) => [id, masteryOf(s)]).sort((x, y) => y[1].pts - x[1].pts).slice(0, 6).map(([id, m]) => `${h(AGENTS[id]?.name || id)} <b>niv. ${m.level}</b>`).join(' · ') || '<span class="muted">aucune partie</span>'}</dd></dl>
       <h3>MODÉRATION</h3><dl class="kv">
         <dt>Avertissements</dt><dd>${a.warnings ? `<b class="bad">${a.warnings}</b>` : '0'}</dd>
         <dt>Signalements reçus</dt><dd>${a.reports ? `<b class="bad">${a.reports}</b>` : '0'}</dd>
@@ -755,6 +797,7 @@ async function openRoom(id, silent) {
         ${m && !isFfa(r.mode) ? b('roomSkip', 'Annuler la manche') : ''}
         ${m ? b('roomEnd', 'Terminer la partie', 'danger') : ''}
         ${b('roomMsg', 'Message au salon')}${b('roomBotAdd', '＋ Bot')}${r.bots ? b('roomBotDel', '− Bot') : ''}
+        ${m && lvl() >= 2 ? b('trollRoom', '😜 Blague pour toute la partie') : ''}
         ${b('roomClose', 'Fermer le salon', 'danger')}
       </div>
       <dl class="kv"><dt>Mode</dt><dd>${MODE[r.mode]}</dd><dt>Carte</dt><dd>${h(r.map)}</dd><dt>Objectif</dt><dd>${r.mode === 'gungame' ? r.target + ' armes' : isFfa(r.mode) ? r.target + ' éliminations' : 'premier à ' + r.target + ' manches'}</dd>
@@ -770,6 +813,20 @@ async function openRoom(id, silent) {
     openDrawer('room', r.id, html);
     S.roomCache = r;
   } catch (e) { if (silent) closeDrawer(); toast(e.message, true); }
+}
+
+// ---------- blagues de l'administrateur (1.15) ----------
+async function trollModal(target, title) {
+  let info; try { info = await api('trollLog'); } catch (e) { toast(e.message, true); return; }
+  if (!info.on) { toast('Les blagues sont désactivées (Configuration → Blagues, moments et événements).', true); return; }
+  const log = info.log.slice(0, 8).map(x => `<div class="small">${fmtDate(x.t)} · <b>${h(x.by)}</b> → ${h(x.target)} : ${h(x.label)}${x.s ? ` (${x.s} s)` : ''}</div>`).join('') || '<div class="muted small">Aucune blague pour le moment.</div>';
+  const v = await modal({ title, body: `<p class="muted small">Effet temporaire, visible seulement par le joueur visé (sauf mention). Le joueur voit une pastille « Blague de l'admin ». Jamais en tournoi ni en duel classé.</p><div class="field"><label>Journal des blagues</label>${log}</div>`,
+    fields: [{ name: 'kind', label: 'Blague', type: 'select', value: 'spin', options: [...info.kinds.map(k => [k.k, k.name + (k.all ? ' — visible par toute la partie' : '') + (k.max ? ` — ${k.max} s max.` : '')]), ['stop', '⛔ Arrêter toutes les blagues en cours']] },
+      { name: 'seconds', label: `Durée (secondes, ${info.max} max.)`, type: 'number', value: '10', min: 3, max: info.max }],
+    ok: 'Envoyer' });
+  if (!v) return;
+  const r = await act('troll', { ...target, kind: v.kind, seconds: +v.seconds });
+  if (r) toast(v.kind === 'stop' ? 'Blagues arrêtées' : `Blague envoyée (${r.sent} joueur${r.sent > 1 ? 's' : ''})`);
 }
 
 // ---------- actions ----------
@@ -788,6 +845,15 @@ const ACT = {
     if (v) act('ban', { id: d.id, minutes: +v.minutes, reason: v.reason, withIp: v.withIp }, `${d.name} a été banni`);
   },
   async slay(d) { if (await confirmBox(`Éliminer ${d.name} dans sa partie en cours ?`, { ok: 'Éliminer' })) act('slay', { id: d.id }, `${d.name} a été éliminé`); },
+  // blagues (1.15)
+  troll: d => trollModal({ id: d.id }, `Blague pour ${d.name}`),
+  trollRoom: d => trollModal({ room: d.id }, 'Blague pour toute la partie'),
+  trollSelf: () => trollModal({ self: true }, 'Tester une blague sur moi'),
+  async accCustomTitle(d) { const v = await modal({ title: `Titre personnalisé de ${d.name}`, fields: [{ name: 'title', label: 'Titre (24 caractères max., vide = retirer)', maxlength: 24 }], ok: 'Enregistrer' }); if (v) { await act('customTitle', { name: d.name, title: v.title }, 'Titre enregistré'); openAccount(d.name); } },
+  fbDone: d => act('feedbackDone', { id: d.id }),
+  async fbDel(d) { if (await confirmBox('Supprimer ce message ?')) act('feedbackDone', { id: d.id, remove: true }, 'Supprimé'); },
+  pollCreate: () => { const opts = [1, 2, 3, 4].map(i => $('poll-o' + i).value.trim()).filter(Boolean); act('pollCreate', { question: $('poll-q').value.trim(), options: opts }, 'Sondage publié'); },
+  async pollClose() { if (await confirmBox('Clore le sondage en cours ?')) act('pollClose', {}, 'Sondage clos'); },
   openAccount: d => openAccount(d.name),
   openRoom: d => openRoom(d.id),
   // comptes
@@ -1082,7 +1148,7 @@ function render(full = true) {
   v.after?.();
 }
 async function show(view) {
-  if (!VIEWS[view] || ['announce', 'news', 'config', 'economy'].includes(view) && lvl() < 2) view = 'dashboard';
+  if (!VIEWS[view] || ['announce', 'news', 'config', 'economy', 'polls'].includes(view) && lvl() < 2) view = 'dashboard';
   S.view = view;
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.view === view));
   $('title').textContent = VIEWS[view].title;

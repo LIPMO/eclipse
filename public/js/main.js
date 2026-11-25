@@ -4,14 +4,15 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Game } from './game.js';
 import { profile, save, session, setToken, applyServerProfile } from './store.js';
-import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf } from '/shared/data.js';
+import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, MOMENTS } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
+import { masteryOf } from '/shared/progress.js';
 import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
 import * as SFX from './audio.js';
 import { mountSettings, keyName, sanitizeSettings, applyPreset } from './settings.js';
 import { initClans, openClanTab } from './clans.js';
 import { initTournaments, openTournamentsTab } from './tournaments.js';
-import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub, emojify, renderPartyBar, startTour } from './hub.js';
+import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub, emojify, renderPartyBar, startTour, openFeedback, openModal, closeModal } from './hub.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -47,13 +48,13 @@ function showTab(name) {
   if (name === 'agents') renderAgents();
   if (name === 'collection') renderCollection();
   if (name === 'settings') mountSettings($('settings-root'));
-  if (name === 'play') { net.send('listRooms'); renderMeCard(); renderQuests(); renderEvent(); renderPartyBar(); }
+  if (name === 'play') { net.send('listRooms'); renderMeCard(); renderQuests(); renderEvent(); renderPartyBar(); renderLobby(); }
   if (name === 'profile') { net.send('myProfile'); renderProfile(); }
   if (name === 'leaderboard') { renderLeaderboard(); loadLeaderboard(); }
   if (name === 'friends') { net.send('friends'); renderFriends(); }
   if (name === 'clan') openClanTab();
   if (name === 'tournaments') openTournamentsTab();
-  previews.active = name === 'agents' ? 'agent' : name === 'collection' ? 'coll' : null;
+  previews.active = name === 'agents' ? 'agent' : name === 'collection' ? 'coll' : name === 'play' ? 'lobby' : null;
 }
 
 // raccourcis du menu : chiffres 1 à 9 pour les onglets, ? pour la liste des raccourcis
@@ -66,6 +67,15 @@ document.addEventListener('keydown', e => {
   if (/^[1-9]$/.test(e.key)) { const t = TAB_KEYS[+e.key - 1]; if (t && !(t === 'play' && state.room)) { e.preventDefault(); showTab(t); } else if (t === 'play' && state.room) showTab('room'); return; }
   if (e.key === '?') { e.preventDefault(); openShortcuts(); }
 });
+// 1.15 : touche pour couper / remettre tout le son, au menu comme en partie
+document.addEventListener('keydown', e => {
+  const k = profile.settings.keys?.muteAll;
+  if (!k || e.code !== k || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '') || document.querySelector('.keybtn.wait')) return;
+  e.preventDefault();
+  const m = SFX.toggleMute();
+  toast(m ? '🔇 Son coupé (' + keyName(k) + ' pour le remettre)' : '🔊 Son rétabli', 2200);
+}, true);
 function openShortcuts() {
   const names = ['Jouer', 'Agents', 'Collection', 'Profil', 'Classement', 'Amis', 'Clan', 'Tournois', 'Paramètres'];
   $('mmodal-in').innerHTML = `<button class="mx" data-close>✕</button><h2>RACCOURCIS CLAVIER</h2><div class="g-keys">${names.map((n, i) => `<div><kbd>${i + 1}</kbd> ${n}</div>`).join('')}<div><kbd>?</kbd> cette liste</div><div><kbd>/</kbd> chercher un réglage (Paramètres)</div><div><kbd>Entrée</kbd> écrire dans le chat (salon)</div><div><kbd>Échap</kbd> fermer une fenêtre</div></div>
@@ -129,8 +139,15 @@ net.on('welcome', m => {
   if (m.token) setToken(m.token);
   setMotd(m.motd);
   state.event = m.event || null;
+  // favoris et record du défi enregistrés seulement sur cet appareil (avant 1.15) : envoyés au compte
+  const localFavs = Array.isArray(profile.loadouts) ? profile.loadouts.slice() : null;
   if (m.profile) applyServerProfile(m.profile);
   else { profile.name = m.name; save(); }
+  if (!m.guest && m.profile) {
+    if (!m.profile.progress?.loadouts && localFavs?.some(Boolean)) { profile.loadouts = localFavs; net.send('saveLoadouts', { loadouts: localFavs }); }
+    let aim = 0; try { aim = +localStorage.getItem('eclipse_aim_best') || 0; } catch { /* */ }
+    if (aim > (m.profile.progress?.aimBest || 0)) net.send('aimRecord', { score: aim });
+  }
   profile.name = m.name;
   $('nav').classList.remove('locked');
   $('logout-btn').style.display = '';
@@ -190,7 +207,7 @@ function renderRooms() {
   const rows = state.rooms.slice().sort((a, b) => favRooms.has(b.name) - favRooms.has(a.name));
   list.innerHTML = rows.map(r => `<div class="room-item ${favRooms.has(r.name) ? 'fav' : ''}" data-id="${r.id}">
     <button class="fav-star ${favRooms.has(r.name) ? 'on' : ''}" data-fav="${esc(r.name)}" title="${favRooms.has(r.name) ? 'Retirer des favoris' : 'Ajouter aux favoris'}">★</button>
-    <div><div class="rn">${esc(r.name)}</div><div class="muted">${esc(MAP_INFO[r.mapId]?.name || r.mapId)} · ${r.humans} joueur(s)</div></div>
+    <div><div class="rn">${r.locked ? '<span title="Protégé par un mot de passe">🔒</span> ' : ''}${esc(r.name)}</div><div class="muted">${esc(MAP_INFO[r.mapId]?.name || r.mapId)} · ${r.humans} joueur(s)</div></div>
     <span class="pill ${r.mode === 'duel' ? 'duel' : ''}">${MODE_LABEL[r.mode]}</span>
     <span class="pill ${r.state === 'playing' ? 'playing' : ''}">${r.state === 'playing' ? 'EN JEU' : 'LOBBY'}</span>
     <span>${r.players}/${r.max}</span></div>`).join('');
@@ -314,6 +331,7 @@ function renderRoom() {
   $('rs-map').value = r.mapId;
   $('rs-mode').value = r.mode;
   document.querySelectorAll('[data-opt]').forEach(el => { el.checked = !!r.opts?.[el.dataset.opt]; });
+  $('rs-pass').placeholder = r.hasPassword ? '🔒 Protégé — nouveau mot de passe (vide = retirer)' : 'Mot de passe du salon (facultatif)';
   $('rs-target').innerHTML = TARGETS[r.mode].map(t => `<option value="${t}">${r.mode === 'gungame' ? t + ' armes (fixe)' : r.mode === 'lives' ? t + ' vie(s) par joueur' : isFfa(r.mode) ? t + ' éliminations' : 'Premier à ' + t + ' manches'}</option>`).join('');
   if (!TARGETS[r.mode].includes(r.target)) $('rs-target').insertAdjacentHTML('beforeend', `<option value="${r.target}">${r.target}</option>`);
   $('rs-target').value = r.target;
@@ -337,7 +355,7 @@ function renderRoom() {
 }
 $('agent-pick').onclick = e => {
   const c = e.target.closest('.agent-card'); if (!c) return;
-  profile.agent = c.dataset.id; save();
+  profile.agent = c.dataset.id; save(); lobby.sig = '';
   net.send('setAgent', { agent: c.dataset.id });
   SFX.initAudio(); SFX.playUI('click');
 };
@@ -355,6 +373,9 @@ $('room-ready').onclick = () => { const me = state.room?.members.find(m => m.id 
 $('room-start').onclick = () => { SFX.initAudio(); net.send('start'); };
 $('rs-fill').onclick = () => net.send('fillBots');
 document.querySelectorAll('[data-opt]').forEach(el => { el.onchange = () => net.send('roomSettings', { opts: { [el.dataset.opt]: el.checked } }); });
+// mot de passe du salon (1.15)
+$('rs-pass-save').onclick = () => { const v = $('rs-pass').value.trim(); net.send('roomSettings', { password: v }); $('rs-pass').value = ''; toast(v ? '🔒 Mot de passe enregistré : les invités et les amis entrent sans.' : 'Mot de passe retiré.', 4000); };
+net.on('roomPassword', m => { const v = prompt(`${m.wrong ? 'Mot de passe incorrect. ' : ''}Le salon « ${m.name} » est protégé : mot de passe ?`); if (v) net.send('joinRoom', { id: m.id, password: v }); });
 for (const [id, key] of [['rs-map', 'mapId'], ['rs-mode', 'mode'], ['rs-target', 'target'], ['rs-diff', 'difficulty']]) $(id).onchange = e => net.send('roomSettings', { [key]: e.target.value });
 
 // ======================= PARTIE =======================
@@ -376,6 +397,23 @@ net.on('welcome', m => {
   try { history.replaceState(null, '', location.pathname); } catch { /* */ }
 });
 net.on('watchNotice', m => toast(m.text, 5000));
+// retours des joueurs et sondage du jour (1.15)
+net.on('feedbackOk', m => toast(m.kind === 'bug' ? '🐞 Merci ! Ton signalement a été envoyé à l\'équipe.' : '💡 Merci ! Ton idée a été envoyée à l\'équipe.', 4500));
+net.on('poll', m => { state.poll = m.poll; renderPoll(); });
+function renderPoll() {
+  const el = $('poll-box'); if (!el) return;
+  const p = state.poll;
+  if (!p) { el.innerHTML = ''; return; }
+  const voted = p.mine !== null && p.mine !== undefined;
+  el.innerHTML = `<div class="panel poll"><h3>☑ SONDAGE DU JOUR</h3><p><b>${esc(p.q)}</b></p>${p.opts.map((o, i) => {
+    const n = p.counts[i] || 0, pc = p.total ? Math.round(n / p.total * 100) : 0;
+    return voted ? `<div class="poll-res ${p.mine === i ? 'mine' : ''}"><div class="pr-bar" style="width:${pc}%"></div><span>${esc(o)}${p.mine === i ? ' ✔' : ''}</span><b>${pc} %</b></div>` : `<button class="btn ghost wide" data-poll="${i}">${esc(o)}</button>`;
+  }).join('')}<div class="muted small">${voted ? `${p.total} vote(s) · tu peux changer ton vote en cliquant` : state.guest ? 'Crée un compte pour voter.' : 'Clique sur ta réponse.'}</div></div>`;
+  el.onclick = e => { const b = e.target.closest('[data-poll], .poll-res'); if (!b || state.guest) return; const i = b.dataset.poll !== undefined ? +b.dataset.poll : [...el.querySelectorAll('.poll-res')].indexOf(b); if (i >= 0) net.send('pollVote', { id: p.id, idx: i }); };
+}
+// amis : moment rare (ACE, remontada, domination) et montée de niveau
+net.on('friendMoment', m => notify({ kind: 'AMI', type: 'friend', group: 'friendMoment', text: `🎉 ${m.name} vient de réaliser : ${m.k === 'ace' ? 'ACE' : MOMENTS[m.k]?.name || m.k}` }));
+net.on('friendLevel', m => notify({ kind: 'AMI', type: 'friend', group: 'friendLevel', text: `⬆ ${m.name} est passé niveau ${m.level} !` }));
 net.on('specEnd', m => { if (state.game?.spec) { state.game.destroy(); exitGame(); } toast(m.text || 'Observation terminée.', 4000); });
 function exitGame() {
   state.game = null;
@@ -413,12 +451,13 @@ class Preview {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
     if (this.canvas.width !== Math.floor(w * this.renderer.getPixelRatio())) { this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); }
-    if (this.drag === null) this.rotY += dt * 0.5;
-    this.pivot.rotation.y = this.rotY;
+    if (this.drag === null && !this.fixed) this.rotY += dt * 0.5;
+    this.pivot.rotation.y = this.fixed ? 0 : this.rotY;
+    this.onFrame?.(dt);
     this.renderer.render(this.scene, this.camera);
   }
 }
-const previews = { active: null, agent: null, coll: null };
+const previews = { active: null, agent: null, coll: null, lobby: null };
 let lastT = performance.now();
 function previewLoop(t) {
   requestAnimationFrame(previewLoop);
@@ -430,6 +469,162 @@ function previewLoop(t) {
 }
 requestAnimationFrame(previewLoop);
 
+// ======================= SALON DE GROUPE (1.15) =======================
+// Comme dans les jeux de groupe : les personnages du groupe côte à côte, le chef choisit la partie,
+// chacun clique sur PRÊT, puis compte à rebours de 3 secondes et tout le groupe part ensemble.
+const LB_MODES = [['ffa', 'MÊLÉE'], ['gungame', 'GUN GAME'], ['assault', 'ASSAUT 5v5'], ['lives', 'DERNIER DEBOUT'], ['duel', 'DUEL 1v1']];
+const lobby = { sig: '', cdEnd: 0, cdTimer: null, chars: [], cfg: (() => { const d = { mode: 'ffa', fill: false, diff: 'normal', map: 'random' }; try { return { ...d, ...JSON.parse(localStorage.getItem('eclipse_lobby_v1') || '{}') }; } catch { return d; } })() };
+function saveLobbyCfg() { try { localStorage.setItem('eclipse_lobby_v1', JSON.stringify(lobby.cfg)); } catch { /* stockage indisponible */ } }
+const lobbyParty = () => hub.party;
+const lobbyCanEdit = () => !lobbyParty() || lobbyParty().lead;
+const lobbyCfgNow = () => (lobbyParty() && !lobbyParty().lead && lobbyParty().cfg) ? lobbyParty().cfg : lobby.cfg;
+function lobbyMembers() {
+  const p = lobbyParty();
+  if (p) return p.members;
+  return [{ name: profile.name || '—', me: true, leader: true, ready: true, agent: profile.agent, skin: profile.equipped?.lancer || 'default', level: profile.progress?.level || 1, title: null, solo: true }];
+}
+function buildLobbyStage(members) {
+  if (!previews.lobby) { previews.lobby = new Preview($('lobby-canvas')); previews.lobby.fixed = true; previews.lobby.onFrame = lobbyFrame; }
+  const g = new THREE.Group();
+  lobby.chars = [];
+  members.forEach((m, i) => {
+    const holder = new THREE.Group();
+    const ch = buildCharacter(m.agent || 'ignis', '#19e3c4');
+    const w = buildWeapon('rifle', m.skin || 'default'); w.scale.setScalar(1.1); ch.hand.add(w);
+    holder.add(ch.root);
+    // socle lumineux : vert quand le joueur est prêt, doré pour le chef
+    const col = m.leader ? '#ffcf5a' : m.ready ? '#3dff8a' : '#6b7290';
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 0.06, 40), new THREE.MeshStandardMaterial({ color: '#141828', emissive: col, emissiveIntensity: 0.55, roughness: 0.4 }));
+    disc.position.y = -0.03; holder.add(disc);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.025, 8, 48), new THREE.MeshBasicMaterial({ color: col }));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.01; holder.add(ring);
+    g.add(holder);
+    lobby.chars.push({ holder, root: ch.root, slot: i, phase: Math.random() * 6 });
+  });
+  previews.lobby.set(g, [0, 1.25, 7.2], [0, 1.0, 0]);
+}
+// place chaque personnage au-dessus de sa carte (4 colonnes égales) et les fait bouger un peu
+function lobbyFrame() {
+  const pv = previews.lobby; if (!pv) return;
+  const cam = pv.camera, D = 7.2;
+  const halfW = D * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * cam.aspect;
+  const t = performance.now() / 1000;
+  for (const c of lobby.chars) {
+    c.holder.position.set(-halfW + (c.slot + 0.5) * (2 * halfW / 4), 0.15, 0);
+    c.root.rotation.y = Math.PI + Math.sin(t * 0.7 + c.phase) * 0.3; // face à la caméra, léger balancement
+    c.root.position.y = Math.sin(t * 1.6 + c.phase) * 0.015;
+  }
+}
+function renderLobby() {
+  const root = $('lobby'); if (!root) return;
+  const p = lobbyParty(), cfg = lobbyCfgNow(), edit = lobbyCanEdit();
+  const members = lobbyMembers();
+  const me = members.find(m => m.me) || members[0];
+  // scène 3D : reconstruite seulement si les personnages changent
+  const sig = members.map(m => [m.name, m.agent, m.skin, m.ready, m.leader].join(':')).join('|');
+  if (sig !== lobby.sig) { lobby.sig = sig; try { buildLobbyStage(members); } catch (e) { console.warn('Salon : aperçu 3D indisponible', e); } }
+  // cartes des joueurs
+  let html = '';
+  for (let i = 0; i < 4; i++) {
+    const m = members[i];
+    if (m) {
+      const st = m.leader ? '👑 CHEF' : m.busy ? '⏳ EN PARTIE' : m.ready ? '✔ PRÊT' : '… PAS PRÊT';
+      const acts = p?.lead && !m.me ? `<div class="lb-acts"><button class="btn ghost small" data-lb="promote" data-n="${esc(m.name)}" title="Nommer chef">👑</button><button class="btn ghost small" data-lb="kick" data-n="${esc(m.name)}" title="Retirer du groupe">✕</button></div>` : '';
+      html += `<div class="lb-slot ${m.leader ? 'lead' : m.ready ? 'ready' : ''} ${m.me ? 'me' : ''}"><div class="lb-name">${esc(m.name)}${m.me && !m.solo ? ' <span class="muted small">(toi)</span>' : ''}</div><div class="lb-sub">NIV. ${m.level || 1}${m.title ? ' · ' + esc(m.title) : ''}${m.clan ? ' · [' + esc(m.clan) + ']' : ''}</div><div class="lb-state">${st}</div>${acts}</div>`;
+    } else if (state.guest) html += `<div class="lb-slot empty locked" title="Crée un compte pour jouer en groupe"><b>🔒</b>COMPTE REQUIS</div>`;
+    else if (edit) html += `<button class="lb-slot empty" data-lb="invite"><b>＋</b>INVITER UN AMI</button>`;
+    else html += `<div class="lb-slot empty locked"><b>·</b>PLACE LIBRE</div>`;
+  }
+  $('lobby-slots').innerHTML = html;
+  // texte d'aide
+  $('lobby-who').innerHTML = !p ? (state.guest ? 'Tu joues seul. Crée un compte pour inviter jusqu\'à 3 amis.' : 'Tu es seul : invite jusqu\'à 3 amis pour jouer ensemble, ou lance une partie directement.')
+    : p.lead ? `Tu es le chef du groupe (${p.members.length}/${p.max}) : choisis la partie puis clique sur JOUER quand tout le monde est prêt.`
+    : `Partie choisie par <b>${esc(p.leader)}</b> (chef du groupe). Clique sur PRÊT.`;
+  // réglages (le chef seul peut les changer)
+  $('lb-mode').innerHTML = LB_MODES.map(([v, l]) => `<button data-v="${v}" class="${cfg.mode === v ? 'active' : ''}">${l}</button>`).join('');
+  $('lb-mode').classList.toggle('ro', !edit); $('lb-fill').classList.toggle('ro', !edit);
+  $('lb-fill').querySelectorAll('button').forEach(b => b.classList.toggle('active', (b.dataset.v === '1') === !!cfg.fill));
+  $('lb-diff').value = cfg.diff; $('lb-diff').disabled = !edit;
+  $('lb-diff-l').style.display = cfg.fill ? 'none' : '';
+  const maps = mapsForMode(cfg.mode);
+  $('lb-map').innerHTML = `<option value="random">🎲 Aléatoire</option>` + maps.map(id => `<option value="${id}">${esc(MAP_INFO[id]?.name || id)}</option>`).join('');
+  $('lb-map').value = maps.includes(cfg.map) ? cfg.map : 'random'; $('lb-map').disabled = !edit;
+  // bouton principal
+  const btn = $('lb-play'), hint = $('lb-hint');
+  const counting = p && p.countdown > 0;
+  btn.classList.remove('ready', 'wait');
+  if (counting) { btn.textContent = 'ANNULER'; hint.textContent = 'Lancement en cours…'; }
+  else if (!p || p.lead) {
+    const waiting = p ? p.members.filter(m => !m.leader && !m.ready).map(m => m.name) : [];
+    btn.textContent = 'JOUER'; btn.classList.toggle('wait', waiting.length > 0);
+    hint.textContent = waiting.length ? `En attente : ${waiting.join(', ')}` : cfg.mode === 'duel' && p && p.members.length > 2 ? 'Le duel se joue à deux.' : cfg.fill ? 'Recherche d\'une partie publique (ou création, complétée par des bots).' : 'Partie privée contre des bots.';
+  } else { btn.textContent = me?.ready ? '✔ PRÊT (ANNULER)' : 'PRÊT'; btn.classList.toggle('ready', !!me?.ready); hint.textContent = me?.ready ? `En attente du lancement par ${p.leader}.` : ''; }
+  // compte à rebours
+  if (counting) { lobby.cdEnd = performance.now() + p.countdown * 1000; if (!lobby.cdTimer) { lobby.cdTimer = setInterval(tickLobbyCount, 100); tickLobbyCount(); } }
+  else stopLobbyCount();
+  // chat du groupe
+  $('lb-chat').classList.toggle('hidden', !p);
+}
+function tickLobbyCount() {
+  const el = $('lobby-count'); const left = Math.ceil((lobby.cdEnd - performance.now()) / 1000);
+  el.classList.remove('hidden');
+  const txt = left > 0 ? String(left) : 'GO !';
+  if (el.textContent !== txt) { el.textContent = txt; el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; SFX.playCountdown?.(left <= 0); }
+  if (left <= -2) stopLobbyCount();
+}
+function stopLobbyCount() { clearInterval(lobby.cdTimer); lobby.cdTimer = null; $('lobby-count')?.classList.add('hidden'); }
+function lobbySetCfg(patch) {
+  if (!lobbyCanEdit()) return;
+  Object.assign(lobby.cfg, patch);
+  if (!mapsForMode(lobby.cfg.mode).includes(lobby.cfg.map)) lobby.cfg.map = 'random';
+  saveLobbyCfg();
+  if (lobbyParty()?.lead) net.send('partySet', { cfg: lobby.cfg });
+  renderLobby();
+}
+function openLobbyInvite() {
+  const inParty = new Set((lobbyParty()?.members || []).map(m => m.name));
+  const online = (hub.friends.friends || []).filter(f => f.online && !inParty.has(f.name));
+  openModal(`<h2>INVITER DANS MON GROUPE</h2><p class="muted small">Jusqu'à 4 joueurs. Tes amis te suivent dans tes parties, dans ton équipe.</p>${online.length ? online.map(f => `<div class="fr-row on"><span class="dot on"></span><b>${esc(f.name)}</b><span class="muted small">${esc(f.status || '')}</span><span class="grow"></span><button class="btn primary small" data-lbi="${esc(f.name)}">INVITER</button></div>`).join('') : '<p class="muted">Aucun ami connecté. Ajoute des amis dans l\'onglet AMIS.</p>'}`);
+  $('mmodal-in').onclick = e => { const b = e.target.closest('[data-lbi]'); if (b) { net.send('partyInvite', { name: b.dataset.lbi, cfg: lobby.cfg }); b.disabled = true; b.textContent = 'INVITÉ'; } };
+}
+$('lb-mode').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ mode: b.dataset.v }); };
+$('lb-fill').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ fill: b.dataset.v === '1' }); };
+$('lb-diff').onchange = e => lobbySetCfg({ diff: e.target.value });
+$('lb-map').onchange = e => lobbySetCfg({ map: e.target.value });
+$('lb-play').onclick = () => {
+  SFX.initAudio();
+  const p = lobbyParty();
+  if (p && p.countdown > 0) { net.send('partyCancel'); return; }
+  if (!p) { net.send('lobbyPlay', { cfg: lobby.cfg }); return; }
+  if (p.lead) { net.send('partySet', { cfg: lobby.cfg }); net.send('lobbyPlay'); return; }
+  const me = p.members.find(m => m.me); net.send('partyReady', { ready: !me?.ready });
+};
+$('lobby-slots').onclick = e => {
+  const b = e.target.closest('[data-lb]'); if (!b) return;
+  if (b.dataset.lb === 'invite') openLobbyInvite();
+  else if (b.dataset.lb === 'kick') net.send('partyKick', { name: b.dataset.n });
+  else if (b.dataset.lb === 'promote') net.send('partyPromote', { name: b.dataset.n });
+};
+$('lb-chat-form').onsubmit = e => { e.preventDefault(); const i = $('lb-chat-in'); const t = i.value.trim(); if (t) net.send('partyChat', { text: t }); i.value = ''; };
+$('lb-chat-in').addEventListener('keydown', e => e.stopPropagation());
+net.on('party', m => {
+  const p = m.party;
+  hub.party = p; // ce gestionnaire peut passer avant celui de hub.js
+  // le chef garde ses propres réglages ; un membre devenu chef reprend ceux du groupe
+  if (p?.lead && p.cfg && lobby.wasMember) { lobby.cfg = { ...p.cfg }; saveLobbyCfg(); }
+  lobby.wasMember = !!p && !p.lead;
+  // groupe créé depuis la liste d'amis : le chef impose ses réglages du salon
+  if (p?.lead && p.cfg && JSON.stringify(p.cfg) !== JSON.stringify(lobby.cfg) && !p.countdown && lobby.synced !== JSON.stringify(lobby.cfg)) { lobby.synced = JSON.stringify(lobby.cfg); net.send('partySet', { cfg: lobby.cfg }); }
+  renderLobby();
+});
+net.on('chat', m => {
+  if (!m.party && m.from !== 'GROUPE') return;
+  const log = $('lb-chat-log'); if (!log) return;
+  const d = document.createElement('div');
+  if (m.from === 'GROUPE') { d.className = 'sys'; d.textContent = m.text; } else d.innerHTML = `<b>${esc(m.from)}</b> : ${esc(emojify(m.text))}`;
+  log.appendChild(d); while (log.children.length > 30) log.firstChild.remove(); log.scrollTop = log.scrollHeight;
+});
+
 // ======================= AGENTS =======================
 function renderAgents() {
   $('agents-list').innerHTML = AGENT_ORDER.map(id => { const a = AGENTS[id]; return `<div class="agent-row ${id === state.agentView ? 'active' : ''}" data-id="${id}" style="--c:${a.color}">${agentIconHTML(id)}<div><div class="an">${a.name}</div><div class="ar">${a.role}</div></div></div>`; }).join('');
@@ -437,7 +632,9 @@ function renderAgents() {
   const det = $('agent-detail');
   det.style.setProperty('--c', a.color);
   if (!det.querySelector('canvas')) det.innerHTML = '<canvas></canvas><div class="agent-text"></div>';
-  det.querySelector('.agent-text').innerHTML = `<div class="role">${a.role.toUpperCase()}</div><div class="big">${a.name}</div><div class="bio">${esc(a.bio)}</div>
+  const ms = masteryOf(profile.progress?.agentStats?.[a.id]);
+  const msHtml = state.guest || !profile.progress ? '' : `<div class="mastery" title="Points : éliminations + 4 par partie + 6 par victoire"><span>MAÎTRISE <b>${ms.level}</b>/10</span><div class="pf-bar"><i style="width:${ms.next ? Math.round((ms.pts - ms.prev) / (ms.next - ms.prev) * 100) : 100}%"></i></div><span class="muted small">${ms.next ? `${ms.pts} / ${ms.next} points` : 'maîtrise maximale !'}</span></div>`;
+  det.querySelector('.agent-text').innerHTML = `<div class="role">${a.role.toUpperCase()}</div><div class="big">${a.name}</div>${msHtml}<div class="bio">${esc(a.bio)}</div>
     <div class="ab-list">${['q', 'e', 'x'].map(k => `<div class="ab"><div class="key">${esc(keyName(profile.settings.keys[k === 'x' ? 'ult' : k === 'q' ? 'abilityQ' : 'abilityE']))}</div><div><div class="nm">${esc(a.abilities[k].name)}${k === 'x' ? ` <span class="muted">(ultime · ${a.abilities.x.cost} points)</span>` : ` <span class="muted">(${a.abilities[k].charges} charge${a.abilities[k].charges > 1 ? 's' : ''})</span>`}</div><div class="ds">${esc(a.abilities[k].desc)}</div></div></div>`).join('')}</div>`;
   if (!previews.agent) previews.agent = new Preview(det.querySelector('canvas'));
   const ch = buildCharacter(a.id, '#19e3c4');

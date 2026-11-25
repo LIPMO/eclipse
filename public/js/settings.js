@@ -28,7 +28,7 @@ export const ACTIONS = [
   ['abilityQ', 'Capacité 1'], ['abilityE', 'Capacité 2'], ['ult', 'Ultime'],
   ['interact', 'Poser / désamorcer'], ['buy', 'Menu d\'achat'], ['scoreboard', 'Tableau des scores'], ['chat', 'Chat (tous)'],
   ['teamChat', 'Chat d\'équipe'], ['radio', 'Messages radio'], ['mark', 'Marquer une position (ping)'], ['emote', 'Émotes'], ['inspect', 'Inspecter l\'arme'], ['react', 'Féliciter un coéquipier (👏)'],
-  ['drop', 'Lâcher l\'arme en main'], ['lastWeapon', 'Arme précédente'], ['bigMap', 'Grande carte (maintenir)'], ['ready', 'Prêt (phase d\'achat) / défi de visée'], ['rebuy', 'Racheter l\'équipement précédent'],
+  ['drop', 'Lâcher l\'arme en main'], ['lastWeapon', 'Arme précédente'], ['bigMap', 'Grande carte (maintenir)'], ['ready', 'Prêt (phase d\'achat) / défi de visée'], ['rebuy', 'Racheter l\'équipement précédent'],, ['muteAll', 'Couper / remettre tout le son']
 ];
 
 // ---------- viseur ----------
@@ -85,6 +85,8 @@ const SECTIONS = [
     { k: 'scopeSens', t: 'range', label: 'Multiplicateur au viseur et en lunette', min: 0.2, max: 2, step: 0.05, num: true, hint: '1 = même vitesse de visée qu\'en vue normale (corrigée du zoom)' },
     { k: 'invertY', t: 'toggle', label: 'Inverser l\'axe vertical' },
     { k: 'crouchToggle', t: 'toggle', label: 'Accroupi en mode bascule', hint: 'Un appui pour s\'accroupir, un autre pour se relever' },
+    { k: 'slideTilt', t: 'toggle', label: 'Inclinaison de la caméra pendant la glissade' },
+    { k: 'adsZoomMul', t: 'range', label: 'Zoom du viseur', min: 0, max: 2, step: 0.1, num: true, hint: '0 = pas de zoom, 1 = normal, 2 = double' },
     { k: 'slide', t: 'toggle', label: 'Glissade (s\'accroupir en courant)', hint: 'En courant, la touche s\'accroupir lance une glissade : plus petit et plus rapide, mais moins précis. Saute pendant la glissade pour garder l\'élan.' },
     { k: 'walkToggle', t: 'toggle', label: 'Marche silencieuse en mode bascule' },
     { k: 'scopeHold', t: 'toggle', label: 'Viseur et lunette : maintenir le bouton', hint: 'Désactivé : un clic pour viser, un autre pour arrêter' },
@@ -147,6 +149,11 @@ const SECTIONS = [
     { k: 'lowAmmoWarn', t: 'toggle', label: 'Alerte de munitions faibles' },
     { k: 'roundBeeps', t: 'toggle', label: 'Bips des 10 dernières secondes de la manche' },
     { k: 'dmgReport', t: 'toggle', label: 'Rapport des dégâts de la manche', hint: 'Dégâts donnés et reçus par adversaire, à ta mort et en fin de manche' },
+    { k: 'moments', t: 'select', label: 'Annonces des moments (vengeance, no-scope…)', opts: [['all', 'Toutes'], ['mine', 'Seulement les miennes'], ['off', 'Aucune']] },
+    { k: 'sightColor', t: 'select', label: 'Couleur du point du viseur', opts: [['red', 'Rouge'], ['green', 'Vert'], ['blue', 'Bleu'], ['yellow', 'Jaune'], ['pink', 'Rose'], ['white', 'Blanc']] },
+    { k: 'showSpeed', t: 'toggle', label: 'Compteur de vitesse (m/s)' },
+    { k: 'showClock', t: 'toggle', label: 'Horloge (heure réelle)' },
+    { k: 'hideEmotes', t: 'toggle', label: 'Masquer les émotes des autres joueurs' },
   ] },
   { id: 'chat', title: 'Chat', items: [
     { k: 'chatMode', t: 'select', label: 'Messages affichés en partie', opts: [['all', 'Tous'], ['team', 'Mon équipe uniquement'], ['off', 'Aucun (chat masqué)']], hint: 'Les messages du système et de la modération restent affichés' },
@@ -175,6 +182,9 @@ const SECTIONS = [
   { id: 'audio', title: 'Audio', items: [
     { k: 'vol', t: 'range', label: 'Volume général', min: 0, max: 1, step: 0.05, pct: true },
     { k: 'hitSound', t: 'toggle', label: 'Son de touche' },
+    { k: 'killSound', t: 'select', label: 'Son d\'élimination', opts: [['classic', 'Classique'], ['ding', 'Ding'], ['coin', 'Pièce'], ['bell', 'Cloche'], ['laser', 'Laser'], ['off', 'Aucun']] },
+    { k: 'announcer', t: 'toggle', label: 'Voix d\'annonceur', hint: 'Une voix annonce tes séries et tes moments (synthèse vocale du navigateur)' },
+    { k: 'announcerVol', t: 'range', label: 'Volume de l\'annonceur', min: 0, max: 1, step: 0.05 },
     { k: 'volWeapons', t: 'range', label: 'Volume : armes et dégâts', min: 0, max: 1.5, step: 0.05, pct: true },
     { k: 'volSteps', t: 'range', label: 'Volume : pas et déplacements', min: 0, max: 1.5, step: 0.05, pct: true },
     { k: 'volAbilities', t: 'range', label: 'Volume : capacités et explosions', min: 0, max: 1.5, step: 0.05, pct: true },

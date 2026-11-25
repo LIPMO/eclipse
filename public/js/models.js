@@ -345,7 +345,7 @@ function addSight(g, type, baseY, z, mats) {
     add(box(0.044, 0.012, 0.06, dark, 0, baseY, z), box(0.006, h + 0.006, 0.03, dark, -w / 2, cy, z - 0.01), box(0.006, h + 0.006, 0.03, dark, w / 2, cy, z - 0.01),
       box(w + 0.006, 0.006, 0.03, accent, 0, cy + h / 2 + 0.003, z - 0.01));
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.006, h), glassMat()); glass.position.set(0, cy, z - 0.02); add(glass);
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 8, 6), dotMat('#ff2a2a')); dot.position.set(0, cy, z - 0.021); add(dot);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 8, 6), dotMat('#ff2a2a')); dot.userData.sightDot = true; dot.position.set(0, cy, z - 0.021); add(dot);
     return Object.assign(new THREE.Vector3(0, cy, z - 0.02), { dist: 0.27 });
   }
   if (type === 'holo') { // viseur holographique : fenêtre rectangulaire, cercle et point au centre
@@ -353,8 +353,8 @@ function addSight(g, type, baseY, z, mats) {
     add(box(0.05, 0.012, 0.09, dark, 0, baseY, z), box(0.007, h + 0.008, d, dark, -w / 2, cy, z), box(0.007, h + 0.008, d, dark, w / 2, cy, z),
       box(w + 0.007, 0.008, d, dark, 0, cy + h / 2 + 0.004, z), box(w + 0.007, 0.004, 0.02, accent, 0, cy + h / 2 + 0.009, z + 0.02));
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.007, h), glassMat()); glass.position.set(0, cy, z - d / 2 + 0.004); add(glass);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.0085, 0.0007, 6, 32), dotMat('#ff4a2a')); ring.position.set(0, cy, z - d / 2 + 0.003); add(ring);
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0012, 8, 6), dotMat('#ff4a2a')); dot.position.set(0, cy, z - d / 2 + 0.003); add(dot);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.0085, 0.0007, 6, 32), dotMat('#ff4a2a')); ring.userData.sightDot = true; ring.position.set(0, cy, z - d / 2 + 0.003); add(ring);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0012, 8, 6), dotMat('#ff4a2a')); dot.userData.sightDot = true; dot.position.set(0, cy, z - d / 2 + 0.003); add(dot);
     return Object.assign(new THREE.Vector3(0, cy, z - d / 2), { dist: 0.34 });
   }
   // ACOG : lunette courte (tube creux), réticule rouge au fond
@@ -365,8 +365,8 @@ function addSight(g, type, baseY, z, mats) {
   const ring = (zz, rr) => { const m = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.004, 6, 24), accent); m.position.set(0, cy, zz); add(m); };
   ring(z - len / 2, r + 0.002); ring(z + len / 2, r + 0.002);
   const lens = new THREE.Mesh(new THREE.CircleGeometry(r * 0.95, 24), glassMat()); lens.position.set(0, cy, z - len / 2 + 0.002); add(lens);
-  const chev = new THREE.Mesh(new THREE.ConeGeometry(0.0022, 0.004, 3), dotMat('#ff3030')); chev.position.set(0, cy - 0.002, z - len / 2 + 0.003); chev.rotation.z = 0; add(chev);
-  const post = box(0.0006, 0.012, 0.0006, dotMat('#ff3030'), 0, cy - 0.0105, z - len / 2 + 0.003); add(post);
+  const chev = new THREE.Mesh(new THREE.ConeGeometry(0.0022, 0.004, 3), dotMat('#ff3030')); chev.userData.sightDot = true; chev.position.set(0, cy - 0.002, z - len / 2 + 0.003); add(chev);
+  const post = box(0.0006, 0.012, 0.0006, dotMat('#ff3030'), 0, cy - 0.0105, z - len / 2 + 0.003); post.userData.sightDot = true; add(post);
   return Object.assign(new THREE.Vector3(0, cy, z + len / 2), { dist: 0.15 });
 }
 

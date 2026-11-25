@@ -179,3 +179,6 @@ td .acts { display: flex; gap: 5px; flex-wrap: wrap; }
 table.perms td:not(:first-child), table.perms th:not(:first-child) { text-align: center; }
 .ty-client { color: #ff9a3d; }
 table.perms { width: 100%; } table.perms th:not(:first-child), table.perms td:not(:first-child) { width: 64px; }
+
+/* 1.15 : moments */
+.gold { color: #ffcf5a; }

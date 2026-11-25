@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.15.0",
+    "date": "2026-11-25",
+    "title": "Salon de groupe, moments et blagues de l'admin",
+    "items": [
+      "Nouveau salon de groupe sur l'écran Jouer : tes amis apparaissent à côté de toi en 3D. Le chef choisit le mode, les adversaires (bots ou autres joueurs), la difficulté et la carte ; chacun clique sur PRÊT, puis compte à rebours de 3 secondes et tout le groupe part ensemble, dans la même équipe. Duel possible entre deux membres du groupe.",
+      "Moments : vengeance, domination, no-scope, tir de loin, glissade mortelle, dernière balle, remontada… avec bonus d'XP, compteur dans le profil, classement, succès et quêtes. Voix d'annonceur en option.",
+      "En partie : vote d'abandon (/ff) en Assaut, kit de désamorçage pour la défense, tir allié en option de salon, joueurs inactifs retirés, bonus de série de victoires, /roll, /pile et /me dans le chat.",
+      "Salons privés avec mot de passe, maîtrise des agents, statut personnalisé, mode « ne pas déranger », notes privées et surnoms d'amis, rareté des succès.",
+      "Nouveaux réglages : son d'élimination, couleur du point du viseur, zoom du viseur, compteur de vitesse, horloge, masquer les émotes, touche F8 pour couper tout le son.",
+      "Signale un bug ou propose une idée depuis le menu pause ou ton profil, et vote au sondage du jour.",
+      "Tes équipements favoris et ton record du défi de visée sont maintenant sauvegardés sur ton compte."
+    ]
+  },
+  {
     "version": "1.14.0",
     "date": "2026-11-24",
     "title": "Viseurs sur les armes",

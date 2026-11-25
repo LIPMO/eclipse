@@ -163,7 +163,7 @@ export class Clans {
     const tk = this.A.key(t.name);
     if (tk === key) return this.err(c, 'C\'est toi !');
     if (t.clan) return this.err(c, `${t.name} fait déjà partie d'un clan.`);
-    if ((t.blocked || []).includes(key) || t.blockInvites) return this.err(c, `${t.name} n'accepte pas les invitations.`);
+    if ((t.blocked || []).includes(key) || t.blockInvites || t.dnd) return this.err(c, `${t.name} n'accepte pas les invitations.`);
     if (cl.members.length >= CLAN.maxMembers) return this.err(c, 'Ton clan est complet.');
     if (cl.invites.includes(tk)) return this.err(c, 'Invitation déjà envoyée.');
     if (cl.invites.length >= CLAN.maxInvites) return this.err(c, 'Trop d\'invitations en attente : annule-en quelques-unes.');

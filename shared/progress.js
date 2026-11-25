@@ -60,6 +60,8 @@ export const QUESTS = {
   w_dmg20k:   { kind: 'weekly', label: 'Infliger 20 000 dégâts', stat: 'dmg', goal: 20000 },
   w_ult15:    { kind: 'weekly', label: 'Utiliser 15 ultimes', stat: 'ults', goal: 15 },
   w_multi5:   { kind: 'weekly', label: '5 manches à 3 éliminations ou plus', stat: 'multi3', goal: 5 },
+  d_moments2: { kind: 'daily', label: 'Réaliser 2 moments (vengeance, no-scope…)', stat: 'momentsN', goal: 2 },
+  w_moments12: { kind: 'weekly', label: 'Réaliser 12 moments', stat: 'momentsN', goal: 12 },
 };
 export const QUEST_REWARD = { daily: { eclats: 120, xp: 250 }, weekly: { eclats: 500, xp: 1200 } };
 export const QUESTS_PER = { daily: 3, weekly: 3 };
@@ -91,13 +93,20 @@ export const ACHIEVEMENTS = [
   { id: 'elo_1700', label: 'Éclipse', desc: 'Atteindre 1 700 d\'Elo en duel', reward: 1500, title: 'eclipse', check: u => (u.eloPeak || 0) >= 1700 },
   { id: 'friends_5', label: 'Bien entouré', desc: 'Avoir 5 amis', reward: 150, check: u => (u.friends || []).length >= 5 },
   { id: 'quests_50', label: 'Aventurier', desc: 'Terminer 50 quêtes', reward: 600, check: u => (u.stats.questsDone || 0) >= 50 },
+  // moments (1.15)
+  { id: 'moments_25', label: 'Spectaculaire', desc: 'Réaliser 25 moments en partie', reward: 300, check: u => Object.values(u.stats.moments || {}).reduce((a, n) => a + n, 0) >= 25 },
+  { id: 'revenge_25', label: 'Vengeur', desc: '25 vengeances', reward: 400, title: 'vengeur', check: u => (u.stats.moments?.revenge || 0) >= 25 },
+  { id: 'noscope_1', label: 'Sans lunette', desc: 'Une élimination au Longbow sans la lunette', reward: 250, check: u => (u.stats.moments?.noscope || 0) >= 1 },
+  { id: 'longshot_10', label: 'Œil de faucon', desc: '10 tirs à la tête à plus de 40 m', reward: 400, title: 'faucon', check: u => (u.stats.moments?.longshot || 0) >= 10 },
+  { id: 'slidekill_25', label: 'Glisseur fou', desc: '25 éliminations en glissade', reward: 400, check: u => (u.stats.moments?.slidekill || 0) >= 25 },
+  { id: 'remontada_1', label: 'Remontada', desc: 'Gagner une partie après avoir été mené de 4 manches', reward: 600, title: 'remontada', check: u => (u.stats.moments?.remontada || 0) >= 1 },
 ];
 
 // ---------- titres ----------
 export const TITLES = {
   recrue: 'Recrue', tireur: 'Tireur d\'élite', lame: 'Lame silencieuse', duelliste: 'Duelliste', as: 'As',
   demolisseur: 'Démolisseur', demineur: 'Démineur', mvp: 'Joueur décisif', veteran: 'Vétéran', legende: 'Légende',
-  fidele: 'Fidèle', polyvalent: 'Polyvalent', explorateur: 'Explorateur', eclipse: 'Éclipse',
+  fidele: 'Fidèle', polyvalent: 'Polyvalent', explorateur: 'Explorateur', eclipse: 'Éclipse', vengeur: 'Vengeur', faucon: 'Œil de faucon', remontada: 'Roi de la remontada',
   fondateur: 'Fondateur', champion: 'Champion', testeur: 'Testeur',
 };
 // titres attribuables uniquement par l'équipe
@@ -123,3 +132,11 @@ export const DAILY_BONUS = [50, 75, 100, 125, 150, 200, 400];
 export const RADIO = ['Besoin d\'aide !', 'On attaque le site A', 'On attaque le site B', 'Ennemi repéré ici !', 'Attendez, je regroupe', 'Bien joué !', 'Je couvre', 'Noyau posé, défendez-le !'];
 
 export const REPORT_REASONS = { cheat: 'Triche', behavior: 'Comportement toxique', chat: 'Insultes / chat', grief: 'Antijeu', name: 'Pseudo inapproprié', other: 'Autre' };
+
+// maîtrise d'un agent (1.15) : niveau 1 à 10 selon les parties, victoires et éliminations jouées avec lui
+const MASTERY_STEPS = [0, 20, 50, 100, 170, 260, 380, 530, 720, 950];
+export function masteryOf(a) {
+  const pts = Math.round((a?.kills || 0) + (a?.matches || 0) * 4 + (a?.wins || 0) * 6);
+  let level = 1; while (level < 10 && pts >= MASTERY_STEPS[level]) level++;
+  return { level, pts, next: level < 10 ? MASTERY_STEPS[level] : null, prev: MASTERY_STEPS[level - 1] };
+}

@@ -6,7 +6,7 @@ export const DEFAULT_KEYS = {
   fire: 'Mouse0', scope: 'Mouse2', reload: 'KeyR', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3',
   abilityQ: 'KeyQ', abilityE: 'KeyE', ult: 'KeyX', interact: 'KeyF', buy: 'KeyB', scoreboard: 'Tab', chat: 'Enter',
   teamChat: 'KeyY', radio: 'KeyT', mark: 'Mouse1', emote: 'KeyV', inspect: 'KeyG', react: 'KeyH',
-  drop: 'KeyJ', lastWeapon: 'KeyZ', bigMap: 'KeyM', ready: 'KeyP', rebuy: 'KeyN',
+  drop: 'KeyJ', lastWeapon: 'KeyZ', bigMap: 'KeyM', ready: 'KeyP', rebuy: 'KeyN', muteAll: 'F8',
 };
 export const DEFAULT_SETTINGS = {
   // souris
@@ -19,6 +19,9 @@ export const DEFAULT_SETTINGS = {
   minimapRotate: false, minimapZoom: 1, heardOnMap: true, chEnemy: false, lowAmmoWarn: true, roundBeeps: true, dmgReport: true,
   // commandes
   crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true, slide: true,
+  // 1.15
+  moments: 'all', announcer: false, announcerVol: 0.8,
+  killSound: 'classic', sightColor: 'red', adsZoomMul: 1, showSpeed: false, slideTilt: true, showClock: false, hideEmotes: false,
   // manette
   gpSens: 1, gpSensY: 1, gpInvert: false, gpDeadzone: 0.15, gpAimAssist: true, gpVibration: true,
   // langue
@@ -54,5 +57,7 @@ try { session.token = localStorage.getItem('eclipse_token'); } catch { /* indisp
 export function setToken(t) { session.token = t; try { if (t) localStorage.setItem('eclipse_token', t); else localStorage.removeItem('eclipse_token'); } catch { /* indisponible */ } }
 export function applyServerProfile(p) {
   data.name = p.name; data.eclats = p.eclats; data.owned = p.owned.slice(); data.equipped = { ...data.equipped, ...p.equipped }; data.agent = p.agent || data.agent; data.stats = p.stats; data.progress = p.progress || null;
+  // favoris de la boutique : ceux du compte font foi
+  if (Array.isArray(p.progress?.loadouts) && p.progress.loadouts.length === 3) data.loadouts = p.progress.loadouts.slice();
 }
 export function save() { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* stockage indisponible */ } }

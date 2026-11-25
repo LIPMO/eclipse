@@ -1,14 +1,15 @@
 // Menus sociaux et progression : profil, quêtes, classement, amis, messages privés, notifications, signalements.
 import { AGENTS, GUN_LADDER } from '/shared/data.js';
 import { MAP_INFO } from '/shared/maps.js';
-import { ACHIEVEMENTS, TITLES, REPORT_REASONS, levelInfo } from '/shared/progress.js';
+import { ACHIEVEMENTS, TITLES, REPORT_REASONS, levelInfo, masteryOf } from '/shared/progress.js';
 import { agentIconHTML } from './models.js';
 import { profile, setToken } from './store.js';
 import { keyName } from './settings.js';
 import { playNotify } from './audio.js';
 import { isTouchDevice } from './touch.js';
 import { WEAPON_UNLOCK, LEVEL_SKINS, DAILY_BONUS, BANNERS, ENDORSE, CHAT_EMOJI } from '/shared/progress.js';
-import { WEAPONS } from '/shared/data.js';
+import { WEAPONS, MOMENTS } from '/shared/data.js';
+import { tr } from './i18n.js';
 // :gg: → 👍 dans les messages affichés
 export const emojify = t => String(t ?? '').replace(/:[a-z0-9]{2,6}:/g, m => CHAT_EMOJI[m] || m);
 const WNAME = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[id] || id || '—';
@@ -18,7 +19,7 @@ const ENDORSE_HTML = (e = {}) => Object.entries(ENDORSE).map(([k, l]) => `<span 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MODE = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout' };
-const LB_LABEL = { level: 'XP', week: 'XP cette semaine', elo: 'Elo', kills: 'Éliminations', wins: 'Victoires' };
+const LB_LABEL = { level: 'XP', week: 'XP cette semaine', elo: 'Elo', kills: 'Éliminations', wins: 'Victoires', moments: 'Moments' };
 const fmtDate = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `il y a ${Math.max(1, m)} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`; };
 const fmtDur = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${m} min` : `${m} min`; };
@@ -57,6 +58,8 @@ export function initHub(ctx) {
   net.on('gift', m => notify({ kind: 'CADEAU', type: 'friend', text: `${m.from} t'a offert ${m.amount} Éclats !`, cls: 'gold' }));
   net.on('friendOnline', m => { if (profile.settings.notifFriendOnline !== false) notify({ kind: 'AMI EN LIGNE', type: 'friend', text: m.name, ms: 6000, group: 'online', fmt: names => names.length === 1 ? `${names[0]} vient de se connecter.` : `${names.slice(0, -1).join(', ')} et ${names[names.length - 1]} viennent de se connecter.` }); });
   net.on('endorsed', m => toast(`Tu as recommandé ${m.name} (${ENDORSE[m.kind]}).`));
+  net.on('achRarity', m => { H.rarity = m.pct || {}; if (state.tab === 'profile') renderProfile(); });
+  net.on('noteSaved', m => toast(m.text ? `📝 Note enregistrée pour ${m.name}.` : `Note supprimée pour ${m.name}.`));
   net.on('leaderboard', m => { H.lb.data = m; renderLeaderboard(); });
   net.on('dailyBonus', m => {
     notify({ kind: `BONUS QUOTIDIEN · JOUR ${m.day}/7`, text: `+${m.eclats} Éclats ! Série de connexion : ${m.streak} jour(s).${m.day === 7 ? ' Bonus maximal !' : ' Reviens demain pour un bonus plus gros.'}`, ms: 9000, cls: 'gold' });
@@ -112,6 +115,20 @@ export function notify({ kind, text, ms = 8000, actions = [], cls = '', type = n
 // ---------- fenêtre modale du menu ----------
 export function openModal(html) { $('mmodal-in').innerHTML = `<button class="mx" data-close>✕</button>${html}`; $('mmodal').classList.add('show'); $('mmodal-in').querySelector('[data-close]').onclick = closeModal; }
 export function closeModal() { $('mmodal').classList.remove('show'); }
+// signaler un bug ou proposer une idée (1.15) : envoyé à l'équipe (Administration → Bugs et idées)
+export function openFeedback(where = '') {
+  if (state.guest) { toast('Crée un compte pour envoyer un message à l\'équipe.', 4000); return; }
+  openModal(`<h2>💬 UN BUG ? UNE IDÉE ?</h2>
+    <div class="seg" id="fb-kind"><button data-k="bug" class="active">🐞 SIGNALER UN BUG</button><button data-k="idea">💡 PROPOSER UNE IDÉE</button></div>
+    <textarea id="fb-text" maxlength="500" rows="5" placeholder="Décris ce qui s'est passé (carte, mode, ce que tu faisais) ou ton idée…" style="width:100%;margin-top:10px"></textarea>
+    <div class="row" style="margin-top:10px"><span class="muted small">L'équipe lit tous les messages. Merci !</span><span class="grow"></span><button class="btn primary" id="fb-send">ENVOYER</button></div>`);
+  let kind = 'bug';
+  const box = $('mmodal-in');
+  box.querySelector('#fb-kind').onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return; kind = b.dataset.k; box.querySelectorAll('#fb-kind button').forEach(x => x.classList.toggle('active', x === b)); };
+  // en partie : les touches du jeu ne doivent pas intercepter la saisie
+  box.querySelector('#fb-text').addEventListener('keydown', e => e.stopPropagation());
+  box.querySelector('#fb-send').onclick = () => { const text = box.querySelector('#fb-text').value.trim(); if (text.length < 10) { toast('Décris un peu plus (10 caractères minimum).'); return; } net.send('feedback', { kind, text, where }); closeModal(); };
+}
 
 export function openReport(name) {
   openModal(`<h2>SIGNALER ${esc(name)}</h2>
@@ -231,7 +248,7 @@ function showPlayerProfile(p) {
       <div class="pp-name">${p.clan ? `<span class="clan-tag" title="${esc(p.clan.name)}">[${esc(p.clan.tag)}]</span> ` : ''}${esc(p.name)} ${p.online ? '<span class="dot on"></span>' : '<span class="dot"></span>'}</div>
       <div class="pp-sub">${p.title ? `<span class="title-tag">${esc(p.title)}</span> · ` : ''}Niveau <b>${p.level}</b> · <span style="color:${p.rankColor}">${esc(p.rank)}</span>${p.rank !== 'Non classé' ? ` (${p.elo} Elo)` : ''}</div>
       <div class="muted small">Inscrit le ${new Date(p.created).toLocaleDateString('fr-FR')} · ${fmtDur(s.playTime)} de jeu${p.lfg ? ' · <span class="badge-ok">CHERCHE UNE ÉQUIPE</span>' : ''}${p.fairplay ? ' · <span class="gold">🤝 Fair-play</span>' : ''}</div>
-      ${p.motto ? `<div class="pp-motto">« ${esc(p.motto)} »</div>` : ''}</div></div>
+      ${p.motto ? `<div class="pp-motto">« ${esc(p.motto)} »</div>` : ''}${p.customStatus ? `<div class="small">💬 ${esc(p.customStatus)}</div>` : ''}${p.dnd ? '<div class="small bad">⛔ Ne pas déranger</div>' : ''}</div></div>
     ${p.showcase?.length ? `<div class="pp-showcase">${p.showcase.map(id => ACHIEVEMENTS.find(a => a.id === id)).filter(Boolean).map(a => `<div class="sc-item">🏆<b>${esc(a.label)}</b><span class="muted small">${esc(a.desc)}</span></div>`).join('')}</div>` : ''}
     <div class="pp-stats">
       ${[['Parties', s.matches], ['Victoires', `${s.wins} (${pct(s.wins, s.matches)})`], ['K/D', kd(s.kills, s.deaths)], ['Éliminations', s.kills], ['Têtes', pct(s.hsKills, s.kills)], ['Précision', s.acc != null ? s.acc + ' %' : '—'], ['Duels gagnés', `${s.duelWins}/${s.duels}`], ['MVP', s.mvps]].map(([l, v]) => `<div><b>${v}</b><span>${l}</span></div>`).join('')}
@@ -241,10 +258,13 @@ function showPlayerProfile(p) {
     <details><summary>Statistiques par mode</summary>${MODE_STATS(p.modeStats)}</details>
     <div class="pp-ach">${(p.achievements || []).map(id => ACHIEVEMENTS.find(a => a.id === id)).filter(Boolean).map(a => `<span class="ach-chip" title="${esc(a.desc)}">🏆 ${esc(a.label)}</span>`).join('') || '<span class="muted small">Aucun succès pour le moment.</span>'}</div>
     ${p.history?.length ? `<h3>DERNIÈRES PARTIES</h3><div class="hist mini">${p.history.slice(0, 5).map(histRow).join('')}</div>` : ''}
+    ${rel !== 'self' && rel !== 'guest' ? `<div class="pp-note"><label class="small muted">📝 Note privée (visible seulement par toi)</label><div class="row"><input id="pp-note" maxlength="200" placeholder="Ex. : bon coéquipier, joue Ignis" value="${esc(p.myNote || '')}"><button class="btn small" data-pa="note">ENREGISTRER</button></div></div>` : ''}
     <div class="pp-actions">${btns.join('')}</div>`);
+  const noteIn = $('mmodal-in').querySelector('#pp-note'); if (noteIn) noteIn.addEventListener('keydown', e => e.stopPropagation());
   $('mmodal-in').onclick = e => {
     const a = e.target.closest('[data-pa]')?.dataset.pa; if (!a) return;
     if (a === 'add') { net.send('friendAdd', { name: p.name }); closeModal(); }
+    if (a === 'note') net.send('setNote', { name: p.name, text: $('pp-note').value });
     if (a === 'clan') { net.send('clanInvite', { name: p.name }); closeModal(); }
     if (a === 'accept') { net.send('friendAccept', { name: p.name }); closeModal(); }
     if (a === 'block') { if (confirm(`Bloquer ${p.name} ? Tu ne verras plus ses messages.`)) { net.send('block', { name: p.name }); closeModal(); } }
@@ -302,7 +322,7 @@ export function renderQuests() {
 // ---------- profil ----------
 const histRow = h => `<div class="h-row ${h.won ? 'win' : 'lose'}"><span class="h-res">${h.won ? 'VICTOIRE' : 'DÉFAITE'}${h.result ? ` <b>${esc(h.result)}</b>` : ''}</span>
   <span>${agentIconHTML(h.agent, 'sm')} ${MODE[h.mode] || h.mode} · ${esc(MAP_INFO[h.map]?.name || h.map)}</span><span>${h.kills}/${h.deaths}/${h.assists}${h.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span>
-  <span class="muted">${h.dmg} dég.${h.acc != null ? ` · ${h.acc} %` : ''}</span><span class="xp">+${h.xp} XP${h.elo != null ? ` · <b class="${h.elo >= 0 ? 'up' : 'down'}">${h.elo >= 0 ? '+' : ''}${h.elo}</b>` : ''}</span><span class="muted">${fmtDate(h.t)}</span></div>`;
+  <span class="muted">${h.dmg} dég.${h.acc != null ? ` · ${h.acc} %` : ''}${h.mo ? ` · <b class="gold" title="${esc(Object.entries(h.moments || {}).map(([k, n]) => tr(MOMENTS[k]?.name || k) + (n > 1 ? ' ×' + n : '')).join(', '))}">★${h.mo}</b>` : ''}</span><span class="xp">+${h.xp} XP${h.elo != null ? ` · <b class="${h.elo >= 0 ? 'up' : 'down'}">${h.elo >= 0 ? '+' : ''}${h.elo}</b>` : ''}</span><span class="muted">${fmtDate(h.t)}</span></div>`;
 
 export function renderProfile() {
   const root = $('profile-root');
@@ -328,18 +348,22 @@ export function renderProfile() {
     <label class="check"><input type="checkbox" id="pf-lfg" ${pr.lfg ? 'checked' : ''}> Je cherche une équipe (visible par mes amis)</label>
     <label class="check"><input type="checkbox" id="pf-blockinv" ${pr.blockInvites ? 'checked' : ''}> Refuser toutes les invitations (salons et clans)</label>
     <label class="check"><input type="checkbox" id="pf-nowatch" ${pr.noWatch ? 'checked' : ''}> Refuser que mes amis regardent mes parties</label>
-    <div class="row"><button class="btn ghost small" id="pf-share">🔗 COPIER LE LIEN DE MON PROFIL</button></div>
+    <label class="check"><input type="checkbox" id="pf-dnd" ${pr.dnd ? 'checked' : ''}> ⛔ Ne pas déranger (messages privés et invitations refusés, réponse automatique)</label>
+    <div class="row"><input id="pf-status" maxlength="40" placeholder="Ton statut (visible par tes amis) : « dispo pour un duel »…" value="${esc(pr.customStatus || '')}"><button class="btn small" id="pf-status-save">ENREGISTRER</button></div>
+    <div class="row"><button class="btn ghost small" id="pf-share">🔗 COPIER LE LIEN DE MON PROFIL</button><button class="btn ghost small" id="pf-feedback">💬 SIGNALER UN BUG / PROPOSER UNE IDÉE</button></div>
   </div>
   <div class="pf-stats">${[
     ['Parties', st.matches], ['Victoires', `${st.wins} · ${pct(st.wins, st.matches)}`], ['K/D', kd(st.kills, st.deaths)], ['Éliminations', st.kills], ['Assistances', st.assists || 0],
     ['Tirs à la tête', pct(st.hsKills, st.kills)], ['Précision', pct(st.hits, st.shots)], ['Dégâts', (st.dmg || 0).toLocaleString('fr-FR')], ['MVP', st.mvps || 0], ['Duels', `${st.duelWins}/${st.duels}`],
     ['Noyaux posés', st.plants || 0], ['Désamorçages', st.defuses || 0], ['As', st.aces || 0], ['Temps de jeu', fmtDur(st.playTime)], ['Série de connexion', `${pr.daily?.streak || 0} j (record ${pr.daily?.best || 0})`],
     ['Meilleure série', pr.bestStreak || 0], ['Arme favorite', esc(WNAME(Object.entries(pr.weaponKills || {}).sort((a, b) => b[1] - a[1])[0]?.[0]))], ['Tournois gagnés', pr.tournamentWins || 0],
+    ['Glissades', st.slides || 0], ['Tirs au viseur', st.adsShots || 0], ['Record du défi de visée', pr.aimBest || '—'], ['Victoires d\'affilée', pr.winStreak || 0], ['Moments', Object.values(st.moments || {}).reduce((a, n) => a + n, 0)],
   ].map(([l, v]) => `<div class="pf-stat"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
   <div class="pf-grid">
-    <div class="panel"><h3>STATISTIQUES PAR AGENT</h3>${agents.length ? `<table class="tbl"><tr><th>Agent</th><th>Parties</th><th>Victoires</th><th>K/D</th><th>Dégâts / partie</th></tr>${agents.map(([id, a]) => `<tr><td>${agentIconHTML(id, 'sm')} ${esc(AGENTS[id]?.name || id)}</td><td>${a.matches}</td><td>${pct(a.wins, a.matches)}</td><td>${kd(a.kills, a.deaths)}</td><td>${Math.round((a.dmg || 0) / a.matches)}</td></tr>`).join('')}</table>` : '<p class="muted">Joue une partie pour voir tes statistiques.</p>'}</div>
+    <div class="panel"><h3>STATISTIQUES PAR AGENT</h3>${agents.length ? `<table class="tbl"><tr><th>Agent</th><th>Maîtrise</th><th>Parties</th><th>Victoires</th><th>K/D</th><th>Dégâts / partie</th></tr>${agents.map(([id, a]) => `<tr><td>${agentIconHTML(id, 'sm')} ${esc(AGENTS[id]?.name || id)}</td><td title="${masteryOf(a).pts} points">${'★'.repeat(Math.min(5, Math.ceil(masteryOf(a).level / 2)))}<span class="muted">${'☆'.repeat(5 - Math.min(5, Math.ceil(masteryOf(a).level / 2)))}</span> ${masteryOf(a).level}/10</td><td>${a.matches}</td><td>${pct(a.wins, a.matches)}</td><td>${kd(a.kills, a.deaths)}</td><td>${Math.round((a.dmg || 0) / a.matches)}</td></tr>`).join('')}</table>` : '<p class="muted">Joue une partie pour voir tes statistiques.</p>'}</div>
     <div class="panel"><h3>STATISTIQUES PAR MODE</h3>${MODE_STATS(pr.modeStats)}</div>
     <div class="panel"><h3>ÉLIMINATIONS PAR ARME</h3>${Object.keys(pr.weaponKills || {}).length ? `<table class="tbl"><tr><th>Arme</th><th>Éliminations</th></tr>${Object.entries(pr.weaponKills).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([w, n]) => `<tr><td>${esc(WNAME(w))}</td><td>${n}</td></tr>`).join('')}</table>` : '<p class="muted">Aucune élimination.</p>'}</div>
+    <div class="panel"><h3>MOMENTS</h3>${Object.values(st.moments || {}).some(n => n > 0) ? `<table class="tbl"><tr><th>Moment</th><th>Nombre</th></tr>${Object.entries(MOMENTS).filter(([k]) => st.moments?.[k]).sort((a, b) => st.moments[b[0]] - st.moments[a[0]]).map(([k, d]) => `<tr><td class="gold">★ ${esc(d.name)}</td><td>${st.moments[k]}</td></tr>`).join('')}</table>` : '<p class="muted">Vengeance, no-scope, tir de loin, glissade mortelle… Réalise ton premier moment en partie !</p>'}</div>
     <div class="panel"><h3>RECOMMANDATIONS REÇUES</h3><div class="endorse-row">${ENDORSE_HTML(pr.endorse)}</div>${Object.values(pr.endorse || {}).reduce((a, b) => a + b, 0) >= 10 ? '<p class="gold">🤝 Badge fair-play obtenu !</p>' : '<p class="muted small">10 recommandations = badge fair-play sur ton profil.</p>'}</div>
     <div class="panel"><h3>TOURNOIS</h3>${(pr.tourHist || []).length ? `<table class="tbl"><tr><th>Tournoi</th><th>Résultat</th><th>Date</th></tr>${pr.tourHist.map(t => `<tr><td>${esc(t.name)}</td><td class="${t.place === 'Vainqueur' ? 'gold' : ''}">${esc(t.place)}</td><td>${new Date(t.t).toLocaleDateString('fr-FR')}</td></tr>`).join('')}</table>` : '<p class="muted">Aucun tournoi joué. Inscris-toi dans l\'onglet TOURNOIS !</p>'}</div>
     <div class="panel"><h3>STATISTIQUES PAR CARTE</h3>${maps.length ? `<table class="tbl"><tr><th>Carte</th><th>Parties</th><th>Victoires</th><th>K/D</th></tr>${maps.map(([id, m]) => `<tr><td>${esc(MAP_INFO[id]?.name || id)}</td><td>${m.matches}</td><td>${pct(m.wins, m.matches)}</td><td>${kd(m.kills, m.deaths)}</td></tr>`).join('')}</table>` : '<p class="muted">Aucune carte jouée.</p>'}</div>
@@ -347,7 +371,8 @@ export function renderProfile() {
   <div class="panel"><h3>HISTORIQUE DES PARTIES <span class="muted small">(20 dernières)</span></h3><div class="hist">${pr.history.map(histRow).join('') || '<p class="muted">Aucune partie pour le moment.</p>'}</div></div>
   <div class="panel"><h3>SUCCÈS <span class="muted small">${pr.achievements.length} / ${ACHIEVEMENTS.length}</span></h3><div class="ach-grid">${ACHIEVEMENTS.map(a => {
     const got = pr.achievements.includes(a.id);
-    return `<div class="ach ${got ? 'got' : ''}"><div class="ai">${got ? '🏆' : '🔒'}</div><div><b>${esc(a.label)}</b><div class="muted small">${esc(a.desc)}</div><div class="small gold">+${a.reward} Éclats${a.title ? ` · titre « ${esc(TITLES[a.title])} »` : ''}</div></div></div>`;
+    const rar = H.rarity?.[a.id] ?? (H.rarity ? 0 : null);
+    return `<div class="ach ${got ? 'got' : ''}"><div class="ai">${got ? '🏆' : '🔒'}</div><div><b>${esc(a.label)}</b>${rar != null ? ` <span class="ach-rar ${rar < 5 ? 'rare' : ''}" title="Part des joueurs qui ont ce succès">${String(rar).replace('.', ',')} %</span>` : ''}<div class="muted small">${esc(a.desc)}</div><div class="small gold">+${a.reward} Éclats${a.title ? ` · titre « ${esc(TITLES[a.title])} »` : ''}</div></div></div>`;
   }).join('')}</div></div>
   ${pr.seasons?.length ? `<div class="panel"><h3>SAISONS PRÉCÉDENTES</h3><table class="tbl"><tr><th>Saison</th><th>Rang final</th><th>Elo</th><th>Récompense</th></tr>${pr.seasons.map(s => `<tr><td>${esc(s.name)}</td><td>${esc(s.rank)}</td><td>${s.elo} (record ${s.peak})</td><td>${s.reward} Éclats</td></tr>`).join('')}</table></div>` : ''}
   <div class="panel pf-sec"><h3>SÉCURITÉ DU COMPTE</h3>
@@ -365,6 +390,10 @@ export function renderProfile() {
   $('pf-lfg').onchange = e => net.send('setProfile', { lfg: e.target.checked });
   $('pf-blockinv').onchange = e => net.send('setProfile', { blockInvites: e.target.checked });
   $('pf-nowatch').onchange = e => net.send('setProfile', { noWatch: e.target.checked });
+  $('pf-feedback').onclick = () => openFeedback('profil');
+  $('pf-dnd').onchange = e => net.send('setProfile', { dnd: e.target.checked });
+  $('pf-status-save').onclick = () => { net.send('setProfile', { status: $('pf-status').value }); toast('Statut enregistré.'); };
+  if (!H.rarity || Date.now() - H.rarityAt > 600000) { H.rarityAt = Date.now(); net.send('achRarity'); }
   $('pf-share').onclick = () => { const url = `${location.origin}/#profil=${encodeURIComponent(profile.name)}`; (navigator.clipboard?.writeText(url) || Promise.reject()).then(() => toast('Lien copié : ' + url, 4000), () => toast(url, 6000)); };
   $('pw-form').onsubmit = e => {
     e.preventDefault();
@@ -375,6 +404,8 @@ export function renderProfile() {
 }
 
 // ---------- classement ----------
+// amis : pour les marquer dans le tableau des scores en partie
+export const isFriendName = n => !!n && (H.friends?.friends || []).some(f => f.name.toLowerCase() === String(n).toLowerCase());
 export function loadLeaderboard() { net.send('leaderboard', { kind: H.lb.kind, scope: H.lb.scope }); }
 export function renderLeaderboard() {
   const d = H.lb.data, el = $('lb-list'); if (!d) { el.innerHTML = '<div class="empty">Chargement…</div>'; return; }
@@ -410,7 +441,7 @@ export function renderFriends() {
       <div class="panel"><h3>AJOUTER UN AMI</h3><form id="fr-add" class="fr-add"><input id="fr-name" maxlength="16" placeholder="Pseudo du joueur"><button class="btn primary" type="submit">AJOUTER</button></form></div>
       ${F.incoming.length ? `<div class="panel"><h3>DEMANDES REÇUES (${F.incoming.length})</h3>${F.incoming.map(n => `<div class="fr-row"><b>${esc(n)}</b><span class="grow"></span><button class="btn primary small" data-f="accept" data-n="${esc(n)}">ACCEPTER</button><button class="btn ghost small" data-f="decline" data-n="${esc(n)}">REFUSER</button></div>`).join('')}</div>` : ''}
       <div class="panel"><h3>MES AMIS (${F.friends.filter(f => f.online).length} en ligne / ${F.friends.length})</h3>
-        ${F.friends.map(f => `<div class="fr-row ${f.online ? 'on' : ''}"><button class="pin ${f.pinned ? 'on' : ''}" data-f="pin" data-n="${esc(f.name)}" title="${f.pinned ? 'Retirer des favoris' : 'Épingler en haut de la liste'}">★</button><span class="dot ${f.online ? 'on' : ''}"></span><div class="fr-who">${f.clan ? `<span class="clan-tag">[${esc(f.clan)}]</span> ` : ''}<b class="link" data-f="profile" data-n="${esc(f.name)}">${esc(f.name)}</b> <span class="muted small">niv. ${f.level}${f.title ? ' · ' + esc(f.title) : ''}</span>${f.lfg ? ' <span class="badge-ok small">CHERCHE UNE ÉQUIPE</span>' : ''}<div class="muted small">${esc(f.status)}${f.roomName ? ` · ${esc(f.roomName)}` : ''}${!f.online && f.lastSeen ? ` · vu ${ago(f.lastSeen)}` : ''}</div></div>
+        ${F.friends.map(f => `<div class="fr-row ${f.online ? 'on' : ''}"><button class="pin ${f.pinned ? 'on' : ''}" data-f="pin" data-n="${esc(f.name)}" title="${f.pinned ? 'Retirer des favoris' : 'Épingler en haut de la liste'}">★</button><span class="dot ${f.online ? 'on' : ''}"></span><div class="fr-who">${f.clan ? `<span class="clan-tag">[${esc(f.clan)}]</span> ` : ''}<b class="link" data-f="profile" data-n="${esc(f.name)}">${esc(f.alias || f.name)}</b>${f.alias ? ` <span class="muted small">(${esc(f.name)})</span>` : ''} <span class="muted small">niv. ${f.level}${f.title ? ' · ' + esc(f.title) : ''}</span>${f.lfg ? ' <span class="badge-ok small">CHERCHE UNE ÉQUIPE</span>' : ''}${f.dnd ? ' <span class="badge-dnd small" title="Ne pas déranger">⛔</span>' : ''}${f.note ? ` <span title="${esc(f.note)}">📝</span>` : ''}${f.customStatus ? `<div class="small fr-status">💬 ${esc(f.customStatus)}</div>` : ''}<div class="muted small">${esc(f.status)}${f.roomName ? ` · ${esc(f.roomName)}` : ''}${!f.online && f.lastSeen ? ` · vu ${ago(f.lastSeen)}` : ''}</div></div>
           <span class="grow"></span>
           ${f.watch && !inRoom ? `<button class="btn small" data-f="watch" data-n="${esc(f.name)}" title="Regarder sa partie en spectateur (différé de 10 s)">👁 REGARDER</button>` : ''}
           ${f.roomId && !f.full ? `<button class="btn small" data-f="join" data-n="${esc(f.name)}">REJOINDRE</button>` : ''}
@@ -418,6 +449,7 @@ export function renderFriends() {
           ${f.online && (!H.party || H.party.lead) && !(H.party?.members || []).some(m => m.name === f.name) ? `<button class="btn ghost small" data-f="party" data-n="${esc(f.name)}" title="Inviter dans mon groupe (jusqu'à 4 joueurs)">＋ GROUPE</button>` : ''}
           ${f.online || H.unread[f.name] ? `<button class="btn ghost small ${H.unread[f.name] ? 'unread' : ''}" data-f="mp" data-n="${esc(f.name)}">MP${H.unread[f.name] ? ` <b class="nav-badge warn">${H.unread[f.name]}</b>` : ''}</button>` : ''}
           ${H.clanStaff?.() && !f.clan ? `<button class="btn ghost small" data-f="clan" data-n="${esc(f.name)}" title="Inviter dans mon clan">CLAN</button>` : ''}
+          <button class="btn ghost small" data-f="alias" data-n="${esc(f.name)}" data-a="${esc(f.alias || '')}" title="Donner un surnom (visible seulement par toi)">✏</button>
           <button class="btn ghost small" data-f="remove" data-n="${esc(f.name)}" title="Retirer de mes amis">✕</button></div>`).join('') || '<p class="muted">Ajoute des amis avec leur pseudo, ou depuis le classement et les salons.</p>'}
       </div>
       <div class="panel"><h3>JOUEURS RÉCENTS</h3><div id="fr-recent"><p class="muted small">Chargement…</p></div></div>
@@ -445,6 +477,7 @@ export function renderFriends() {
     if (f === 'unblock') net.send('unblock', { name: n });
     if (f === 'join') net.send('joinFriend', { name: n });
     if (f === 'watch') net.send('watchFriend', { name: n });
+    if (f === 'alias') { const v = prompt(`Surnom pour ${n} (visible seulement par toi, vide = retirer) :`, b.dataset.a || ''); if (v !== null) net.send('setAlias', { name: n, alias: v.trim().slice(0, 16) }); }
     if (f === 'invite') net.send('invite', { name: n });
     if (f === 'mp') { H.mpTo = n; delete H.unread[n]; updateFriendsBadge(); renderFriends(); $('mp-text')?.focus(); }
     if (f === 'party') net.send('partyInvite', { name: n });

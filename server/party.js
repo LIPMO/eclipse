@@ -15,7 +15,7 @@ export class Parties {
   info(c, text) { this.ctx.send(c.id, { type: 'chat', from: 'GROUPE', text, system: true }); }
 
   handle(c, msg) {
-    const fn = { partyInvite: this.invite, partyAccept: this.accept, partyDecline: this.decline, partyLeave: this.leave, partyKick: this.kick, partyPromote: this.promote, partyChat: this.chat }[msg.type];
+    const fn = { partyInvite: this.invite, partyAccept: this.accept, partyDecline: this.decline, partyLeave: this.leave, partyKick: this.kick, partyPromote: this.promote, partyChat: this.chat, partySet: this.setCfg, partyReady: this.setReady, partyCancel: this.cancel }[msg.type];
     if (!fn) return false;
     if (!c.account) { this.err(c, 'Crée un compte pour former un groupe.'); return true; }
     fn.call(this, c, msg);
@@ -25,8 +25,15 @@ export class Parties {
   payload(p, forId) {
     if (!p) return { type: 'party', party: null };
     const st = id => this.ctx.social.status(this.ctx.clients.get(id));
-    return { type: 'party', party: { id: p.id, leader: this.ctx.clients.get(p.leader)?.name || '?', lead: p.leader === forId, max: MAX,
-      members: p.members.map(id => { const c = this.ctx.clients.get(id); const s = st(id); return { name: c?.name || '?', leader: id === p.leader, me: id === forId, status: s.status, roomName: s.roomName || null }; }) } };
+    return { type: 'party', party: { id: p.id, leader: this.ctx.clients.get(p.leader)?.name || '?', lead: p.leader === forId, max: MAX, cfg: p.cfg,
+      countdown: p.countdownEnd ? Math.max(0, Math.ceil((p.countdownEnd - Date.now()) / 1000)) : 0,
+      members: p.members.map(id => {
+        const c = this.ctx.clients.get(id); const s = st(id); const info = c && this.ctx.memberInfo ? this.ctx.memberInfo(c) : {};
+        const u = c?.account && this.A.get(c.account);
+        return { name: c?.name || '?', leader: id === p.leader, me: id === forId, status: s.status, roomName: s.roomName || null,
+          ready: id === p.leader || p.ready.has(id), busy: s.status === 'en partie', agent: c?.prefAgent || u?.agent || null, skin: c?.skins?.lancer || 'default',
+          level: info.level || 1, title: info.title || null, clan: info.clan || null };
+      }) } };
   }
   push(p) { if (p) for (const id of p.members) this.ctx.send(id, this.payload(p, id)); }
 
@@ -37,14 +44,14 @@ export class Parties {
     const tk = this.A.key(t.name);
     if (tk === c.account) return this.err(c, 'C\'est toi !');
     if (!u.friends.includes(tk)) return this.err(c, 'Tu ne peux inviter que tes amis dans ton groupe.');
-    if (t.blockInvites) return this.err(c, `${t.name} n'accepte pas les invitations pour le moment.`);
+    if (t.blockInvites || t.dnd) return this.err(c, `${t.name} n'accepte pas les invitations pour le moment.`);
     const tc = this.ctx.social.clientOfKey(tk);
     if (!tc) return this.err(c, `${t.name} n'est pas connecté.`);
     let p = this.partyOf(c);
     if (p && p.leader !== c.id) return this.err(c, 'Seul le chef du groupe peut inviter.');
     if (p && p.members.includes(tc.id)) return this.err(c, `${t.name} est déjà dans ton groupe.`);
     if (p && p.members.length >= MAX) return this.err(c, `Un groupe compte ${MAX} joueurs au maximum.`);
-    if (!p) { p = { id: 'g' + (seq++), leader: c.id, members: [c.id] }; this.parties.set(p.id, p); c.partyId = p.id; this.push(p); }
+    if (!p) { p = { id: 'g' + (seq++), leader: c.id, members: [c.id], cfg: this.ctx.cleanCfg ? this.ctx.cleanCfg(msg.cfg) : {}, ready: new Set(), countdownEnd: 0, timer: null }; this.parties.set(p.id, p); c.partyId = p.id; this.push(p); }
     tc.partyInvites ||= new Map();
     tc.partyInvites.set(p.id, Date.now() + 120000);
     this.ctx.send(tc.id, { type: 'partyInvite', id: p.id, from: c.name, size: p.members.length });
@@ -85,7 +92,7 @@ export class Parties {
     const p = this.partyOf(c); if (!p || p.leader !== c.id) return;
     const tc = p.members.map(id => this.ctx.clients.get(id)).find(x => x && x.name.toLowerCase() === String(msg.name || '').toLowerCase());
     if (!tc) return;
-    p.leader = tc.id; this.push(p);
+    p.leader = tc.id; this.stopCountdown(p); p.ready.clear(); this.push(p);
     for (const id of p.members) this.info(this.ctx.clients.get(id), `${tc.name} est le nouveau chef du groupe.`);
   }
   chat(c, msg) {
@@ -97,8 +104,55 @@ export class Parties {
     for (const id of p.members) this.ctx.send(id, { type: 'chat', from: c.name, text: v.deliver, party: true });
   }
 
+  // ---------- salon de groupe (1.15) : réglages du chef, « prêt », compte à rebours ----------
+  setCfg(c, msg) {
+    const p = this.partyOf(c); if (!p) return;
+    if (p.leader !== c.id) return this.err(c, 'Seul le chef du groupe choisit la partie.');
+    const cfg = this.ctx.cleanCfg(msg.cfg);
+    const changed = JSON.stringify(cfg) !== JSON.stringify(p.cfg);
+    p.cfg = cfg;
+    // comme dans les jeux de groupe : changer de partie remet tout le monde « pas prêt »
+    if (changed) { this.stopCountdown(p); p.ready.clear(); }
+    this.push(p);
+  }
+  setReady(c, msg) {
+    const p = this.partyOf(c); if (!p || p.leader === c.id) return;
+    if (msg.ready) p.ready.add(c.id); else { p.ready.delete(c.id); if (p.countdownEnd) { this.stopCountdown(p); for (const id of p.members) this.info(this.ctx.clients.get(id), `${c.name} n'est plus prêt : lancement annulé.`); } }
+    this.push(p);
+  }
+  cancel(c) {
+    const p = this.partyOf(c); if (!p || !p.countdownEnd) return;
+    this.stopCountdown(p); this.push(p);
+    for (const id of p.members) this.info(this.ctx.clients.get(id), `Lancement annulé par ${c.name}.`);
+  }
+  stopCountdown(p) { if (p.timer) clearTimeout(p.timer); p.timer = null; p.countdownEnd = 0; }
+  // bouton JOUER du chef : tout le monde doit être prêt et disponible, puis 3 secondes avant le départ
+  launch(c) {
+    const p = this.partyOf(c); if (!p) return;
+    if (p.leader !== c.id) return this.err(c, 'Seul le chef du groupe lance la partie : clique sur PRÊT.');
+    if (p.countdownEnd) return;
+    const others = p.members.filter(id => id !== c.id).map(id => this.ctx.clients.get(id)).filter(Boolean);
+    const waiting = others.filter(o => !p.ready.has(o.id)).map(o => o.name);
+    if (waiting.length) return this.err(c, `En attente : ${waiting.join(', ')} (pas encore prêt).`);
+    const busy = [c, ...others].filter(o => { const r = o.roomId && this.ctx.rooms.get(o.roomId); return r?.match && r.match.phase !== 'over'; }).map(o => o.name);
+    if (busy.length) return this.err(c, `Encore en partie : ${busy.join(', ')}.`);
+    if (p.cfg.mode === 'duel' && p.members.length > 2) return this.err(c, 'Le duel se joue à deux : choisis un autre mode.');
+    p.countdownEnd = Date.now() + 3000;
+    this.push(p);
+    p.timer = setTimeout(() => {
+      p.timer = null; p.countdownEnd = 0;
+      const leader = this.ctx.clients.get(p.leader);
+      if (!leader || !this.parties.has(p.id)) return;
+      p.ready.clear();
+      this.ctx.launch(leader, p.cfg, p);
+      this.push(p);
+    }, 3000);
+    p.timer.unref?.();
+  }
+
   removeMember(c, why) {
     const p = this.partyOf(c); if (!p) return;
+    this.stopCountdown(p); p.ready.delete(c.id);
     p.members = p.members.filter(id => id !== c.id); c.partyId = null;
     if (p.members.length <= 1) {
       for (const id of p.members) { const o = this.ctx.clients.get(id); if (o) { o.partyId = null; this.ctx.send(o.id, this.payload(null)); this.info(o, `${c.name} ${why} : le groupe est dissous.`); } }

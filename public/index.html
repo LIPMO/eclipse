@@ -96,6 +96,29 @@
   <section id="tab-play" class="tab">
     <div id="motd" class="motd hidden"></div>
     <div id="event-banner" class="event-banner hidden"></div>
+    <!-- SALON DE GROUPE (1.15) : jusqu'à 4 amis, le chef choisit la partie, chacun se met PRÊT -->
+    <div id="lobby" class="lobby panel">
+      <div class="lb-stage">
+        <canvas id="lobby-canvas"></canvas>
+        <div id="lobby-slots" class="lb-slots"></div>
+        <div id="lobby-count" class="lb-count hidden"></div>
+      </div>
+      <div class="lb-side">
+        <h2>SALON DE GROUPE</h2>
+        <div id="lobby-who" class="lb-who muted small"></div>
+        <label>Mode de jeu</label>
+        <div class="seg lb-seg" id="lb-mode"></div>
+        <label>Adversaires</label>
+        <div class="seg lb-seg" id="lb-fill"><button data-v="0">🤖 CONTRE DES BOTS</button><button data-v="1">🌍 AVEC D'AUTRES JOUEURS</button></div>
+        <div class="row lb-row">
+          <label id="lb-diff-l">Bots<select id="lb-diff"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option><option value="cible">Champ de tir (cibles)</option></select></label>
+          <label>Carte<select id="lb-map"></select></label>
+        </div>
+        <button id="lb-play" class="btn primary lb-play">JOUER</button>
+        <div id="lb-hint" class="lb-hint muted small"></div>
+        <div id="lb-chat" class="lb-chat hidden"><div id="lb-chat-log" class="lb-chat-log"></div><form id="lb-chat-form"><input id="lb-chat-in" maxlength="140" placeholder="Message au groupe…" autocomplete="off"><button class="btn ghost small" type="submit">➤</button></form></div>
+      </div>
+    </div>
     <div class="play-grid">
       <div class="panel">
         <div class="quick-row">
@@ -112,6 +135,7 @@
           <button id="open-guide" class="btn ghost" title="Commandes, modes et progression">? COMMENT JOUER</button>
         </div>
         <div id="quests" class="quests"></div>
+        <div id="poll-box" class="poll-box"></div>
         <div class="panel-head"><h2>SALONS</h2><button id="refresh-rooms" class="btn ghost small">↻</button></div>
         <div id="room-list" class="room-list"></div>
       </div>
@@ -180,6 +204,8 @@
             <label class="check"><input type="checkbox" data-opt="headOnly"> Tirs à la tête uniquement</label>
             <label class="check"><input type="checkbox" data-opt="lowGrav"> Gravité basse</label>
             <label class="check"><input type="checkbox" data-opt="randomMap"> Carte aléatoire à chaque partie</label>
+            <label class="check"><input type="checkbox" data-opt="friendlyFire"> Tir allié (dégâts divisés par deux)</label>
+            <div class="row rs-pass"><input id="rs-pass" maxlength="20" placeholder="Mot de passe du salon (facultatif)" autocomplete="off"><button id="rs-pass-save" class="btn small ghost" type="button">OK</button></div>
           </details>
           <button id="rs-fill" class="btn ghost small wide">REMPLIR DE BOTS</button>
         </div>
@@ -229,7 +255,7 @@
     <div class="lb-wrap">
       <div class="lb-head">
         <div><h2>CLASSEMENT</h2><div class="muted" id="lb-season"></div></div>
-        <div class="seg" id="lb-kind"><button data-v="level" class="active">NIVEAU</button><button data-v="week">SEMAINE</button><button data-v="elo">ELO DUEL</button><button data-v="kills">ÉLIMINATIONS</button><button data-v="wins">VICTOIRES</button></div>
+        <div class="seg" id="lb-kind"><button data-v="level" class="active">NIVEAU</button><button data-v="week">SEMAINE</button><button data-v="elo">ELO DUEL</button><button data-v="kills">ÉLIMINATIONS</button><button data-v="wins">VICTOIRES</button><button data-v="moments">MOMENTS</button></div>
         <div class="seg" id="lb-scope"><button data-v="all" class="active">TOUS</button><button data-v="friends">AMIS</button></div>
       </div>
       <div id="lb-list" class="panel"></div>
@@ -275,6 +301,7 @@
     <div id="hitmarker"></div>
     <div id="dmg-dir"></div>
     <div id="center-msg"></div>
+    <div id="moment-pop"><div class="mp-t"></div><div class="mp-s"></div></div>
     <div id="banner"><div class="b-title"></div><div class="b-sub"></div></div>
     <div id="progress"><div class="p-label"></div><div class="p-bar"><i></i></div></div>
     <div id="core-hint"></div>
@@ -295,6 +322,9 @@
     <div id="death-info"></div>
     <div id="killcam"><div class="kc-top"><span class="kc-tag">KILLCAM</span><span id="kc-who"></span></div><div class="kc-bar"><i id="kc-prog"></i></div><div class="kc-skip" id="kc-skip"></div></div>
     <div id="fps"></div>
+    <div id="speedo" style="display:none"></div>
+    <div id="slide-gauge" style="display:none" title="Glissade : recharge"><i></i></div>
+    <div id="hud-clock" style="display:none"></div>
     <div id="ping"></div>
     <div id="game-chat"><div class="log"></div><input maxlength="140" placeholder="Message (Entrée pour envoyer, Échap pour annuler)"></div>
 
@@ -312,6 +342,8 @@
         <button id="p-settings" class="btn wide">PARAMÈTRES</button>
         <button id="p-report" class="btn wide">⚑ SIGNALER UN JOUEUR</button>
         <button id="p-mute" class="btn wide">🔇 COUPER LE CHAT D'UN JOUEUR</button>
+        <button id="p-feedback" class="btn wide">💬 SIGNALER UN BUG / PROPOSER UNE IDÉE</button>
+        <button id="p-surrender" class="btn wide" style="display:none">🏳 PROPOSER L'ABANDON (/ff)</button>
         <button id="p-challenge" class="btn wide" style="display:none">🎯 DÉFI DE VISÉE (60 s)</button>
         <button id="p-tacpause" class="btn wide" style="display:none">⏸ PAUSE TACTIQUE (30 s)</button>
         <button id="p-leave" class="btn ghost wide">QUITTER LA PARTIE</button>
