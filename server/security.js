@@ -67,11 +67,11 @@ export function baseHeaders(req, extra = {}) {
 export function gameCsp(importmapHash) {
   return [
     "default-src 'self'",
-    `script-src 'self'${importmapHash ? ` 'sha256-${importmapHash}'` : ''}`,
+    `script-src 'self'${importmapHash ? ` 'sha256-${importmapHash}'` : ''} https://static.cloudflareinsights.com`,
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "img-src 'self' data: blob:",
-    "connect-src 'self'",
+    "connect-src 'self' https://cloudflareinsights.com",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'none'",
