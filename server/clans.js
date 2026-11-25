@@ -1,8 +1,22 @@
 // Clans : création, invitations, rôles (chef, officier, membre), chat de clan, classement des clans.
 // Les clans sont enregistrés avec les comptes (accounts.json → clans) ; chaque compte membre a u.clan = clé du clan.
-import { levelOf } from '../shared/progress.js';
+import { levelOf, unlockLevel } from '../shared/progress.js';
+import { refusesInvites } from './progression.js';
 
 export const CLAN = { maxMembers: 30, maxInvites: 40, minLevel: 3, tagRe: /^[A-Z0-9]{2,5}$/, nameMin: 3, nameMax: 24 };
+// objectifs communs de la semaine (1.21) : but = base + par membre (15 membres comptés au plus)
+export const CLAN_OBJ = [
+  { id: 'kills', label: 'éliminations', base: 60, per: 25 },
+  { id: 'wins', label: 'victoires', base: 5, per: 2 },
+  { id: 'matches', label: 'parties jouées', base: 10, per: 4 },
+  { id: 'hs', label: 'éliminations à la tête', base: 20, per: 8 },
+  { id: 'obj', label: 'bombes posées ou désamorcées', base: 4, per: 2 },
+  { id: 'abilities', label: 'capacités utilisées', base: 80, per: 30 },
+  { id: 'ults', label: 'capacités ultimes', base: 5, per: 2 },
+  { id: 'xp', label: 'XP gagnée', base: 3000, per: 1500 },
+  { id: 'assists', label: 'assistances', base: 25, per: 10 },
+];
+export const CLAN_OBJ_REWARD = { eclats: 100, xp: 300, allEclats: 200, allXp: 600 };
 const ROLE_LABEL = { owner: 'Chef', officer: 'Officier', member: 'Membre' };
 const clean = (s, n) => (typeof s === 'string' ? s : typeof s === 'number' ? String(s) : '').normalize('NFKC').replace(/[<>"'`\\\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, '').replace(/\s+/g, ' ').trim().slice(0, n);
 const RESERVED_TAGS = /^(ADMIN|ADM|MOD|MODO|STAFF|ECL|ECLIP|BOT|SYS|ROOT)$/;
@@ -62,15 +76,15 @@ export class Clans {
 
   // ---- données envoyées au client ----
   view(cl, viewerKey) {
+    const wk = this.week(cl);
     const members = cl.members.map(k => {
       const m = this.A.get(k); if (!m) return null;
       const oc = this.online(k);
-      return { name: m.name, role: this.roleOf(cl, k), level: levelOf(m.xp || 0), online: !!oc, xp: cl.contrib?.[k] || 0 };
+      return { name: m.name, role: this.roleOf(cl, k), level: levelOf(m.xp || 0), prestige: m.prestige || 0, online: !!oc, xp: cl.contrib?.[k] || 0, wxp: wk.contrib?.[k] || 0 };
     }).filter(Boolean).sort((a, b) => (b.online - a.online) || ({ owner: 0, officer: 1, member: 2 }[a.role] - { owner: 0, officer: 1, member: 2 }[b.role]) || a.name.localeCompare(b.name));
     const me = viewerKey && cl.members.includes(viewerKey);
-    const wk = this.week(cl);
     const out = { tag: cl.tag, name: cl.name, desc: cl.desc || '', motd: cl.motd || '', created: cl.created, xp: cl.xp || 0, wins: cl.wins || 0, matches: cl.matches || 0, members, max: CLAN.maxMembers, rank: this.rankOf(cl),
-      week: { xp: wk.xp, kills: wk.kills, goal: this.missionGoal(cl), done: wk.done } };
+      week: { xp: wk.xp, kills: wk.kills, key: wk.key, ends: this.weekEnds(), objectives: this.objectives(cl).map(o => ({ id: o.id, label: o.label, goal: o.goal, prog: Math.min(o.goal, wk.prog?.[o.id] || 0), done: !!wk.doneObj?.[o.id] })), all: !!wk.all, reward: CLAN_OBJ_REWARD } };
     if (me) { out.myRole = this.roleOf(cl, viewerKey); if (out.myRole !== 'member') { out.invites = cl.invites.map(k => this.A.get(k)?.name).filter(Boolean); out.welcome = cl.welcome || ''; } }
     return out;
   }
@@ -78,7 +92,7 @@ export class Clans {
     const key = this.A.key(u.name);
     const cl = this.clanOf(u);
     const invites = Object.values(this.clans).filter(x => x.invites.includes(key)).map(x => ({ tag: x.tag, name: x.name, members: x.members.length }));
-    return { type: 'clan', clan: cl ? this.view(cl, key) : null, invites, minLevel: this.minLevel, myLevel: levelOf(u.xp || 0) };
+    return { type: 'clan', clan: cl ? this.view(cl, key) : null, invites, minLevel: this.minLevel, myLevel: unlockLevel(u) };
   }
   push(key) { const c = this.online(key); const u = this.A.get(key); if (c && u) this.send(c, this.payload(u)); }
   pushAll(cl) { for (const k of cl.members) this.push(k); }
@@ -103,7 +117,7 @@ export class Clans {
 
   m_clanCreate(c, u, msg) {
     if (u.clan) return this.err(c, 'Tu fais déjà partie d\'un clan.');
-    if (levelOf(u.xp || 0) < this.minLevel) return this.err(c, `Il faut être niveau ${this.minLevel} pour créer un clan (tu es niveau ${levelOf(u.xp || 0)}).`);
+    if (unlockLevel(u) < this.minLevel) return this.err(c, `Il faut être niveau ${this.minLevel} pour créer un clan (tu es niveau ${levelOf(u.xp || 0)}).`);
     const tag = clean(msg.tag, 5).toUpperCase();
     const name = clean(msg.name, CLAN.nameMax);
     if (!CLAN.tagRe.test(tag)) return this.err(c, 'Tag invalide : 2 à 5 lettres ou chiffres.');
@@ -133,8 +147,16 @@ export class Clans {
 
   // mission de la semaine : un objectif d'éliminations collectif, récompensé une fois par semaine
   weekKey() { const d = new Date(); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day); return d.toISOString().slice(0, 10); }
-  week(cl) { const k = this.weekKey(); if (!cl.week || cl.week.key !== k) cl.week = { key: k, xp: 0, kills: 0, done: false }; return cl.week; }
-  missionGoal(cl) { return 60 + cl.members.length * 25; }
+  week(cl) { const k = this.weekKey(); if (!cl.week || cl.week.key !== k) cl.week = { key: k, xp: 0, kills: 0, prog: {}, doneObj: {}, all: false, contrib: {} }; cl.week.prog ||= {}; cl.week.doneObj ||= {}; cl.week.contrib ||= {}; return cl.week; }
+  weekEnds() { const d = new Date(this.weekKey() + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 7); return d.getTime(); }
+  // 3 objectifs communs par semaine, tirés selon la semaine et le clan ; le but grandit avec le nombre de membres
+  objectives(cl) {
+    const n = Math.min(cl.members.length, 15);
+    let h = 0; for (const ch of this.weekKey() + cl.tag) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const pool = CLAN_OBJ.slice(), out = [];
+    while (out.length < 3 && pool.length) { h = (h * 1103515245 + 12345) >>> 0; out.push(pool.splice(h % pool.length, 1)[0]); }
+    return out.map(o => ({ id: o.id, label: o.label, goal: Math.round(o.base + o.per * n) }));
+  }
   m_clanMotd(c, u, msg) {
     const cl = this.clanOf(u); const key = this.A.key(u.name);
     if (!cl || this.roleOf(cl, key) === 'member') return this.err(c, 'Seuls le chef et les officiers peuvent écrire le message du jour.');
@@ -163,7 +185,7 @@ export class Clans {
     const tk = this.A.key(t.name);
     if (tk === key) return this.err(c, 'C\'est toi !');
     if (t.clan) return this.err(c, `${t.name} fait déjà partie d'un clan.`);
-    if ((t.blocked || []).includes(key) || t.blockInvites || t.dnd) return this.err(c, `${t.name} n'accepte pas les invitations.`);
+    if ((t.blocked || []).includes(key) || refusesInvites(t)) return this.err(c, `${t.name} n'accepte pas les invitations.`);
     if (cl.members.length >= CLAN.maxMembers) return this.err(c, 'Ton clan est complet.');
     if (cl.invites.includes(tk)) return this.err(c, 'Invitation déjà envoyée.');
     if (cl.invites.length >= CLAN.maxInvites) return this.err(c, 'Trop d\'invitations en attente : annule-en quelques-unes.');
@@ -310,16 +332,24 @@ export class Clans {
   systemMsg(cl, text) { for (const k of cl.members) { const oc = this.online(k); if (oc) this.send(oc, { type: 'clanChat', from: null, tag: cl.tag, text }); } }
 
   // ---- fin de partie : l'XP gagnée par les membres alimente le clan ----
-  onMatch(u, xpGain, won, kills = 0) {
+  onMatch(u, xpGain, res = {}) {
     const cl = this.clanOf(u); if (!cl) return;
-    const key = this.A.key(u.name);
+    const key = this.A.key(u.name), won = !!res.won;
     const wk = this.week(cl);
-    wk.xp += Math.max(0, Math.round(xpGain || 0)); wk.kills += Math.max(0, kills | 0);
-    if (!wk.done && wk.kills >= this.missionGoal(cl)) {
-      wk.done = true; cl.xp = (cl.xp || 0) + 500;
-      for (const k of cl.members) { const m = this.A.get(k); if (m) { m.eclats = (m.eclats || 0) + 100; const oc = this.online(k); if (oc) this.send(oc, { type: 'profile', profile: this.A.publicProfile(m) }); } }
-      this.ctx.admin.economy?.('earn', 100 * cl.members.length);
-      this.systemMsg(cl, `Mission de la semaine accomplie (${wk.kills} éliminations) ! +100 Éclats pour chaque membre et +500 XP pour le clan.`);
+    const gain = Math.max(0, Math.round(xpGain || 0));
+    wk.xp += gain; wk.kills += Math.max(0, res.kills | 0);
+    wk.contrib[key] = (wk.contrib[key] || 0) + gain;
+    const add = { kills: res.kills, wins: won ? 1 : 0, matches: 1, hs: res.hsKills, obj: (res.plants || 0) + (res.defuses || 0), abilities: res.abilities, ults: res.ults, xp: gain, assists: res.assists };
+    for (const o of this.objectives(cl)) {
+      wk.prog[o.id] = (wk.prog[o.id] || 0) + Math.max(0, Math.round(add[o.id] || 0));
+      if (!wk.doneObj[o.id] && wk.prog[o.id] >= o.goal) {
+        wk.doneObj[o.id] = true;
+        this.reward(cl, CLAN_OBJ_REWARD.eclats, CLAN_OBJ_REWARD.xp, `Objectif de la semaine accompli : ${o.goal} ${o.label} ! +${CLAN_OBJ_REWARD.eclats} Éclats pour chaque membre et +${CLAN_OBJ_REWARD.xp} XP pour le clan.`);
+      }
+    }
+    if (!wk.all && this.objectives(cl).every(o => wk.doneObj[o.id])) {
+      wk.all = true;
+      this.reward(cl, CLAN_OBJ_REWARD.allEclats, CLAN_OBJ_REWARD.allXp, `Les 3 objectifs de la semaine sont accomplis ! Bonus : +${CLAN_OBJ_REWARD.allEclats} Éclats pour chaque membre et +${CLAN_OBJ_REWARD.allXp} XP pour le clan.`);
     }
     cl.xp = (cl.xp || 0) + Math.max(0, Math.round(xpGain || 0));
     cl.matches = (cl.matches || 0) + 1;
@@ -327,6 +357,14 @@ export class Clans {
     cl.contrib ||= Object.create(null);
     cl.contrib[key] = (cl.contrib[key] || 0) + Math.max(0, Math.round(xpGain || 0));
     this.lbCache = null;
+  }
+
+  reward(cl, eclats, xp, text) {
+    cl.xp = (cl.xp || 0) + xp;
+    for (const k of cl.members) { const m = this.A.get(k); if (m) { m.eclats = (m.eclats || 0) + eclats; const oc = this.online(k); if (oc) this.send(oc, { type: 'profile', profile: this.A.publicProfile(m) }); } }
+    this.ctx.admin.economy?.('earn', eclats * cl.members.length);
+    this.systemMsg(cl, text);
+    this.pushAll(cl);
   }
 
   // ---- administration ----

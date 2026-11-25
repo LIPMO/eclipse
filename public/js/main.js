@@ -12,7 +12,7 @@ import * as SFX from './audio.js';
 import { mountSettings, keyName, sanitizeSettings, applyPreset } from './settings.js';
 import { initClans, openClanTab } from './clans.js';
 import { initTournaments, openTournamentsTab } from './tournaments.js';
-import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub, emojify, renderPartyBar, startTour, openFeedback, openModal, closeModal } from './hub.js';
+import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub, emojify, renderPartyBar, startTour, openFeedback, openModal, closeModal, presTag } from './hub.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -195,7 +195,7 @@ function renderMeCard() {
   const st = profile.stats;
   const kd = st && st.deaths ? (st.kills / st.deaths).toFixed(2) : (st?.kills || 0);
   const pr = profile.progress;
-  $('me-card').innerHTML = `${agentIconHTML(profile.agent, 'lg')}<div><div class="nm">${esc(profile.name || '')}${state.guest ? '<span class="badge guest">INVITÉ</span>' : pr ? `<span class="badge lvl">NIV. ${pr.level}</span>${pr.ranked ? `<span class="badge" style="color:${pr.rankColor}">${esc(pr.rank)}</span>` : ''}` : ''}</div>
+  $('me-card').innerHTML = `${agentIconHTML(profile.agent, 'lg')}<div><div class="nm">${esc(profile.name || '')}${state.guest ? '<span class="badge guest">INVITÉ</span>' : pr ? `<span class="badge lvl">${presTag(pr.prestige)}NIV. ${pr.level}</span>${pr.ranked ? `<span class="badge" style="color:${pr.rankColor}">${esc(pr.rank)}</span>` : ''}` : ''}</div>
     <div class="st">${st && !state.guest ? `${st.matches} parties · ${st.wins} victoires · ${st.duelWins}/${st.duels} duels gagnés · K/D ${kd}` : 'Crée un compte pour suivre tes statistiques'}</div></div>`;
 }
 
@@ -235,7 +235,7 @@ function renderFriendsPlaying(list) {
   const on = (list || []).filter(f => f.online).sort((a, b) => (b.roomId ? 1 : 0) - (a.roomId ? 1 : 0));
   const inParty = new Set((hub.party?.members || []).map(m => m.name));
   el.innerHTML = on.length ? on.slice(0, 8).map(f => `<div class="pbf-row"><span class="dot on"></span><div class="pbf-who"><b>${esc(f.alias || f.name)}</b><div class="muted small">${esc(f.customStatus || f.status || '')}${f.roomName ? ' · ' + esc(f.roomName) : ''}</div></div><span class="grow"></span>
-      ${!inParty.has(f.name) && (!hub.party || hub.party.lead) && !f.dnd ? `<button class="btn ghost small" data-pf="party" data-n="${esc(f.name)}" title="Inviter dans mon groupe">＋ GROUPE</button>` : ''}
+      ${!inParty.has(f.name) && (!hub.party || hub.party.lead) && (f.presence || 'online') === 'online' && !f.dnd ? `<button class="btn ghost small" data-pf="party" data-n="${esc(f.name)}" title="Inviter dans mon groupe">＋ GROUPE</button>` : ''}
       ${f.watch ? `<button class="btn ghost small" data-pf="watch" data-n="${esc(f.name)}" title="Regarder sa partie (différé de 10 s)">👁</button>` : ''}
       ${f.roomId && !f.full ? `<button class="btn small" data-pf="join" data-n="${esc(f.name)}">REJOINDRE</button>` : ''}</div>`).join('') + (on.length > 8 ? `<p class="muted small">+${on.length - 8} autre(s) en ligne</p>` : '')
     : '<p class="muted small">Aucun ami en ligne pour le moment. Ajoute des amis dans l\'onglet AMIS.</p>';
@@ -307,7 +307,7 @@ function renderRoom() {
     const a = AGENTS[m.agent];
     const other = !m.isBot && m.id !== state.myId;
     return `<div class="member ${m.id === state.myId ? 'me' : ''}" style="--c:${a?.color}">${agentIconHTML(m.agent)}
-      <div class="mn">${m.level ? `<span class="mlvl">${m.level}</span>` : ''}${m.clan ? `<span class="clan-tag">[${esc(m.clan)}]</span> ` : ''}<span class="${m.account ? 'link' : ''}" ${m.account ? `data-prof="${esc(m.name)}"` : ''}>${profile.settings.streamer && m.id !== state.myId && !m.isBot ? 'Joueur' : esc(m.name)}</span> ${m.id === r.hostId ? '<span class="host">★ HÔTE</span>' : ''}${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''}<div class="ma">${a?.name || ''} · ${a?.role || ''}</div></div>
+      <div class="mn">${m.level ? `<span class="mlvl">${presTag(m.prestige)}${m.level}</span>` : ''}${m.clan ? `<span class="clan-tag">[${esc(m.clan)}]</span> ` : ''}<span class="${m.account ? 'link' : ''}" ${m.account ? `data-prof="${esc(m.name)}"` : ''}>${profile.settings.streamer && m.id !== state.myId && !m.isBot ? 'Joueur' : esc(m.name)}</span> ${m.id === r.hostId ? '<span class="host">★ HÔTE</span>' : ''}${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''}<div class="ma">${a?.name || ''} · ${a?.role || ''}</div></div>
       ${other ? `<button class="x rep" data-report="${esc(m.name)}" title="Signaler ce joueur">⚑</button>` : ''}
       ${m.isBot ? (host ? `<button class="x" data-rm="${m.id}" title="Retirer">✕</button>` : '<span class="muted">BOT</span>') : (m.ready ? '<span class="rdy">PRÊT</span>' : '')}</div>`;
   };
@@ -449,8 +449,52 @@ net.on('roomPassword', m => { const v = prompt(`${m.wrong ? 'Mot de passe incorr
 for (const [id, key] of [['rs-map', 'mapId'], ['rs-mode', 'mode'], ['rs-target', 'target'], ['rs-diff', 'difficulty']]) $(id).onchange = e => net.send('roomSettings', { [key]: e.target.value });
 
 // ======================= PARTIE =======================
+// ======================= ÉCRAN DE CHARGEMENT (1.21) =======================
+// Plan de la carte, mode, ton agent et ses capacités, et une astuce : affiché 3 s au début de chaque partie.
+const ROLE_TIPS = {
+  Duelliste: ['Tu es fait pour ouvrir le combat : entre le premier sur le site, tes coéquipiers suivent.', 'Garde ta capacité de déplacement pour fuir un duel perdu, pas seulement pour entrer.'],
+  Contrôleur: ['Coupe les lignes de vue avant que ton équipe ne traverse : une fumée bien placée vaut une élimination.', 'Reste un peu en retrait : ton rôle est de préparer le terrain, pas de prendre le premier duel.'],
+  Initiateur: ['Utilise tes capacités de repérage juste avant que tes coéquipiers n\'entrent : ils sauront où tirer.', 'Annonce ce que tu révèles avec la radio (touche de radio) ou un marqueur.'],
+  Sentinelle: ['Protège un site ou un flanc : tes capacités punissent ceux qui passent sans regarder.', 'Place tes pièges avant le début du combat, pas pendant.'],
+};
+const MODE_TIPS = {
+  assault: 'Assaut : achète ton équipement au début de chaque manche (touche d\'achat). Une manche gagnée rapporte plus de crédits.',
+  duel: 'Duel : un seul adversaire, chaque erreur compte. Visez la tête et ne gaspillez pas vos capacités.',
+  ffa: 'Mêlée : tout le monde contre tout le monde. Bouge sans arrêt et évite les grands espaces découverts.',
+  gungame: 'Gun Game : chaque élimination te donne l\'arme suivante. L\'élimination au couteau fait reculer ta victime.',
+  lives: 'Dernier debout : tu as peu de vies, joue prudemment et laisse les autres se battre entre eux.',
+};
+const GEN_TIPS = ['Une glissade (sprint puis accroupi) te rend plus difficile à toucher.', 'Clic molette : marque une position pour ton équipe.', 'Les tirs à la tête font beaucoup plus de dégâts : vise à hauteur de tête.', 'Recharge à l\'abri, jamais en plein duel.', 'Change de position après une élimination : l\'ennemi sait où tu es.', 'Les pas s\'entendent : marche (touche de marche) pour approcher sans bruit.'];
+let loadTimer = null;
+function showLoading(m) {
+  const el = $('loadscr'); if (!el || m.spectate) return;
+  const me = (m.players || []).find(p => p.id === m.you);
+  const a = AGENTS[me?.agent] || AGENTS[profile.agent] || AGENTS.ignis;
+  const info = MAP_INFO[m.mapId] || { name: m.mapId, subtitle: '' };
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const roleTip = ROLE_TIPS[a.role] ? pick(ROLE_TIPS[a.role]) : '';
+  const tip = Math.random() < 0.5 ? MODE_TIPS[m.mode] || pick(GEN_TIPS) : pick(GEN_TIPS);
+  const keys = { q: 'abilityQ', e: 'abilityE', x: 'ult' };
+  const mates = (m.players || []).filter(p => p.id !== m.you && !isFfa(m.mode) && me && p.team === me.team).length;
+  el.innerHTML = `<div class="ls-in" style="--ac:${a.color}">
+    <div class="ls-map"><canvas id="ls-cv" width="360" height="260"></canvas><div class="ls-mn">${esc(info.name)}</div><div class="ls-ms">${esc(info.subtitle || '')} · ${MODE_LABEL[m.mode] || ''}${mates ? ` · ${mates + 1} joueurs dans ton équipe` : ''}</div></div>
+    <div class="ls-ag"><div class="ls-ah">${agentIconHTML(a.id, 'lg')}<div><div class="ls-an">${esc(a.name)}</div><div class="ls-ar">${esc(a.role.toUpperCase())}</div></div></div>
+      ${Object.entries(a.abilities).map(([k, ab]) => `<div class="ls-ab"><kbd>${esc(keyName(profile.settings.keys[keys[k]] || ''))}</kbd><div><b>${esc(ab.name)}</b>${k === 'x' ? ' <span class="gold small">ULTIME</span>' : ''}<div class="small muted">${esc(ab.desc)}</div></div></div>`).join('')}
+      ${roleTip ? `<div class="ls-tip"><b>${esc(a.role)} :</b> ${esc(roleTip)}</div>` : ''}
+    </div>
+    <div class="ls-gen">💡 <b>Astuce :</b> ${esc(tip)}</div>
+    <div class="ls-bar"><i></i></div></div>`;
+  try { drawMapPreview($('ls-cv'), parseMap(m.mapId)); } catch { /* aperçu indisponible */ }
+  el.classList.remove('out'); el.classList.add('show');
+  clearTimeout(loadTimer);
+  const hide = () => { el.classList.add('out'); clearTimeout(loadTimer); loadTimer = setTimeout(() => el.classList.remove('show', 'out'), 400); removeEventListener('keydown', hide); };
+  loadTimer = setTimeout(hide, profile.settings.quickLoad ? 1200 : 3200);
+  addEventListener('keydown', hide, { once: true });
+}
+net.on('matchEnd', () => { $('loadscr')?.classList.remove('show'); });
 net.on('matchStart', m => {
   document.getElementById('mmodal').classList.remove('show');
+  showLoading(m);
   if (state.game) state.game.destroy();
   $('menu').classList.remove('active');
   state.game = new Game(net, { ...m, guest: state.guest, host: !!(state.room && state.room.hostId === state.myId && state.room.private && !state.room.tournament) }, () => exitGame());
@@ -482,7 +526,12 @@ function renderPoll() {
   el.onclick = e => { const b = e.target.closest('[data-poll], .poll-res'); if (!b || state.guest) return; const i = b.dataset.poll !== undefined ? +b.dataset.poll : [...el.querySelectorAll('.poll-res')].indexOf(b); if (i >= 0) net.send('pollVote', { id: p.id, idx: i }); };
 }
 // amis : montée de niveau
-net.on('friendLevel', m => notify({ kind: 'AMI', type: 'friend', group: 'friendLevel', text: `⬆ ${m.name} est passé niveau ${m.level} !` }));
+net.on('friendLevel', m => notify({ kind: 'AMI', type: 'friend', group: 'friendLevel', text: m.prestige ? `★ ${m.name} est passé prestige ${['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][m.prestige]} !` : `⬆ ${m.name} est passé niveau ${m.level} !` }));
+net.on('prestigeDone', m => {
+  SFX.playLevelUp?.();
+  openModal(`<div class="pres-done"><div class="pres-big">★</div><h2>PRESTIGE ${['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][m.prestige]}</h2><p>Tu repars au niveau 1 avec le titre <b>${esc(m.title || '')}</b> et <span class="gem small"></span> <b>+${m.eclats}</b> Éclats.</p><button class="btn primary" data-close>CONTINUER</button></div>`);
+  document.querySelectorAll('#mmodal-in [data-close]').forEach(b => { b.onclick = closeModal; });
+});
 net.on('specEnd', m => { if (state.game?.spec) { state.game.destroy(); exitGame(); } toast(m.text || 'Observation terminée.', 4000); });
 function exitGame() {
   state.game = null;
@@ -561,7 +610,7 @@ function lobbyMembers() {
   const p = lobbyParty();
   if (p) return [...p.members.filter(m => m.me), ...p.members.filter(m => !m.me)];
   const pr = profile.progress;
-  return [{ name: profile.name || '—', me: true, leader: true, ready: true, agent: profile.agent, outfit: pr?.outfits?.[profile.agent] || null, skin: profile.equipped?.lancer || 'default', level: pr?.level || 1, title: null, solo: true,
+  return [{ name: profile.name || '—', me: true, leader: true, ready: true, agent: profile.agent, outfit: pr?.outfits?.[profile.agent] || null, skin: profile.equipped?.lancer || 'default', level: pr?.level || 1, prestige: pr?.prestige || 0, title: null, solo: true,
     banner: BANNERS[pr?.banner]?.css || null, rank: pr?.ranked ? pr.rank : null, rankColor: pr?.rankColor }];
 }
 // décor de la scène (créé une seule fois) : sol lumineux, anneaux, colonnes au loin, particules
@@ -669,7 +718,7 @@ function renderLobby() {
     if (m) {
       const st = m.leader ? (m.solo ? 'TOI' : '👑 CHEF') : m.busy ? '⏳ EN PARTIE' : m.ready ? '✔ PRÊT' : 'PAS PRÊT';
       const acts = p?.lead && !m.me ? `<div class="lb-acts"><button class="btn ghost small" data-lb="promote" data-n="${esc(m.name)}" title="Nommer chef">👑</button><button class="btn ghost small" data-lb="kick" data-n="${esc(m.name)}" title="Retirer du groupe">✕</button></div>` : '';
-      html += `<div class="lb-slot ${m.leader ? 'lead' : m.ready ? 'ready' : ''} ${m.me ? 'me' : ''}"><div class="lb-tag-top" ${m.banner ? `style="background:${m.banner}"` : ''}><span class="lvl">${m.level || 1}</span>${esc(m.name)}</div><div class="lb-tag-sub">${m.rank && m.rank !== 'Non classé' ? `<b style="color:${m.rankColor}">${esc(m.rank)}</b> · ` : ''}${m.title ? esc(m.title) : ''}${m.clan ? ' [' + esc(m.clan) + ']' : ''}</div><div class="lb-tag-st">${st}</div>${acts}</div>`;
+      html += `<div class="lb-slot ${m.leader ? 'lead' : m.ready ? 'ready' : ''} ${m.me ? 'me' : ''}"><div class="lb-tag-top" ${m.banner ? `style="background:${m.banner}"` : ''}><span class="lvl">${presTag(m.prestige)}${m.level || 1}</span>${esc(m.name)}</div><div class="lb-tag-sub">${m.rank && m.rank !== 'Non classé' ? `<b style="color:${m.rankColor}">${esc(m.rank)}</b> · ` : ''}${m.title ? esc(m.title) : ''}${m.clan ? ' [' + esc(m.clan) + ']' : ''}</div><div class="lb-tag-st">${st}</div>${acts}</div>`;
     } else if (state.guest) html += `<div class="lb-slot empty locked" title="Crée un compte pour jouer en groupe"><b>🔒</b>COMPTE REQUIS</div>`;
     else if (edit) html += `<button class="lb-slot empty" data-lb="invite"><b>＋</b>INVITER UN AMI</button>`;
     else html += `<div class="lb-slot empty locked"><b>·</b>PLACE LIBRE</div>`;

@@ -1170,7 +1170,7 @@ export class Game {
       const r = this.roster.get(p.i) || {};
       const ag = AGENTS[r.agent] || AGENTS.ignis;
       const ally = !isFfa(this.mode) && r.team === me?.team;
-      const lvl = r.level ? `<span class="sb-lvl">${r.level}</span>` : '';
+      const lvl = r.level ? `<span class="sb-lvl">${r.prestige ? `<span class="pres">★${['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][r.prestige]}</span>` : ''}${r.level}</span>` : '';
       return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan && !ST().streamer ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${p.i === this.leaderId && isFfa(this.mode) ? '👑 ' : ''}${esc(this.nameOf(p.i))}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}${!r.bot && p.i !== this.myId && isFriendName(r.name) ? ' <span title="Ami">🤝</span>' : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : lives ? (p.lv > 0 ? '❤'.repeat(Math.min(p.lv, 5)) : 'éliminé') : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
     };
     const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : lives ? 'VIES' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span>PING</span></div>`;

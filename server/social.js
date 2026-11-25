@@ -1,6 +1,7 @@
 // Social : amis, joueurs bloqués, messages privés, invitations, profils publics, classements, commandes de chat.
 import { publicCard, titlesOf, rerollQuest, ensureUser, weekKey, rankFor, checkAchievements } from './progression.js';
-import { TITLES, levelOf, BANNERS, ENDORSE } from '../shared/progress.js';
+import { TITLES, levelOf, BANNERS, ENDORSE, unlockLevel } from '../shared/progress.js';
+import { PRESENCES, presenceOf, refusesInvites } from './progression.js';
 import { SKINS } from '../shared/data.js';
 // boutique du jour : 3 skins à -40 %, renouvelés chaque jour (même sélection pour tout le monde)
 export function dailyShop(day = new Date().toISOString().slice(0, 10)) {
@@ -45,7 +46,7 @@ export class Social {
       const st = this.status(this.clientOfKey(key));
       // regarder sa partie (en différé) : amis réciproques, sauf si le joueur l'a refusé dans son profil
       const watch = st.status === 'en partie' && !f.noWatch && (f.friends || []).includes(this.A.key(u.name)) && !(f.blocked || []).includes(this.A.key(u.name));
-      return { customStatus: f.customStatus || '', dnd: !!f.dnd, alias: (u.aliases || {})[key] || '', note: (u.pnotes || {})[key] || '',
+      return { customStatus: f.customStatus || '', dnd: !!f.dnd, presence: presenceOf(f), prestige: f.prestige || 0, alias: (u.aliases || {})[key] || '', note: (u.pnotes || {})[key] || '',
         name: f.name, level: levelOf(f.xp), title: f.customTitle || (f.title ? TITLES[f.title] : null), lastSeen: f.lastSeen || f.created, pinned: (u.pinned || []).includes(key), lfg: !!f.lfg, clan: f.clan ? this.A.data.clans?.[f.clan]?.tag || null : null, ...st, watch };
     };
     const friends = u.friends.map(row).filter(Boolean).sort((a, b) => (b.pinned - a.pinned) || (b.online - a.online) || a.name.localeCompare(b.name));
@@ -58,9 +59,9 @@ export class Social {
     for (const fk of u.friends) { const fc = this.clientOfKey(fk); if (fc) this.sendFriends(fc); }
   }
   // montée de niveau : les amis connectés sont prévenus
-  notifyFriendsLevel(key, name, level) {
+  notifyFriendsLevel(key, name, level, prestige = 0) {
     const u = this.A.get(key); if (!u) return;
-    for (const fk of u.friends || []) { const fc = this.clientOfKey(fk); if (fc) this.ctx.send(fc.id, { type: 'friendLevel', name, level }); }
+    for (const fk of u.friends || []) { const fc = this.clientOfKey(fk); if (fc) this.ctx.send(fc.id, { type: 'friendLevel', name, level, prestige }); }
   }
   blocks(ownerKey, otherKey) { const u = ownerKey && this.A.get(ownerKey); return !!(u && otherKey && u.blocked.includes(otherKey)); }
 
@@ -156,7 +157,7 @@ export class Social {
     const t = this.target(c, msg.name); if (!t) return;
     const tk = this.A.key(t.name);
     if (!u.friends.includes(tk)) return this.err(c, 'Tu ne peux inviter que tes amis.');
-    if (t.blockInvites || t.dnd) return this.err(c, `${t.name} n'accepte pas les invitations pour le moment.`);
+    if (refusesInvites(t)) return this.err(c, t.presence === 'busy' && !t.dnd ? `${t.name} est occupé : invitations refusées automatiquement.` : `${t.name} n'accepte pas les invitations pour le moment.`);
     const tc = this.clientOfKey(tk);
     if (!tc) return this.err(c, `${t.name} n'est pas connecté.`);
     if (tc.roomId === r.id) return this.err(c, `${t.name} est déjà dans ton salon.`);
@@ -206,7 +207,7 @@ export class Social {
     const cl = t.clan && this.A.data.clans?.[t.clan];
     card.clan = cl ? { tag: cl.tag, name: cl.name } : null;
     if (u) { card.myNote = (u.pnotes || {})[tk] || ''; card.myAlias = (u.aliases || {})[tk] || ''; }
-    card.customStatus = t.customStatus || ''; card.dnd = !!t.dnd;
+    card.customStatus = t.customStatus || ''; card.dnd = !!t.dnd; card.presence = presenceOf(t);
     card.relation = !u ? 'guest' : tk === c.account ? 'self' : u.friends.includes(tk) ? 'friend' : u.friendReq.includes(tk) ? 'incoming' : (t.friendReq || []).includes(c.account) ? 'pending' : u.blocked.includes(tk) ? 'blocked' : 'none';
     this.ctx.send(c.id, { type: 'playerProfile', profile: card });
   }
@@ -216,12 +217,12 @@ export class Social {
     if (hit && Date.now() - hit.t < 10000) return hit.rows;
     const wk = weekKey();
     const val = {
-      level: u => u.xp, elo: u => u.elo, week: u => (u.week?.key === wk ? u.week.xp : 0), kills: u => u.stats.kills, wins: u => u.stats.wins,
+      level: u => (u.prestige || 0) * 1e7 + u.xp, elo: u => u.elo, week: u => (u.week?.key === wk ? u.week.xp : 0), kills: u => u.stats.kills, wins: u => u.stats.wins,
     }[kind] || (u => u.xp);
     let users = Object.values(this.A.data.users).filter(u => u && u.stats);
     if (kind === 'elo') users = users.filter(u => u.seasonDuels > 0);
     if (kind === 'week') users = users.filter(u => val(u) > 0);
-    const rows = users.map(u => ({ name: u.name, key: this.A.key(u.name), v: val(u), level: levelOf(u.xp), title: u.customTitle || (u.title ? TITLES[u.title] : null), elo: u.elo, rank: rankFor(u).name, rankColor: rankFor(u).color }))
+    const rows = users.map(u => ({ name: u.name, key: this.A.key(u.name), v: val(u), level: levelOf(u.xp), prestige: u.prestige || 0, title: u.customTitle || (u.title ? TITLES[u.title] : null), elo: u.elo, rank: rankFor(u).name, rankColor: rankFor(u).color }))
       .sort((a, b) => b.v - a.v || a.name.localeCompare(b.name));
     rows.forEach((r, i) => { r.pos = i + 1; });
     this.lbCache.set(kind, { t: Date.now(), rows });
@@ -381,7 +382,7 @@ export class Social {
     if (typeof msg.banner === 'string') {
       const b = BANNERS[msg.banner];
       if (!b) return this.err(c, 'Bannière inconnue.');
-      if (levelOf(u.xp) < b.level) return this.err(c, `Bannière débloquée au niveau ${b.level}.`);
+      if (unlockLevel(u) < b.level) return this.err(c, `Bannière débloquée au niveau ${b.level}.`);
       u.banner = msg.banner;
     }
     if (typeof msg.motto === 'string') {
@@ -392,7 +393,8 @@ export class Social {
     }
     if (Array.isArray(msg.showcase)) u.showcase = [...new Set(msg.showcase.filter(id => typeof id === 'string' && u.achievements.includes(id)))].slice(0, 3);
     if (typeof msg.blockInvites === 'boolean') u.blockInvites = msg.blockInvites;
-    if (typeof msg.dnd === 'boolean') { u.dnd = msg.dnd; this.pushFriendsOf(this.A.key(u.name)); }
+    if (typeof msg.dnd === 'boolean') { u.dnd = msg.dnd; u.presence = msg.dnd ? 'dnd' : 'online'; this.pushFriendsOf(this.A.key(u.name)); }
+    if (PRESENCES.includes(msg.presence)) { u.presence = msg.presence; u.dnd = msg.presence === 'dnd'; this.pushFriendsOf(this.A.key(u.name));  }
     if (typeof msg.status === 'string') {
       const st = msg.status.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
       const f = this.ctx.admin.filterText(st);
@@ -438,7 +440,7 @@ export class Social {
     const t = this.target(c, msg.name); if (!t) return;
     const tk = this.A.key(t.name);
     if (!u.friends.includes(tk)) return this.err(c, 'Tu ne peux offrir des Éclats qu\'à tes amis.');
-    if (levelOf(u.xp) < 5) return this.err(c, 'Il faut être niveau 5 pour offrir des Éclats.');
+    if (unlockLevel(u) < 5) return this.err(c, 'Il faut être niveau 5 pour offrir des Éclats.');
     const amount = Math.round(Number(msg.amount));
     if (!(amount >= 10 && amount <= 100)) return this.err(c, 'Montant : entre 10 et 100 Éclats.');
     const day = new Date().toISOString().slice(0, 10);

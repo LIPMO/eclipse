@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.21.0",
+    "date": "2026-11-25",
+    "title": "Prestige, statut, objectifs de clan",
+    "items": [
+      "Prestige : au niveau 100, repars au niveau 1 en échange d'un rang de prestige (★I à ★X), d'un titre et de 2 500 Éclats. Armes, skins et bannières restent acquis, et les récompenses de niveau se gagnent à nouveau.",
+      "Écran de chargement : au début de chaque partie, plan de la carte, ton agent avec ses capacités et une astuce adaptée à son rôle et au mode.",
+      "Clans : 3 objectifs communs chaque semaine (éliminations, victoires, capacités…), avec des Éclats pour chaque membre et un bonus si les 3 sont réussis. Les meilleurs contributeurs de la semaine sont affichés.",
+      "Statut : En ligne, Occupé (invitations refusées automatiquement) ou Ne pas déranger (messages aussi), visible par tes amis avec une pastille de couleur."
+    ]
+  },
+  {
     "version": "1.20.2",
     "date": "2026-11-25",
     "title": "Correction des bugs de cache",

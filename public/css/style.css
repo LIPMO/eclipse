@@ -1234,3 +1234,44 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 #cookie-bar .cb-act { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
 #cookie-bar a { color: var(--muted, #9aa3b8); font-size: 13px; }
 @media (max-width: 600px) { #cookie-bar { flex-direction: column; align-items: stretch; bottom: 8px; } #cookie-bar .cb-act { justify-content: space-between; } }
+
+/* ---------- 1.21 : prestige, statut, objectifs de clan, écran de chargement ---------- */
+.pres { display: inline-block; margin-right: 4px; padding: 0 4px; font-size: .78em; font-weight: 700; color: #1a1205; background: linear-gradient(135deg, #ffe08a, #f0a92b); border-radius: 3px; letter-spacing: 0; line-height: 1.4; vertical-align: middle; }
+.pres.p5, .pres.p6, .pres.p7, .pres.p8, .pres.p9 { background: linear-gradient(135deg, #c9b6ff, #8b5cff); color: #fff; }
+.pres.p10 { background: linear-gradient(135deg, #ff6bd6, #8b5cff, #4fd1ff); color: #fff; box-shadow: 0 0 8px rgba(255,107,214,.6); }
+.pf-prestige { margin-top: 8px; }
+.pres-done { text-align: center; }
+.pres-big { font-size: 64px; color: #ffd36b; text-shadow: 0 0 30px rgba(255,211,107,.8); animation: presPop .6s ease-out; }
+@keyframes presPop { from { transform: scale(.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.dot.on.p-busy, .dot.p-busy { background: #ffb02e; box-shadow: 0 0 8px #ffb02e; }
+.dot.on.p-dnd, .dot.p-dnd { background: #ff4d5e; box-shadow: 0 0 8px #ff4d5e; }
+.dot.p-online { background: var(--ok); }
+.pres-sel { display: inline-flex; flex-wrap: wrap; }
+.pres-sel button { display: inline-flex; align-items: center; gap: 6px; }
+.badge-busy { color: #ffb02e; border: 1px solid #ffb02e66; padding: 0 5px; font-size: 11px; }
+.warn { color: #ffb02e; }
+.cl-o { margin: 8px 0; }
+.cl-o-t { font-weight: 600; margin-bottom: 3px; }
+.cl-o.done .cl-o-t { color: var(--ok); }
+.cl-o.done .pf-bar i { background: var(--ok); }
+#loadscr { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(16,20,36,.97), rgba(5,7,14,.99)); pointer-events: none; opacity: 1; transition: opacity .4s; }
+#loadscr.show { display: flex; }
+#loadscr.out { opacity: 0; }
+.ls-in { width: min(980px, calc(100% - 32px)); display: grid; grid-template-columns: 1fr 1.15fr; gap: 24px; animation: lsIn .35s ease-out; }
+@keyframes lsIn { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.ls-map canvas { width: 100%; height: auto; border: 1px solid var(--line2); background: #0b0f1b; }
+.ls-mn { font-family: var(--head); font-size: 34px; letter-spacing: .14em; margin-top: 8px; }
+.ls-ms { color: var(--muted); font-size: 14px; }
+.ls-ag { border-left: 3px solid var(--ac); padding-left: 18px; }
+.ls-ah { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+.ls-an { font-family: var(--head); font-size: 30px; letter-spacing: .12em; color: var(--ac); }
+.ls-ar { color: var(--muted); letter-spacing: .2em; font-size: 13px; }
+.ls-ab { display: flex; gap: 12px; align-items: flex-start; margin: 9px 0; }
+.ls-ab kbd { min-width: 30px; text-align: center; padding: 3px 6px; border: 1px solid var(--line2); background: #151b2e; font-family: var(--head); }
+.ls-tip { margin-top: 12px; padding: 8px 10px; background: rgba(255,255,255,.04); border-left: 2px solid var(--ac); font-size: 14px; }
+.ls-gen { grid-column: 1 / -1; text-align: center; font-size: 15px; }
+.ls-bar { grid-column: 1 / -1; height: 3px; background: #1a2036; overflow: hidden; }
+.ls-bar i { display: block; height: 100%; width: 0; background: var(--ac, var(--accent)); animation: lsBar 3.2s linear forwards; }
+@keyframes lsBar { to { width: 100%; } }
+@media (max-width: 760px) { .ls-in { grid-template-columns: 1fr; gap: 12px; } .ls-map canvas { max-height: 30vh; object-fit: contain; } .ls-mn { font-size: 24px; } .ls-an { font-size: 22px; } .ls-ab .small { display: none; } }
+#lvl-n .pres { display: block; font-size: 8px; padding: 0 2px; margin: 0 auto 1px; width: max-content; line-height: 1.2; }

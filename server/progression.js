@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { AGENT_ORDER, SKINS, isFfa } from '../shared/data.js';
 import { MAP_ORDER } from '../shared/maps.js';
 import {
-  levelInfo, levelOf, xpForLevel, levelReward, LEVEL_SKINS, XP, QUESTS, QUEST_REWARD, QUESTS_PER,
+  levelInfo, levelOf, xpForLevel, PRESTIGE_MAX, PRESTIGE_REWARD, levelReward, LEVEL_SKINS, XP, QUESTS, QUEST_REWARD, QUESTS_PER,
   ACHIEVEMENTS, TITLES, ELO_START, rankOf, DAILY_BONUS, MAX_LEVEL,
 } from '../shared/progress.js';
 
@@ -122,6 +122,10 @@ export function checkAchievements(u) {
   }
   return got;
 }
+// statut choisi par le joueur : en ligne, occupé (invitations refusées), ne pas déranger (invitations et messages refusés)
+export const PRESENCES = ['online', 'busy', 'dnd'];
+export const presenceOf = u => (u?.dnd ? 'dnd' : PRESENCES.includes(u?.presence) ? u.presence : 'online');
+export const refusesInvites = u => !!(u?.blockInvites || u?.dnd || u?.presence === 'busy');
 export function titlesOf(u) {
   const t = new Set(['recrue', ...(u.titles || [])]);
   return [...t].filter(id => TITLES[id]);
@@ -139,6 +143,16 @@ export function addXp(u, amount) {
   u.eclats += eclats;
   const skins = after > before ? grantLevelSkins(u, before, after) : [];
   return { before, after, eclats, skins };
+}
+export function doPrestige(u) {
+  const p = u.prestige || 0;
+  if (p >= PRESTIGE_MAX) return { error: 'Tu as déjà atteint le prestige maximum.' };
+  if (levelOf(u.xp) < MAX_LEVEL) return { error: `Le prestige se débloque au niveau ${MAX_LEVEL}.` };
+  u.prestige = p + 1; u.xp = 0;
+  u.eclats = (u.eclats || 0) + PRESTIGE_REWARD;
+  const title = 'prestige' + u.prestige;
+  u.titles ||= []; if (!u.titles.includes(title)) u.titles.push(title);
+  return { prestige: u.prestige, eclats: PRESTIGE_REWARD, title: TITLES[title] };
 }
 export function setLevel(u, level) {
   level = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
@@ -254,7 +268,7 @@ export function publicCard(u, online = null) {
   ensureUser(u);
   const li = levelInfo(u.xp), rk = rankFor(u);
   return {
-    name: u.name, level: li.level, title: u.customTitle || (u.title && TITLES[u.title] ? TITLES[u.title] : null), role: u.role || 'player',
+    name: u.name, level: li.level, prestige: u.prestige || 0, title: u.customTitle || (u.title && TITLES[u.title] ? TITLES[u.title] : null), role: u.role || 'player',
     elo: u.elo, rank: rk.name, rankColor: rk.color, created: u.created, online,
     stats: { matches: u.stats.matches, wins: u.stats.wins, kills: u.stats.kills, deaths: u.stats.deaths, assists: u.stats.assists, duels: u.stats.duels, duelWins: u.stats.duelWins, hsKills: u.stats.hsKills, mvps: u.stats.mvps, acc: u.stats.shots ? Math.round(u.stats.hits / u.stats.shots * 100) : null, playTime: u.stats.playTime },
     agentStats: u.agentStats, mapStats: u.mapStats, achievements: u.achievements, history: u.history.slice(0, 10), agent: u.agent,
@@ -270,13 +284,13 @@ export function privateProgress(u, overrides) {
   const li = levelInfo(u.xp), rk = rankFor(u);
   const quest = x => ({ ...x, label: QUESTS[x.id].label, goal: QUESTS[x.id].goal, reward: questReward(x.id, overrides) });
   return {
-    xp: u.xp, level: li.level, lvlCur: li.cur, lvlNeed: li.need, elo: u.elo, eloPeak: u.eloPeak, rank: rk.name, rankColor: rk.color, ranked: u.seasonDuels > 0, seasonDuels: u.seasonDuels,
+    xp: u.xp, level: li.level, prestige: u.prestige || 0, lvlCur: li.cur, lvlNeed: li.need, elo: u.elo, eloPeak: u.eloPeak, rank: rk.name, rankColor: rk.color, ranked: u.seasonDuels > 0, seasonDuels: u.seasonDuels,
     quests: { daily: q.daily.map(quest), weekly: q.weekly.map(quest), canReroll: q.reroll !== q.day, day: q.day, week: q.week },
     achievements: u.achievements, titles: titlesOf(u), title: u.title, history: u.history, agentStats: u.agentStats, mapStats: u.mapStats,
     week: weekly(u), daily: u.daily, seasons: u.seasons, friendsCount: u.friends.length,
     banner: u.banner || 'nuit', motto: u.motto || '', showcase: u.showcase || [], blockInvites: !!u.blockInvites, noWatch: !!u.noWatch, lfg: !!u.lfg,
     modeStats: u.modeStats || {}, weaponKills: u.weaponKills || {}, bestStreak: u.bestStreak || 0, endorse: u.endorse || {}, tourHist: u.tourHist || [], tournamentWins: u.tournamentWins || 0,
-    loadouts: u.loadouts || null, customGames: u.customGames || [], outfits: u.outfits || {}, outfitsAll: !!u.outfitsAll, aimBest: u.aimBest || 0, winStreak: u.winStreak || 0, customStatus: u.customStatus || '', dnd: !!u.dnd,
+    loadouts: u.loadouts || null, customGames: u.customGames || [], outfits: u.outfits || {}, outfitsAll: !!u.outfitsAll, aimBest: u.aimBest || 0, winStreak: u.winStreak || 0, customStatus: u.customStatus || '', dnd: !!u.dnd, presence: presenceOf(u),
   };
 }
 

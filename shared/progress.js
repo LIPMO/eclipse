@@ -10,6 +10,13 @@ export function levelInfo(xp) {
   return { level, cur: rest, need: level >= MAX_LEVEL ? 0 : xpToNext(level) };
 }
 export const levelOf = xp => levelInfo(xp).level;
+// ---------- prestige (1.21) ----------
+// Au niveau 100, le joueur peut repartir au niveau 1 en échange d'un rang de prestige (1 à 10) : badge ★, titre et Éclats.
+// Les armes, bannières et autres déblocages liés au niveau restent acquis.
+export const PRESTIGE_MAX = 10;
+export const PRESTIGE_REWARD = 2500;
+export const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+export const unlockLevel = u => ((u?.prestige || 0) > 0 ? MAX_LEVEL : levelOf(u?.xp || 0));
 export function xpForLevel(level) { let t = 0; for (let l = 1; l < level; l++) t += xpToNext(l); return t; }
 // Éclats offerts à chaque passage de niveau
 export const levelReward = level => 50 + level * 10;
@@ -123,6 +130,7 @@ export const TITLES = {
   recrue: 'Recrue', tireur: 'Tireur d\'élite', lame: 'Lame silencieuse', duelliste: 'Duelliste', as: 'As',
   demolisseur: 'Démolisseur', demineur: 'Démineur', mvp: 'Joueur décisif', veteran: 'Vétéran', legende: 'Légende',
   fidele: 'Fidèle', polyvalent: 'Polyvalent', explorateur: 'Explorateur', eclipse: 'Éclipse', vengeur: 'Vengeur', faucon: 'Œil de faucon', remontada: 'Roi de la remontada',
+  prestige1: 'Prestige I', prestige2: 'Prestige II', prestige3: 'Prestige III', prestige4: 'Prestige IV', prestige5: 'Prestige V', prestige6: 'Prestige VI', prestige7: 'Prestige VII', prestige8: 'Prestige VIII', prestige9: 'Prestige IX', prestige10: 'Prestige ultime',
   fondateur: 'Fondateur', champion: 'Champion', testeur: 'Testeur', collectionneur: 'Grand collectionneur',
   set_ocean: 'Seigneur des océans', set_volcan: 'Cœur de lave', set_foret: 'Gardien de la forêt', set_arctique: 'Roi des glaces', set_cyber: 'Cyber-légende',
   set_desert: 'Nomade des sables', set_royal: 'Altesse', set_sauvage: 'Bête sauvage', set_retro: 'Icône rétro', set_cosmos: 'Voyageur cosmique',

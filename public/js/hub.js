@@ -1,7 +1,7 @@
 // Menus sociaux et progression : profil, quêtes, classement, amis, messages privés, notifications, signalements.
 import { AGENTS, GUN_LADDER } from '/shared/data.js';
 import { MAP_INFO } from '/shared/maps.js';
-import { ACHIEVEMENTS, TITLES, REPORT_REASONS, levelInfo, masteryOf } from '/shared/progress.js';
+import { ACHIEVEMENTS, TITLES, REPORT_REASONS, levelInfo, masteryOf, ROMAN, PRESTIGE_MAX, PRESTIGE_REWARD, MAX_LEVEL } from '/shared/progress.js';
 import { agentIconHTML } from './models.js';
 import { profile, setToken } from './store.js';
 import { keyName } from './settings.js';
@@ -246,9 +246,9 @@ function showPlayerProfile(p) {
   btns.push(`<button class="btn ghost small" data-pa="share">🔗 LIEN</button>`);
   openModal(`<div class="pp-banner" style="background:${(BANNERS[p.banner] || BANNERS.nuit).css}"></div><div class="pp-head">${`<span class="rank-frame" style="--rc:${p.rankColor}">${agentIconHTML(fav ? fav[0] : p.agent, 'lg')}</span>`}<div>
       <div class="pp-name">${p.clan ? `<span class="clan-tag" title="${esc(p.clan.name)}">[${esc(p.clan.tag)}]</span> ` : ''}${esc(p.name)} ${p.online ? '<span class="dot on"></span>' : '<span class="dot"></span>'}</div>
-      <div class="pp-sub">${p.title ? `<span class="title-tag">${esc(p.title)}</span> · ` : ''}Niveau <b>${p.level}</b> · <span style="color:${p.rankColor}">${esc(p.rank)}</span>${p.rank !== 'Non classé' ? ` (${p.elo} Elo)` : ''}</div>
+      <div class="pp-sub">${p.title ? `<span class="title-tag">${esc(p.title)}</span> · ` : ''}${presTag(p.prestige)} Niveau <b>${p.level}</b> · <span style="color:${p.rankColor}">${esc(p.rank)}</span>${p.rank !== 'Non classé' ? ` (${p.elo} Elo)` : ''}</div>
       <div class="muted small">Inscrit le ${new Date(p.created).toLocaleDateString('fr-FR')} · ${fmtDur(s.playTime)} de jeu${p.lfg ? ' · <span class="badge-ok">CHERCHE UNE ÉQUIPE</span>' : ''}${p.fairplay ? ' · <span class="gold">🤝 Fair-play</span>' : ''}</div>
-      ${p.motto ? `<div class="pp-motto">« ${esc(p.motto)} »</div>` : ''}${p.customStatus ? `<div class="small">💬 ${esc(p.customStatus)}</div>` : ''}${p.dnd ? '<div class="small bad">⛔ Ne pas déranger</div>' : ''}</div></div>
+      ${p.motto ? `<div class="pp-motto">« ${esc(p.motto)} »</div>` : ''}${p.customStatus ? `<div class="small">💬 ${esc(p.customStatus)}</div>` : ''}${p.presence === 'dnd' || p.dnd ? '<div class="small bad">⛔ Ne pas déranger</div>' : p.presence === 'busy' ? '<div class="small warn">● Occupé</div>' : ''}</div></div>
     ${p.showcase?.length ? `<div class="pp-showcase">${p.showcase.map(id => ACHIEVEMENTS.find(a => a.id === id)).filter(Boolean).map(a => `<div class="sc-item">🏆<b>${esc(a.label)}</b><span class="muted small">${esc(a.desc)}</span></div>`).join('')}</div>` : ''}
     <div class="pp-stats">
       ${[['Parties', s.matches], ['Victoires', `${s.wins} (${pct(s.wins, s.matches)})`], ['K/D', kd(s.kills, s.deaths)], ['Éliminations', s.kills], ['Têtes', pct(s.hsKills, s.kills)], ['Précision', s.acc != null ? s.acc + ' %' : '—'], ['Duels gagnés', `${s.duelWins}/${s.duels}`], ['MVP', s.mvps]].map(([l, v]) => `<div><b>${v}</b><span>${l}</span></div>`).join('')}
@@ -289,13 +289,18 @@ function compareWith(p) {
 }
 
 // ---------- niveau (barre du haut) ----------
+// badge de prestige (★ + chiffre romain) devant le niveau
+export function presTag(p) { return p > 0 ? `<span class="pres p${Math.min(10, p)}" title="Prestige ${ROMAN[p]}">★${ROMAN[p]}</span>` : ''; }
+export const PRESENCE_LABEL = { online: 'En ligne', busy: 'Occupé', dnd: 'Ne pas déranger' };
+export function presenceSel(cur, id) { return `<span class="seg small pres-sel" id="${id}">${Object.entries(PRESENCE_LABEL).map(([k, l]) => `<button type="button" data-presence="${k}" class="${(cur || 'online') === k ? 'active' : ''}"><span class="dot p-${k}"></span> ${l}</button>`).join('')}</span>`; }
+export function bindPresence(root) { root?.querySelectorAll('[data-presence]').forEach(b => { b.onclick = () => { net.send('setProfile', { presence: b.dataset.presence }); if (profile.progress) { profile.progress.presence = b.dataset.presence; profile.progress.dnd = b.dataset.presence === 'dnd'; } root.querySelectorAll('[data-presence]').forEach(x => x.classList.toggle('active', x === b)); toast(`Statut : ${PRESENCE_LABEL[b.dataset.presence]}${b.dataset.presence === 'busy' ? ' (invitations refusées automatiquement)' : b.dataset.presence === 'dnd' ? ' (invitations et messages refusés)' : ''}`); }; }); }
 export function renderLevel() {
   const pr = profile.progress;
   $('lvl-badge').classList.toggle('hidden', !pr || state.guest);
   if (!pr) return;
-  $('lvl-n').textContent = pr.level;
+  $('lvl-n').innerHTML = presTag(pr.prestige) + pr.level;
   $('lvl-fill').style.width = pr.lvlNeed ? Math.round(pr.lvlCur / pr.lvlNeed * 100) + '%' : '100%';
-  $('lvl-badge').title = `Niveau ${pr.level} · ${pr.lvlCur} / ${pr.lvlNeed} XP · ${pr.rank} (${pr.elo} Elo)`;
+  $('lvl-badge').title = `${pr.prestige ? `Prestige ${ROMAN[pr.prestige]} · ` : ''}Niveau ${pr.level} · ${pr.lvlCur} / ${pr.lvlNeed} XP · ${pr.rank} (${pr.elo} Elo)`;
 }
 
 // ---------- événement ----------
@@ -336,7 +341,8 @@ export function renderProfile() {
   <div class="panel pf-head">
     <div class="pf-id">${agentIconHTML(profile.agent, 'lg')}<div><div class="pf-name">${esc(profile.name)}</div>
       <label class="pf-title">Titre affiché <select id="pf-title">${titleOpts.map(([v, l]) => `<option value="${v}" ${pr.title === v || (!pr.title && !v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div></div>
-    <div class="pf-level"><div class="pf-lv">NIVEAU <b>${li.level}</b></div><div class="pf-bar"><i style="width:${li.need ? li.cur / li.need * 100 : 100}%"></i></div><div class="muted small">${li.cur} / ${li.need} XP · ${pr.xp} XP au total · cette semaine : ${pr.week?.xp || 0} XP</div></div>
+    <div class="pf-level"><div class="pf-lv">${presTag(pr.prestige)} NIVEAU <b>${li.level}</b></div><div class="pf-bar"><i style="width:${li.need ? li.cur / li.need * 100 : 100}%"></i></div><div class="muted small">${li.cur} / ${li.need} XP · ${pr.xp} XP au total · cette semaine : ${pr.week?.xp || 0} XP</div>
+      <div class="pf-prestige">${(pr.prestige || 0) >= PRESTIGE_MAX ? '<span class="gold small">★ Prestige maximum atteint</span>' : li.level >= MAX_LEVEL ? `<button class="btn primary small" id="pf-prestige">★ PASSER PRESTIGE ${ROMAN[(pr.prestige || 0) + 1]}</button>` : `<span class="muted small">Prestige ${pr.prestige ? ROMAN[pr.prestige] + ' · ' : ''}${pr.prestige ? 'prochain' : 'débloqué'} au niveau ${MAX_LEVEL}</span>`}</div></div>
     <div class="pf-rank" style="--rc:${pr.rankColor}"><div class="rk">${esc(pr.rank)}</div><div class="muted small">${pr.ranked ? `${pr.elo} Elo en duel · record ${pr.eloPeak} · ${pr.seasonDuels} duel(s) classé(s)` : 'Gagne ou perds un duel contre un autre joueur inscrit (DUEL RAPIDE) pour obtenir ton rang.'}</div></div>
   </div>
   <div class="panel pf-custom" style="--bn:${(BANNERS[pr.banner] || BANNERS.nuit).css}">
@@ -348,7 +354,8 @@ export function renderProfile() {
     <label class="check"><input type="checkbox" id="pf-lfg" ${pr.lfg ? 'checked' : ''}> Je cherche une équipe (visible par mes amis)</label>
     <label class="check"><input type="checkbox" id="pf-blockinv" ${pr.blockInvites ? 'checked' : ''}> Refuser toutes les invitations (salons et clans)</label>
     <label class="check"><input type="checkbox" id="pf-nowatch" ${pr.noWatch ? 'checked' : ''}> Refuser que mes amis regardent mes parties</label>
-    <label class="check"><input type="checkbox" id="pf-dnd" ${pr.dnd ? 'checked' : ''}> ⛔ Ne pas déranger (messages privés et invitations refusés, réponse automatique)</label>
+    <div class="set-label" style="margin-top:10px">Mon statut</div>${presenceSel(pr.presence || (pr.dnd ? 'dnd' : 'online'), 'pf-presence')}
+    <p class="muted small">Occupé : les invitations (groupe, salon, clan) sont refusées automatiquement. Ne pas déranger : les messages privés aussi.</p>
     <div class="row"><input id="pf-status" maxlength="40" placeholder="Ton statut (visible par tes amis) : « dispo pour un duel »…" value="${esc(pr.customStatus || '')}"><button class="btn small" id="pf-status-save">ENREGISTRER</button></div>
     <div class="row"><button class="btn ghost small" id="pf-share">🔗 COPIER LE LIEN DE MON PROFIL</button><button class="btn ghost small" id="pf-feedback">💬 SIGNALER UN BUG / PROPOSER UNE IDÉE</button></div>
   </div>
@@ -396,7 +403,11 @@ export function renderProfile() {
   $('pf-blockinv').onchange = e => net.send('setProfile', { blockInvites: e.target.checked });
   $('pf-nowatch').onchange = e => net.send('setProfile', { noWatch: e.target.checked });
   $('pf-feedback').onclick = () => openFeedback('profil');
-  $('pf-dnd').onchange = e => net.send('setProfile', { dnd: e.target.checked });
+  bindPresence($('pf-presence'));
+  if ($('pf-prestige')) $('pf-prestige').onclick = () => { openModal(`<h2>★ PASSER PRESTIGE ${ROMAN[(pr.prestige || 0) + 1]}</h2>
+    <p>Tu repars au <b>niveau 1</b> et gagnes :</p><ul><li>le badge <b>★${ROMAN[(pr.prestige || 0) + 1]}</b> devant ton niveau, partout dans le jeu ;</li><li>le titre <b>${esc(TITLES['prestige' + ((pr.prestige || 0) + 1)])}</b> ;</li><li><span class="gem small"></span> <b>${PRESTIGE_REWARD}</b> Éclats.</li></ul>
+    <p class="muted small">Tu gardes tout le reste : armes, skins, bannières, statistiques et Éclats. Les récompenses de niveau sont gagnées à nouveau en remontant.</p>
+    <div class="row"><button class="btn primary" id="pres-ok">CONFIRMER</button><button class="btn ghost" data-close>ANNULER</button></div>`); $('pres-ok').onclick = () => { net.send('prestige'); closeModal(); }; $('mmodal-in').querySelectorAll('[data-close]').forEach(b => { b.onclick = closeModal; }); };
   $('pf-status-save').onclick = () => { net.send('setProfile', { status: $('pf-status').value }); toast('Statut enregistré.'); };
   if (!H.rarity || Date.now() - H.rarityAt > 600000) { H.rarityAt = Date.now(); net.send('achRarity'); }
   $('pf-share').onclick = () => { const url = `${location.origin}/#profil=${encodeURIComponent(profile.name)}`; (navigator.clipboard?.writeText(url) || Promise.reject()).then(() => toast('Lien copié : ' + url, 4000), () => toast(url, 6000)); };
@@ -416,7 +427,7 @@ export function renderLeaderboard() {
   const d = H.lb.data, el = $('lb-list'); if (!d) { el.innerHTML = '<div class="empty">Chargement…</div>'; return; }
   $('lb-season').textContent = d.kind === 'elo' ? `${d.season?.name || ''} · classement Elo des duels entre joueurs inscrits` : d.kind === 'week' ? 'XP gagnée depuis lundi' : `${d.total} joueur(s) classé(s)`;
   const val = r => d.kind === 'elo' ? `<span style="color:${r.rankColor}">${esc(r.rank)}</span> · ${r.v}` : r.v.toLocaleString('fr-FR');
-  const row = r => `<tr class="${r.name === profile.name ? 'me' : ''}" data-name="${esc(r.name)}"><td class="pos p${r.pos}">${r.pos}</td><td><b>${esc(r.name)}</b>${r.title ? ` <span class="title-tag">${esc(r.title)}</span>` : ''}</td><td>Niv. ${r.level}</td><td class="v">${val(r)}</td></tr>`;
+  const row = r => `<tr class="${r.name === profile.name ? 'me' : ''}" data-name="${esc(r.name)}"><td class="pos p${r.pos}">${r.pos}</td><td><b>${esc(r.name)}</b>${r.title ? ` <span class="title-tag">${esc(r.title)}</span>` : ''}</td><td>${presTag(r.prestige)} Niv. ${r.level}</td><td class="v">${val(r)}</td></tr>`;
   el.innerHTML = d.rows.length ? `<table class="tbl lb"><tr><th>#</th><th>Joueur</th><th>Niveau</th><th>${LB_LABEL[d.kind]}</th></tr>${d.rows.map(row).join('')}
     ${d.me && d.me.pos > d.rows.length ? `<tr class="sep"><td colspan="4">…</td></tr>${row(d.me)}` : ''}</table>` : '<div class="empty">Personne n\'est encore classé ici. Sois le premier !</div>';
   el.onclick = e => { const tr = e.target.closest('tr[data-name]'); if (tr) viewProfile(tr.dataset.name); };
@@ -445,8 +456,9 @@ export function renderFriends() {
       ${partyPanel()}
       <div class="panel"><h3>AJOUTER UN AMI</h3><form id="fr-add" class="fr-add"><input id="fr-name" maxlength="16" placeholder="Pseudo du joueur"><button class="btn primary" type="submit">AJOUTER</button></form></div>
       ${F.incoming.length ? `<div class="panel"><h3>DEMANDES REÇUES (${F.incoming.length})</h3>${F.incoming.map(n => `<div class="fr-row"><b>${esc(n)}</b><span class="grow"></span><button class="btn primary small" data-f="accept" data-n="${esc(n)}">ACCEPTER</button><button class="btn ghost small" data-f="decline" data-n="${esc(n)}">REFUSER</button></div>`).join('')}</div>` : ''}
+      <div class="panel"><h3>MON STATUT</h3>${presenceSel(profile.progress?.presence || (profile.progress?.dnd ? 'dnd' : 'online'), 'fr-presence')}</div>
       <div class="panel"><h3>MES AMIS (${F.friends.filter(f => f.online).length} en ligne / ${F.friends.length})</h3>
-        ${F.friends.map(f => `<div class="fr-row ${f.online ? 'on' : ''}"><button class="pin ${f.pinned ? 'on' : ''}" data-f="pin" data-n="${esc(f.name)}" title="${f.pinned ? 'Retirer des favoris' : 'Épingler en haut de la liste'}">★</button><span class="dot ${f.online ? 'on' : ''}"></span><div class="fr-who">${f.clan ? `<span class="clan-tag">[${esc(f.clan)}]</span> ` : ''}<b class="link" data-f="profile" data-n="${esc(f.name)}">${esc(f.alias || f.name)}</b>${f.alias ? ` <span class="muted small">(${esc(f.name)})</span>` : ''} <span class="muted small">niv. ${f.level}${f.title ? ' · ' + esc(f.title) : ''}</span>${f.lfg ? ' <span class="badge-ok small">CHERCHE UNE ÉQUIPE</span>' : ''}${f.dnd ? ' <span class="badge-dnd small" title="Ne pas déranger">⛔</span>' : ''}${f.note ? ` <span title="${esc(f.note)}">📝</span>` : ''}${f.customStatus ? `<div class="small fr-status">💬 ${esc(f.customStatus)}</div>` : ''}<div class="muted small">${esc(f.status)}${f.roomName ? ` · ${esc(f.roomName)}` : ''}${!f.online && f.lastSeen ? ` · vu ${ago(f.lastSeen)}` : ''}</div></div>
+        ${F.friends.map(f => `<div class="fr-row ${f.online ? 'on' : ''}"><button class="pin ${f.pinned ? 'on' : ''}" data-f="pin" data-n="${esc(f.name)}" title="${f.pinned ? 'Retirer des favoris' : 'Épingler en haut de la liste'}">★</button><span class="dot ${f.online ? 'on p-' + (f.presence || 'online') : ''}" title="${f.online ? PRESENCE_LABEL[f.presence || 'online'] : 'Hors ligne'}"></span><div class="fr-who">${f.clan ? `<span class="clan-tag">[${esc(f.clan)}]</span> ` : ''}<b class="link" data-f="profile" data-n="${esc(f.name)}">${esc(f.alias || f.name)}</b>${f.alias ? ` <span class="muted small">(${esc(f.name)})</span>` : ''} <span class="muted small">${presTag(f.prestige)} niv. ${f.level}${f.title ? ' · ' + esc(f.title) : ''}</span>${f.lfg ? ' <span class="badge-ok small">CHERCHE UNE ÉQUIPE</span>' : ''}${f.online && f.presence === 'busy' ? ' <span class="badge-busy small">OCCUPÉ</span>' : ''}${f.dnd ? ' <span class="badge-dnd small" title="Ne pas déranger">⛔</span>' : ''}${f.note ? ` <span title="${esc(f.note)}">📝</span>` : ''}${f.customStatus ? `<div class="small fr-status">💬 ${esc(f.customStatus)}</div>` : ''}<div class="muted small">${esc(f.status)}${f.roomName ? ` · ${esc(f.roomName)}` : ''}${!f.online && f.lastSeen ? ` · vu ${ago(f.lastSeen)}` : ''}</div></div>
           <span class="grow"></span>
           ${f.watch && !inRoom ? `<button class="btn small" data-f="watch" data-n="${esc(f.name)}" title="Regarder sa partie en spectateur (différé de 10 s)">👁 REGARDER</button>` : ''}
           ${f.roomId && !f.full ? `<button class="btn small" data-f="join" data-n="${esc(f.name)}">REJOINDRE</button>` : ''}
@@ -469,6 +481,7 @@ export function renderFriends() {
   renderWhispers();
   net.send('recent');
   renderRecent();
+  bindPresence($('fr-presence'));
   $('fr-add').onsubmit = e => { e.preventDefault(); const n = $('fr-name').value.trim(); if (n) net.send('friendAdd', { name: n }); $('fr-name').value = ''; };
   $('mp-to').onchange = e => { H.mpTo = e.target.value || null; if (H.mpTo) { delete H.unread[H.mpTo]; updateFriendsBadge(); } renderWhispers(); };
   if ($('party-chat')) $('party-chat').onsubmit = e => { e.preventDefault(); const t = $('party-chat-in').value.trim(); if (t) net.send('partyChat', { text: t }); $('party-chat-in').value = ''; };
@@ -528,7 +541,7 @@ export function renderPartyBar() {
 
 // invitation depuis le salon
 export function openInvitePicker() {
-  const online = H.friends.friends.filter(f => f.online && f.roomId !== state.room?.id);
+  const online = H.friends.friends.filter(f => f.online && f.roomId !== state.room?.id && (f.presence || 'online') === 'online');
   openModal(`<h2>INVITER UN AMI</h2>${online.length ? online.map(f => `<div class="fr-row"><span class="dot on"></span><b>${esc(f.name)}</b><span class="muted small">${esc(f.status)}</span><span class="grow"></span><button class="btn primary small" data-inv="${esc(f.name)}">INVITER</button></div>`).join('') : '<p class="muted">Aucun ami connecté disponible. Ajoute des amis dans l\'onglet AMIS.</p>'}
     ${state.room?.code ? `<p>Code du salon : <b class="code">${esc(state.room.code)}</b> — partage-le à n'importe qui.</p>` : ''}`);
   $('mmodal-in').onclick = e => { const b = e.target.closest('[data-inv]'); if (b) { net.send('invite', { name: b.dataset.inv }); b.disabled = true; b.textContent = 'INVITÉ'; } };

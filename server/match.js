@@ -63,7 +63,7 @@ export class Match {
       healEnd: 0, healRate: 0, buffEnd: 0, buffSpeed: 1, hasteEnd: 0, slowEnd: 0, speedPeak: 1, speedPeakEnd: 0, speedMul: 1, rateMul: 1, invisEnd: 0, revealEnd: 0, blindEnd: 0,
       interact: false, prog: 0, progKind: null, interactPos: null,
       respawnAt: 0, diedAt: 0, roundsWon: 0, account: m.account || null, lastDamagedBy: null, lastDamagedAt: -10, joinedMidRound: false,
-      level: m.isBot ? 999 : (m.level || 1), title: m.title || null, clan: m.clan || null, gun: 0,
+      level: m.isBot ? 999 : (m.level || 1), prestige: m.isBot ? 0 : (m.prestige || 0), title: m.title || null, clan: m.clan || null, gun: 0,
       streak: 0, bestStreak: 0, lives: this.mode === 'lives' ? (this.target || 3) : 0, out: false, weaponKills: {}, roundDmg: 0,
       // statistiques détaillées (progression, quêtes, anti-triche)
       dmg: 0, hsKills: 0, knifeKills: 0, shots: 0, hits: 0, plants: 0, defuses: 0, aces: 0, multi3: 0, abilities: 0, ults: 0, roundKills: 0,
@@ -88,7 +88,7 @@ export class Match {
   rosterMsg() {
     return {
       type: 'roster',
-      players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, of: p.outfits?.[p.agent] || null, bot: p.isBot, skins: p.skins, title: p.title, clan: p.clan || null, level: p.isBot ? null : p.level })),
+      players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, of: p.outfits?.[p.agent] || null, bot: p.isBot, skins: p.skins, title: p.title, clan: p.clan || null, level: p.isBot ? null : p.level, prestige: p.isBot ? 0 : p.prestige || 0 })),
     };
   }
 
@@ -123,7 +123,7 @@ export class Match {
 
   startMsg(id) {
     const p = this.players.get(id);
-    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty, slide: this.slideOn(), fx: { bigHead: !!this.opts.bigHead, turbo: this.turbo }, custom: this.customOpts };
+    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.prestige ? 999 : p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty, slide: this.slideOn(), fx: { bigHead: !!this.opts.bigHead, turbo: this.turbo }, custom: this.customOpts };
   }
 
   // déblocage des armes par niveau (désactivable dans l'administration)
@@ -139,8 +139,8 @@ export class Match {
   }
   unlocksOn() { return !isFfa(this.mode) && (this.io.weaponUnlocks ? !!this.io.weaponUnlocks() : false); }
   humanCount() { let n = 0; for (const q of this.players.values()) if (!q.isBot) n++; return n; }
-  humanMinLevel() { let l = Infinity; for (const q of this.players.values()) if (!q.isBot) l = Math.min(l, q.level || 1); return l === Infinity ? 999 : l; }
-  weaponLocked(p, id) { return this.unlocksOn() && (WEAPON_UNLOCK[id] || 1) > (p.isBot ? this.humanMinLevel() : p.level); }
+  humanMinLevel() { let l = Infinity; for (const q of this.players.values()) if (!q.isBot) l = Math.min(l, q.prestige ? 999 : q.level || 1); return l === Infinity ? 999 : l; }
+  weaponLocked(p, id) { return this.unlocksOn() && !p.prestige && (WEAPON_UNLOCK[id] || 1) > (p.isBot ? this.humanMinLevel() : p.level); }
 
   start(members) {
     for (const m of members) this.players.set(m.id, this.makePlayer(m));

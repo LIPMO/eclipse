@@ -18,7 +18,8 @@ import { Clans } from './clans.js';
 import { Tournaments } from './tournaments.js';
 import { DIFFICULTIES } from './bot.js';
 import { dailyLogin, eloUpdate, checkAchievements } from './progression.js';
-import { levelOf, TITLES, RADIO, REPORT_REASONS, masteryOf } from '../shared/progress.js';
+import { levelOf, TITLES, RADIO, REPORT_REASONS, masteryOf, ROMAN } from '../shared/progress.js';
+import { doPrestige } from './progression.js';
 import { MAP_ORDER, mapsForMode } from '../shared/maps.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -220,7 +221,7 @@ function roomCode() {
 }
 function memberInfo(c) {
   const u = c.account && accounts.get(c.account);
-  return { level: u ? levelOf(u.xp) : 1, title: u?.customTitle || (u?.title ? TITLES[u.title] : null), clan: c.account ? clans.tagOf(c.account) : null };
+  return { level: u ? levelOf(u.xp) : 1, prestige: u?.prestige || 0, title: u?.customTitle || (u?.title ? TITLES[u.title] : null), clan: c.account ? clans.tagOf(c.account) : null };
 }
 
 function roomSummary(r) {
@@ -228,7 +229,7 @@ function roomSummary(r) {
 }
 function roomState(r) {
   return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: cleanCustomOpts(r.opts), custom: !!r.custom, autoStartIn: r.autoStartAt ? Math.max(0, Math.ceil((r.autoStartAt - Date.now()) / 1000)) : 0, sizes: sizeOptions(r.mode), tournament: !!r.tournament, hasPassword: !!r.password,
-    members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
+    members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, prestige: m.prestige || 0, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
 }
 // les salons privés n'apparaissent pas dans la liste publique
 const publicRooms = () => [...rooms.values()].filter(r => !r.private).map(roomSummary);
@@ -436,10 +437,10 @@ function startMatch(r) {
         const u = res.account && accounts.get(res.account);
         if (!u) { if (c) send(c.id, { type: 'matchSummary', guest: true }); continue; }
         const sum = accounts.applyResult(u, res, { mul, eloDelta: eloDeltas[res.id] ?? null });
-        clans.onMatch(u, (sum.xp || 0) + (sum.questXp || 0), res.won, res.kills);
+        clans.onMatch(u, (sum.xp || 0) + (sum.questXp || 0), res);
         if (c) c.lastMatch = { t: Date.now(), accounts: new Set(res.others || []), done: new Set() };
         admin.economy('earn', sum.eclatsTotal);
-        const mem = r.members.get(res.id); if (mem) mem.level = sum.level;
+        const mem = r.members.get(res.id); if (mem) { mem.level = sum.level; mem.prestige = u.prestige || 0; }
         if (sum.achievements.length) admin.log('partie', `${u.name} débloque : ${sum.achievements.map(a => a.label).join(', ')}`);
         if (sum.level > sum.levelBefore) social.notifyFriendsLevel(res.account, u.name, sum.level);
         if (c) { send(c.id, { type: 'profile', profile: accounts.publicProfile(u) }); send(c.id, { type: 'matchSummary', summary: sum }); }
@@ -699,6 +700,19 @@ function handleLobby(c, msg) {
       pushRoom(r); break;
     }
     // tenue d'agent (1.19) : débloquée par la maîtrise de cet agent
+    case 'prestige': {
+      const u = c.account && accounts.get(c.account);
+      if (!u) break;
+      if (r && r.state === 'playing') { send(c.id, { type: 'error', text: 'Termine ta partie avant de passer prestige.' }); break; }
+      const res = doPrestige(u);
+      if (res.error) { send(c.id, { type: 'error', text: res.error }); break; }
+      accounts.save(); admin.economy('earn', res.eclats);
+      admin.log('compte', `${u.name} passe prestige ${ROMAN[res.prestige]}`);
+      send(c.id, { type: 'profile', profile: accounts.publicProfile(u) });
+      send(c.id, { type: 'prestigeDone', prestige: res.prestige, eclats: res.eclats, title: res.title });
+      social.notifyFriendsLevel(c.account, u.name, 1, res.prestige);
+      break;
+    }
     case 'setOutfit': {
       const u = c.account && accounts.get(c.account);
       if (!u || !AGENTS[msg.agent] || !OUTFITS[msg.outfit]) break;

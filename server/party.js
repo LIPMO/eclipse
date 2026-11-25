@@ -1,6 +1,6 @@
 // Groupes : jusqu'à 4 amis qui jouent ensemble. Le chef choisit la partie, les autres le suivent automatiquement.
 // Les groupes n'existent qu'en mémoire (ils disparaissent à la déconnexion de tous leurs membres).
-import { rankFor } from './progression.js';
+import { rankFor, refusesInvites, presenceOf } from './progression.js';
 import { BANNERS } from '../shared/progress.js';
 const MAX = 4;
 const clean = (s, n) => String(s || '').replace(/[<>]/g, '').trim().slice(0, n);
@@ -34,7 +34,7 @@ export class Parties {
         const u = c?.account && this.A.get(c.account);
         return { name: c?.name || '?', leader: id === p.leader, me: id === forId, status: s.status, roomName: s.roomName || null,
           ready: id === p.leader || p.ready.has(id), busy: s.status === 'en partie', agent: c?.prefAgent || u?.agent || null, outfit: c?.outfits?.[c?.prefAgent || u?.agent] || null, skin: c?.skins?.lancer || 'default',
-          level: info.level || 1, title: info.title || null, clan: info.clan || null,
+          level: info.level || 1, prestige: info.prestige || 0, presence: u ? presenceOf(u) : 'online', title: info.title || null, clan: info.clan || null,
           // carte de joueur (1.19) : bannière et rang
           banner: BANNERS[u?.banner]?.css || BANNERS.nuit.css, rank: u ? rankFor(u).name : null, rankColor: u ? rankFor(u).color : null };
       }) } };
@@ -48,7 +48,7 @@ export class Parties {
     const tk = this.A.key(t.name);
     if (tk === c.account) return this.err(c, 'C\'est toi !');
     if (!u.friends.includes(tk)) return this.err(c, 'Tu ne peux inviter que tes amis dans ton groupe.');
-    if (t.blockInvites || t.dnd) return this.err(c, `${t.name} n'accepte pas les invitations pour le moment.`);
+    if (refusesInvites(t)) return this.err(c, t.presence === 'busy' && !t.dnd ? `${t.name} est occupé : invitations refusées automatiquement.` : `${t.name} n'accepte pas les invitations pour le moment.`);
     const tc = this.ctx.social.clientOfKey(tk);
     if (!tc) return this.err(c, `${t.name} n'est pas connecté.`);
     let p = this.partyOf(c);
