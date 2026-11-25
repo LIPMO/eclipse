@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-25T08:45:02.503Z",
+ "generated": "2026-11-25T08:55:07.032Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -43,7 +43,7 @@
   "public/js/game.js": "82f936f4e0bfdbfbea5949fa0b77774e595be6f3a26b4c1bc157f9da7931fb26",
   "public/js/gamepad.js": "ab4d0225a3e66baf1aee4a3936919ad6e459d081c6e6c826c708f6a0147de1c6",
   "public/js/hub.js": "29d84ece709b6762a78e728c38cac89c6d2f82668437021b24d2a05f037d3c98",
-  "public/js/i18n.js": "778000299f6df6089d510f5bb9543552af0a63643bca0debbce5079d21fe2685",
+  "public/js/i18n.js": "0c0cb63bd280bfc9318a8185a77b688635ae070acbad588ca818603096fb4511",
   "public/js/main.js": "9b4a5e79f7936b3153d0e17b3838f63e738445cd6331173fb26c2d2a06dc4878",
   "public/js/models.js": "36c2cf1e12f1dbfeca7faa3924041c573698a6a313cae6b04f411973beae21d8",
   "public/js/net.js": "c15e62ff164f84e8f7e792a2598ad61a5a003b78eb1e5873de2861e259375c49",

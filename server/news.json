@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.20.2",
+    "date": "2026-11-25",
+    "title": "Correction des bugs de cache",
+    "items": [
+      "Corrigé : après une mise à jour, le jeu pouvait mélanger d'anciens et de nouveaux fichiers gardés en cache, ce qui provoquait des bugs. Chaque version a maintenant ses propres adresses de fichiers, toujours à jour."
+    ]
+  },
+  {
     "version": "1.20.1",
     "date": "2026-11-25",
     "title": "Mise à jour automatique de la page",

@@ -139,7 +139,7 @@ function stop() { observer?.disconnect(); observer = null; }
 
 async function load() {
   if (dict) return;
-  loading ||= fetch('/i18n/en.json').then(r => r.json()).then(build).catch(e => { console.warn('Traduction indisponible', e); loading = null; });
+  loading ||= fetch(new URL('../i18n/en.json', import.meta.url)).then(r => r.json()).then(build).catch(e => { console.warn('Traduction indisponible', e); loading = null; });
   await loading;
 }
 export async function setLang(l) {

@@ -49,15 +49,6 @@ const MOUNTS = [
   ['/', path.join(ROOT, 'public')],
 ];
 
-// Hash de l'importmap intégrée à index.html (seul script en ligne autorisé par la CSP)
-const IMPORTMAP_HASH = (() => {
-  try {
-    const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const m = html.match(/<script type="importmap">([\s\S]*?)<\/script>/);
-    return m ? crypto.createHash('sha256').update(m[1]).digest('base64') : null;
-  } catch { return null; }
-})();
-const GAME_CSP = gameCsp(IMPORTMAP_HASH);
 
 // ---------- intégrité des fichiers ----------
 // Si integrity.json est présent, chaque fichier est vérifié au démarrage : un fichier modifié ou ajouté sur le disque
@@ -93,7 +84,23 @@ const BUILD = (() => {
   }
   return PKG_VERSION + '-' + h.digest('hex').slice(0, 10);
 })();
-const withBuild = data => Buffer.from(data.toString('utf8').replace('<meta name="eclipse-build" content="dev">', `<meta name="eclipse-build" content="${BUILD}">`).replace(/(src|href)="(\/js\/main\.js|\/css\/style\.css|\/css\/fonts\.css)"/g, `$1="$2?v=${BUILD}"`), 'utf8');
+// Toutes les adresses des fichiers du jeu passent par /v/<empreinte>/… : à chaque mise à jour elles changent,
+// donc ni le navigateur ni Cloudflare (qui force un cache de 4 h sur les .js/.css) ne peuvent servir un vieux fichier
+// mélangé à des nouveaux. L'importmap redirige aussi les imports absolus (/shared/…, three).
+const VP = `/v/${BUILD}`;
+const IMPORTMAP = JSON.stringify({ imports: { three: `${VP}/vendor/three/build/three.module.js`, 'three/addons/': `${VP}/vendor/three/examples/jsm/`, '/shared/': `${VP}/shared/`, '/js/': `${VP}/js/` } });
+const IMPORTMAP_HASH = crypto.createHash('sha256').update(IMPORTMAP).digest('base64');
+const GAME_CSP = gameCsp(IMPORTMAP_HASH);
+function withBuild(data, page) {
+  let s = data.toString('utf8')
+    .replace('<meta name="eclipse-build" content="dev">', `<meta name="eclipse-build" content="${BUILD}">`)
+    .replace(/(src|href)="\/(js|css)\/([\w.-]+\.(?:js|css))"/g, `$1="${VP}/$2/$3"`);
+  if (/<script type="importmap">[\s\S]*?<\/script>/.test(s)) s = s.replace(/<script type="importmap">[\s\S]*?<\/script>/, () => `<script type="importmap">${IMPORTMAP}</script>`);
+  else s = s.replace('</head>', () => `<script type="importmap">${IMPORTMAP}</script>\n</head>`);
+  if (page === 'admin') s = s.replace("script-src 'self'", `script-src 'self' 'sha256-${IMPORTMAP_HASH}'`);
+  return Buffer.from(s, 'utf8');
+}
+const HTML_PAGE = { '/index.html': 'game', '/admin.html': 'admin' };
 
 const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 
@@ -133,23 +140,26 @@ const server = http.createServer((req, res) => {
   if (url === '/') url = '/index.html';
   if (url === '/admin' || url === '/admin/') url = '/admin.html';
   if (url.includes('\0') || /(^|\/)\./.test(url)) { res.writeHead(404); res.end('Introuvable'); return; }
+  // fichier versionné : /v/<empreinte>/js/main.js → /js/main.js, gardé en cache un an s'il s'agit de la version actuelle
+  let versioned = null;
+  { const vm = url.match(/^\/v\/([\w.-]{1,40})(\/.+)$/); if (vm && !HTML_PAGE[vm[2]]) { versioned = vm[1] === BUILD ? 'current' : 'old'; url = vm[2]; } }
   for (const [prefix, dir] of MOUNTS) {
     if (!url.startsWith(prefix)) continue;
     const file = path.normalize(path.join(dir, url.slice(prefix.length)));
     if (file !== dir && !file.startsWith(dir + path.sep)) break; // empêche de sortir du dossier (y compris vers un dossier voisin)
-    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' };
+    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': versioned === 'current' ? 'public, max-age=31536000, immutable' : versioned === 'old' ? 'no-store' : 'no-cache' };
     if (url === '/index.html') headers['Content-Security-Policy'] = GAME_CSP;
     if (VERIFIED) {
       // mode protégé : seuls les fichiers vérifiés au démarrage (empreinte conforme au manifeste) sont servis, depuis la mémoire
       const data = VERIFIED.get(path.relative(ROOT, file).split(path.sep).join('/'));
       if (!data) { notFound(req, res); return; }
-      res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : (url === '/index.html' ? withBuild(data) : data));
+      res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : (HTML_PAGE[url] ? withBuild(data, HTML_PAGE[url]) : data));
       return;
     }
     fs.readFile(file, (err, data) => {
       if (err) { notFound(req, res); return; }
       res.writeHead(200, headers);
-      res.end(url === '/index.html' ? withBuild(data) : data);
+      res.end(HTML_PAGE[url] ? withBuild(data, HTML_PAGE[url]) : data);
     });
     return;
   }
