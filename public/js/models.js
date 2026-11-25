@@ -276,6 +276,51 @@ function patternTex(skin, emissive) {
         g.fillStyle = emissive ? '#000' : skin.body; g.beginPath(); g.arc(cx, cy, s * 0.16, 0, 7); g.fill();
         break;
       }
+      // ---- motifs ajoutés en 1.17 ----
+      case 'stripes': { // rayures en diagonale
+        g.save(); g.translate(s / 2, s / 2); g.rotate(-Math.PI / 4); g.fillStyle = A;
+        for (let x = -s; x < s; x += 28) g.fillRect(x, -s, 11, s * 2);
+        if (skin.alt && !emissive) { g.fillStyle = skin.alt; for (let x = -s + 16; x < s; x += 28) g.fillRect(x, -s, 3, s * 2); }
+        g.restore(); break;
+      }
+      case 'zebra': // bandes ondulées
+        g.fillStyle = A;
+        for (let y = -10; y < s + 20; y += 26) { g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= s; x += 8) g.lineTo(x, y + Math.sin(x / 22 + y * 0.7) * 9); for (let x = s; x >= 0; x -= 8) g.lineTo(x, y + 9 + Math.sin(x / 19 + y) * 7); g.fill(); }
+        break;
+      case 'plaid': { // tartan
+        if (emissive) break;
+        const bands = [[A, 0.5, 22], [skin.alt || shade(A, 0.6), 0.45, 8], ['#000000', 0.25, 4]];
+        for (const [c, a, w] of bands) { g.globalAlpha = a; g.fillStyle = c; for (let p = 0; p < s; p += 64) { g.fillRect(p + (w === 8 ? 30 : 0), 0, w, s); g.fillRect(0, p + (w === 8 ? 30 : 0), s, w); } }
+        g.globalAlpha = 1; break;
+      }
+      case 'bubbles': // bulles
+        g.strokeStyle = A; g.lineWidth = 2;
+        for (let i = 0; i < 40; i++) { const x = rnd(0, s), y = rnd(0, s), r = rnd(4, 20); g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); if (!emissive) { g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.arc(x - r * 0.35, y - r * 0.35, r * 0.2, 0, 7); g.fill(); } }
+        break;
+      case 'chevron': // zigzags
+        g.strokeStyle = A; g.lineWidth = 7;
+        for (let y = -20; y < s + 20; y += 30) { g.beginPath(); for (let x = 0, k = 0; x <= s + 20; x += 20, k++) g.lineTo(x, y + (k % 2 ? 12 : 0)); g.stroke(); }
+        break;
+      case 'rings': { // orbites concentriques
+        g.strokeStyle = A; g.lineWidth = 1.8;
+        for (let c = 0; c < 3; c++) { const cx = rnd(0, s), cy = rnd(0, s); for (let r = 8; r < 140; r += rnd(8, 16)) { g.beginPath(); g.ellipse(cx, cy, r, r * 0.55, 0.4, 0, 7); g.stroke(); } }
+        break;
+      }
+      case 'shards': // éclats triangulaires
+        for (let i = 0; i < 46; i++) { g.fillStyle = i % 3 === 0 ? A : emissive ? '#000' : shade(skin.body, 0.7 + (i % 5) * 0.12); const x = rnd(0, s), y = rnd(0, s), r = rnd(10, 34); g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r * rnd(0.4, 1), y + r * 0.6); g.lineTo(x - r * rnd(0.4, 1), y + r * rnd(0.2, 0.8)); g.fill(); }
+        break;
+      case 'leopard': // taches de léopard
+        for (let i = 0; i < 42; i++) { const x = rnd(0, s), y = rnd(0, s), r = rnd(5, 11); if (!emissive) { g.fillStyle = skin.alt || shade(skin.body, 1.25); g.beginPath(); g.ellipse(x, y, r, r * 0.8, rnd(0, 3), 0, 7); g.fill(); } g.strokeStyle = A; g.lineWidth = 3; g.beginPath(); g.arc(x, y, r, rnd(0, 1), rnd(3.5, 6)); g.stroke(); }
+        break;
+      case 'glitch': // bandes décalées (écran qui saute)
+        for (let i = 0; i < 34; i++) { const y = rnd(0, s), h = rnd(2, 12); g.fillStyle = i % 3 === 0 ? (skin.alt || '#ff2e88') : i % 3 === 1 ? A : (emissive ? '#000' : shade(skin.body, 1.5)); g.fillRect(rnd(-40, s * 0.6), y, rnd(30, s), h); }
+        break;
+      case 'web': { // toile d'araignée
+        g.strokeStyle = A; g.lineWidth = 1.4; const cx = s * 0.35, cy = s * 0.35;
+        for (let k = 0; k < 14; k++) { const a = k / 14 * Math.PI * 2; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * s * 1.2, cy + Math.sin(a) * s * 1.2); g.stroke(); }
+        for (let r = 14; r < s * 1.2; r += 16) { g.beginPath(); for (let k = 0; k <= 14; k++) { const a = k / 14 * Math.PI * 2; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } g.stroke(); }
+        break;
+      }
       default:
         if (!emissive) noise(g, s, 0.05, 1500);
     }
@@ -285,7 +330,7 @@ function patternTex(skin, emissive) {
 }
 
 // motifs sans version lumineuse (le skin brille alors seulement par ses pièces d'accent)
-const NO_GLOW_PATTERNS = new Set(['carbon', 'camo', 'petals', 'digital', 'checker', 'dots', 'fade', 'tiger', 'splatter', 'marble']);
+const NO_GLOW_PATTERNS = new Set(['carbon', 'camo', 'petals', 'digital', 'checker', 'dots', 'fade', 'tiger', 'splatter', 'marble', 'plaid']);
 export const animatedMaterials = new Set();
 export function skinMaterials(skinId) {
   const skin = SKINS.find(s => s.id === skinId) || SKINS[0];
@@ -485,6 +530,18 @@ export function buildCharacter(agentId, teamColor) {
     case 'bastion': mesh(new THREE.BoxGeometry(0.2, 0.1, 0.24), mats.armor, -0.34, 0.5, 0, upper); mesh(new THREE.BoxGeometry(0.2, 0.1, 0.24), mats.armor, 0.34, 0.5, 0, upper); mesh(new THREE.BoxGeometry(0.34, 0.08, 0.04), mats.glow, 0, 0.18, -0.165, upper); break;
     case 'spectre': { const hood = mesh(new THREE.ConeGeometry(0.22, 0.42, 10, 1, true), mats.armor, 0, 0.05, 0.03, head); hood.material = hood.material.clone(); hood.material.side = THREE.DoubleSide; all.push(hood.material); break; }
     case 'volta': [-0.1, 0.1].forEach(x => { mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.26), mats.suit, x, 0.24, 0.05, head); mesh(new THREE.SphereGeometry(0.03, 8, 6), mats.glow, x, 0.38, 0.05, head); }); break;
+    // 1.17 : accessoires des autres agents
+    case 'kairo': { const v = mesh(new THREE.BoxGeometry(0.3, 0.05, 0.05), mats.glow, 0, 0.04, -0.15, head); v.rotation.z = 0.05; mesh(new THREE.ConeGeometry(0.03, 0.22, 6), mats.armor, 0.08, 0.2, 0.06, head).rotation.z = -0.5; break; }
+    case 'borea': [-0.3, 0.3].forEach(x => { for (let i = 0; i < 3; i++) { const c = mesh(new THREE.ConeGeometry(0.03, 0.16 + i * 0.04, 5), mats.glow, x + (x > 0 ? 1 : -1) * i * 0.035, 0.58, -0.04 + i * 0.04, upper); c.rotation.z = (x > 0 ? -1 : 1) * 0.25; } }); break;
+    case 'vesper': { mesh(new THREE.BoxGeometry(0.34, 0.06, 0.04), mats.glow, 0, 0.05, -0.15, head); [-0.13, 0.13].forEach(x => { const w = mesh(new THREE.ConeGeometry(0.04, 0.2, 4), mats.armor, x, 0.16, 0.02, head); w.rotation.z = x > 0 ? -0.6 : 0.6; }); break; }
+    case 'aegis': { const sh = mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.04, 6), mats.armor, 0, 0.3, 0.2, upper); sh.rotation.x = Math.PI / 2; mesh(new THREE.TorusGeometry(0.2, 0.015, 6, 6), mats.glow, 0, 0.3, 0.225, upper); break; }
+    case 'sol': { const r = mesh(new THREE.TorusGeometry(0.2, 0.025, 8, 32), mats.glow, 0, 0.05, 0.12, head); for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; const s = mesh(new THREE.ConeGeometry(0.02, 0.08, 4), mats.glow, Math.cos(a) * 0.25, 0.05 + Math.sin(a) * 0.25, 0.12, head); s.rotation.z = a - Math.PI / 2; } r.rotation.y = 0; break; }
+    case 'nyx': { const c = mesh(new THREE.TorusGeometry(0.12, 0.025, 8, 24, Math.PI * 1.2), mats.glow, 0, 0.24, 0, head); c.rotation.z = -0.3; break; }
+    case 'helia': { mesh(new THREE.BoxGeometry(0.04, 0.12, 0.02), mats.glow, 0, 0.1, -0.16, head); mesh(new THREE.BoxGeometry(0.12, 0.04, 0.02), mats.glow, 0, 0.1, -0.16, head); break; }
+    case 'orion': for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2; mesh(new THREE.SphereGeometry(0.035, 8, 6), mats.glow, Math.cos(a) * 0.2, 0.28, Math.sin(a) * 0.2, head); } mesh(new THREE.TorusGeometry(0.2, 0.008, 6, 32), mats.glow, 0, 0.28, 0, head).rotation.x = Math.PI / 2; break;
+    case 'marea': { const fin = mesh(new THREE.TorusGeometry(0.16, 0.03, 8, 20, Math.PI), mats.glow, 0, 0.12, 0.02, head); fin.rotation.y = Math.PI / 2; break; }
+    case 'vanta': [-0.09, 0.09].forEach(x => { const h = mesh(new THREE.ConeGeometry(0.035, 0.24, 6), mats.glow, x, 0.2, 0.08, head); h.rotation.x = 0.7; h.rotation.z = x > 0 ? -0.3 : 0.3; }); break;
+    case 'kora': { mesh(new THREE.BoxGeometry(0.4, 0.12, 0.08), mats.armor, 0, 0.62, 0.17, upper); mesh(new THREE.BoxGeometry(0.3, 0.035, 0.03), mats.glow, 0, 0.62, 0.215, upper); mesh(new THREE.BoxGeometry(0.32, 0.05, 0.05), mats.glow, 0, 0.13, -0.13, head); break; }
   }
   // arme tenue
   const hand = new THREE.Group(); hand.position.set(0.12, 0.3, -0.42); upper.add(hand);

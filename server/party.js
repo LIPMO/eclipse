@@ -126,7 +126,7 @@ export class Parties {
     for (const id of p.members) this.info(this.ctx.clients.get(id), `Lancement annulé par ${c.name}.`);
   }
   stopCountdown(p) { if (p.timer) clearTimeout(p.timer); p.timer = null; p.countdownEnd = 0; }
-  // bouton JOUER du chef : tout le monde doit être prêt et disponible, puis 3 secondes avant le départ
+  // bouton JOUER du chef : tout le monde doit être prêt et disponible ; le groupe part directement dans la salle d'attente (1 minute)
   launch(c) {
     const p = this.partyOf(c); if (!p) return;
     if (p.leader !== c.id) return this.err(c, 'Seul le chef du groupe lance la partie : clique sur PRÊT.');
@@ -137,17 +137,9 @@ export class Parties {
     const busy = [c, ...others].filter(o => { const r = o.roomId && this.ctx.rooms.get(o.roomId); return r?.match && r.match.phase !== 'over'; }).map(o => o.name);
     if (busy.length) return this.err(c, `Encore en partie : ${busy.join(', ')}.`);
     if (p.cfg.mode === 'duel' && p.members.length > 2) return this.err(c, 'Le duel se joue à deux : choisis un autre mode.');
-    p.countdownEnd = Date.now() + 3000;
+    p.ready.clear();
+    this.ctx.launch(c, p.cfg, p);
     this.push(p);
-    p.timer = setTimeout(() => {
-      p.timer = null; p.countdownEnd = 0;
-      const leader = this.ctx.clients.get(p.leader);
-      if (!leader || !this.parties.has(p.id)) return;
-      p.ready.clear();
-      this.ctx.launch(leader, p.cfg, p);
-      this.push(p);
-    }, 3000);
-    p.timer.unref?.();
   }
 
   removeMember(c, why) {

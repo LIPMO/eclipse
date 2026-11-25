@@ -198,7 +198,7 @@ function roomSummary(r) {
   return { id: r.id, name: r.name, mapId: r.mapId, mode: r.mode, players: r.members.size, humans: [...r.members.values()].filter(m => !m.isBot).length, max: r.maxPlayers, state: r.state, quick: !!r.quick, official: !!r.official, locked: !!r.password, custom: !!r.custom };
 }
 function roomState(r) {
-  return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: cleanCustomOpts(r.opts), custom: !!r.custom, sizes: sizeOptions(r.mode), tournament: !!r.tournament, hasPassword: !!r.password,
+  return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: cleanCustomOpts(r.opts), custom: !!r.custom, autoStartIn: r.autoStartAt ? Math.max(0, Math.ceil((r.autoStartAt - Date.now()) / 1000)) : 0, sizes: sizeOptions(r.mode), tournament: !!r.tournament, hasPassword: !!r.password,
     members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
 }
 // les salons privés n'apparaissent pas dans la liste publique
@@ -296,6 +296,7 @@ function leaveRoom(c) {
   if (!humans.length) { rooms.delete(r.id); broadcastRooms(); return; }
   if (r.hostId === c.id) r.hostId = humans[0].id;
   pushRoom(r);
+  checkAllReady(r);
 }
 
 function stopSpectating(c) {
@@ -327,14 +328,34 @@ function joinRoom(c, r) {
   if (r.tournament) tournaments.onJoin(r);
   parties.follow(c, r);
   parties.push(parties.partyOf(c));
-  // duel rapide : lancement automatique quand deux joueurs sont présents
-  if (r.quick && r.state === 'lobby' && [...r.members.values()].filter(x => !x.isBot).length >= 2) {
-    for (const o of r.members.values()) if (!o.isBot) send(o.id, { type: 'chat', from: 'SYSTÈME', text: 'Adversaire trouvé ! Lancement dans 3 secondes…' });
-    setTimeout(() => { if (rooms.has(r.id) && r.state === 'lobby' && r.members.size >= 2) startMatch(r); }, 3000);
+  // duel rapide : un adversaire est trouvé → salle d'attente d'une minute (départ immédiat si les deux sont prêts)
+  if (r.quick && r.state === 'lobby' && !r.autoStartAt && [...r.members.values()].filter(x => !x.isBot).length >= 2) {
+    for (const o of r.members.values()) if (!o.isBot) send(o.id, { type: 'chat', from: 'SYSTÈME', text: 'Adversaire trouvé ! La partie commence dans 1 minute (ou dès que vous êtes prêts tous les deux).' });
+    armAutoStart(r, AUTO_START_S);
   }
+}
+// ---------- salle d'attente (1.17) ----------
+// au lieu de lancer la partie tout de suite : 1 minute pour choisir son agent et son équipe ;
+// la partie part toute seule à la fin, ou plus tôt si tous les joueurs sont prêts (ou si l'hôte lance)
+const AUTO_START_S = Math.max(5, Number(process.env.AUTO_START_S) || 60);
+// statut des membres d'un groupe (en partie / dans un salon) affiché dans le salon de groupe
+function pushPartiesOf(r) { const seen = new Set(); for (const m of r.members.values()) { const cl = !m.isBot && clients.get(m.id); const p = cl && parties.partyOf(cl); if (p && !seen.has(p.id)) { seen.add(p.id); parties.push(p); } } }
+function armAutoStart(r, secs = AUTO_START_S) {
+  clearTimeout(r.autoTimer);
+  r.autoStartAt = Date.now() + secs * 1000;
+  r.autoTimer = setTimeout(() => { r.autoTimer = null; if (rooms.has(r.id) && r.state === 'lobby' && r.autoStartAt && [...r.members.values()].some(m => !m.isBot)) startMatch(r); }, secs * 1000);
+  r.autoTimer.unref?.();
+  pushRoom(r);
+}
+function checkAllReady(r) {
+  if (!r || r.state !== 'lobby' || !r.autoStartAt) return;
+  const humans = [...r.members.values()].filter(m => !m.isBot);
+  if (r.quick && humans.length < 2) return;
+  if (humans.length && humans.every(m => m.ready)) startMatch(r);
 }
 
 function startMatch(r) {
+  clearTimeout(r.autoTimer); r.autoTimer = null; r.autoStartAt = 0;
   const blocked = admin.blockNewMatch();
   if (blocked) { for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'chat', from: 'SYSTÈME', text: blocked }); return; }
   r.state = 'playing';
@@ -405,7 +426,9 @@ function startMatch(r) {
       for (const m of r.members.values()) m.ready = m.isBot;
       for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'backToRoom' });
       pushRoom(r);
+      pushPartiesOf(r);
       if (r.tournament) tournaments.afterMatchEnd(r);
+      if (r.autoRoom && !r.rematchNow) armAutoStart(r);
       if (r.rematchNow) { r.rematchNow = false; setTimeout(() => { if (rooms.has(r.id) && r.state === 'lobby' && [...r.members.values()].some(m => !m.isBot)) { for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'chat', from: 'SYSTÈME', text: 'Revanche ! La partie recommence.' }); startMatch(r); } }, 1500); }
     },
   });
@@ -413,6 +436,7 @@ function startMatch(r) {
   match.start([...r.members.values()]);
   pushRoom(r);
   for (const m of r.members.values()) if (m.account) social.pushFriendsOf(m.account);
+  pushPartiesOf(r);
 }
 
 function newRoom(c, { name, mode, mapId, difficulty, priv = false, quick = false }) {
@@ -449,7 +473,7 @@ function lobbyLaunch(c, cfg, party) {
     if (open) {
       if (c.roomId) leaveRoom(c);
       joinRoom(c, open);
-      if (open.state === 'lobby' && !open.official && open.hostId === c.id) { fillRoom(open); startMatch(open); }
+      if (open.state === 'lobby' && !open.official && open.hostId === c.id) { fillRoom(open); open.autoRoom = true; armAutoStart(open); }
       return c.roomId === open.id;
     }
   }
@@ -460,7 +484,7 @@ function lobbyLaunch(c, cfg, party) {
   joinRoom(c, room);
   // duel entre les deux membres du groupe (le suivi automatique ne concerne pas les salons à deux)
   if (cfg.mode === 'duel' && party) for (const id of party.members) { const m = clients.get(id); if (m && m !== c && !(m.roomId && rooms.get(m.roomId)?.match)) { m.invites ||= new Set(); m.invites.add(room.id); joinRoom(m, room); } }
-  fillRoom(room); startMatch(room);
+  fillRoom(room); room.autoRoom = true; armAutoStart(room);
   return true;
 }
 function fillRoom(room) { while (room.members.size < room.maxPlayers) { const before = room.members.size; addBot(room, pickTeam(room)); if (room.members.size === before) break; } }
@@ -652,7 +676,7 @@ function handleLobby(c, msg) {
       else parties.push(parties.partyOf(c));
       break;
     }
-    case 'setReady': if (r) { const m = r.members.get(c.id); m.ready = !!msg.ready; pushRoom(r); } break;
+    case 'setReady': if (r) { const m = r.members.get(c.id); m.ready = !!msg.ready; pushRoom(r); checkAllReady(r); } break;
     case 'roomSettings': {
       if (!isHost || r.state !== 'lobby' || r.tournament) break;
       if (validDiff(msg.difficulty)) r.difficulty = msg.difficulty;

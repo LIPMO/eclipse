@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.17.0",
+    "date": "2026-11-25",
+    "title": "Salle d'attente, page Agents, 4 agents et 100 skins",
+    "items": [
+      "Fini le départ en 3 secondes : après JOUER, tout le monde arrive dans une salle d'attente d'une minute pour choisir son agent et son équipe. La partie part toute seule à la fin, ou tout de suite si tout le monde clique sur PRÊT (ou si l'hôte lance).",
+      "Nouvelle page Agents : liste filtrable par rôle, grand modèle 3D devant le nom de l'agent, histoire, capacités cliquables avec leurs détails, maîtrise et statistiques, bouton « Choisir cet agent ». Flèches haut/bas pour passer d'un agent à l'autre.",
+      "4 nouveaux agents : Orion (Initiateur), Maréa (Contrôleur), Vanta (Duelliste) et Kora (Sentinelle). Les agents qui n'en avaient pas ont reçu un accessoire distinctif.",
+      "100 nouveaux skins d'armes en 10 collections (Océan, Volcan, Forêt, Arctique, Cyber, Désert, Royal, Sauvage, Rétro, Cosmos), avec 10 nouveaux motifs. Filtre par collection dans l'onglet Collection.",
+      "Sous le salon de groupe : les boutons en double sont retirés et remplacés par les amis en ligne (rejoindre, regarder, inviter dans le groupe), rejoindre un salon par code, les quêtes, tes parties perso et les salons ouverts avec filtres."
+    ]
+  },
+  {
     "version": "1.16.0",
     "date": "2026-11-25",
     "title": "Parties personnalisées",

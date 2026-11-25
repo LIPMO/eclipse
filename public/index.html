@@ -140,52 +140,32 @@
         </div>
       </div>
     </div>
-    <div class="play-grid">
-      <div class="panel">
-        <div class="quick-row">
-          <div class="me-card" id="me-card"></div>
-          <button id="quick-duel" class="btn primary">⚔ DUEL RAPIDE 1v1</button>
+    <!-- sous le lobby (1.17) : ce qui n'est pas dans le lobby -->
+    <div class="play-below">
+      <div class="pb-row">
+        <div class="panel pb-friends">
+          <div class="panel-head"><h2>AMIS EN LIGNE</h2><button id="pb-friends-all" class="btn ghost small">TOUS MES AMIS</button></div>
+          <div id="pb-friends" class="pb-friends-list"></div>
         </div>
-        <div class="quick-actions">
-          <button id="quick-ffa" class="btn">✸ MÊLÉE RAPIDE</button>
-          <button id="quick-gun" class="btn" title="Chaque élimination te donne l'arme suivante. Le premier à éliminer au couteau gagne.">⟫ GUN GAME</button>
-          <div class="qa-group"><button id="quick-bots" class="btn">🤖 ENTRAÎNEMENT</button>
-            <select id="qb-mode" title="Mode d'entraînement"><option value="assault">Assaut</option><option value="duel">Duel</option><option value="ffa">Mêlée</option><option value="gungame">Gun Game</option><option value="lives">Dernier debout</option></select>
-            <select id="qb-diff" title="Difficulté des bots"><option value="easy">Facile</option><option value="normal" selected>Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option><option value="cible">Champ de tir (cibles)</option></select></div>
-          <form id="code-form" class="qa-group"><input id="code-input" maxlength="6" placeholder="CODE" autocomplete="off"><button class="btn ghost" type="submit">REJOINDRE</button></form>
-          <button id="open-guide" class="btn ghost" title="Commandes, modes et progression">? COMMENT JOUER</button>
+        <div class="panel pb-join">
+          <div class="panel-head"><h2>REJOINDRE UN SALON</h2></div>
+          <form id="code-form" class="pb-code"><input id="code-input" maxlength="6" placeholder="CODE" autocomplete="off"><button class="btn primary" type="submit">REJOINDRE</button></form>
+          <p class="muted small">Un ami t'a donné le code de son salon privé ? Tape-le ici.</p>
+          <div id="poll-box" class="poll-box"></div>
+          <button id="open-guide" class="btn ghost small" title="Commandes, modes et progression">? COMMENT JOUER</button>
         </div>
-        <div id="quests" class="quests"></div>
-        <div id="poll-box" class="poll-box"></div>
-        <div class="panel-head"><h2>SALONS</h2><button id="refresh-rooms" class="btn ghost small">↻</button></div>
-        <div id="room-list" class="room-list"></div>
+        <div class="panel pb-quests">
+          <div class="panel-head"><h2>QUÊTES</h2></div>
+          <div id="quests" class="quests"></div>
+        </div>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h2>CRÉER UN SALON</h2></div>
-        <label>Nom<input id="cr-name" maxlength="28" placeholder="Mon salon"></label>
-        <label>Mode
-          <div class="seg" id="cr-mode">
-            <button data-v="assault" class="active">ASSAUT 5v5</button>
-            <button data-v="duel">DUEL 1v1</button>
-            <button data-v="ffa">MÊLÉE</button>
-            <button data-v="gungame">GUN GAME</button>
-            <button data-v="lives">DERNIER DEBOUT</button>
-          </div>
-        </label>
-        <label>Carte</label>
-        <div id="cr-maps" class="map-pick"></div>
-        <label>Difficulté des bots
-          <div class="seg" id="cr-diff">
-            <button data-v="easy">FACILE</button>
-            <button data-v="normal" class="active">NORMAL</button>
-            <button data-v="hard">DIFFICILE</button>
-            <button data-v="expert">EXPERT</button>
-          </div>
-        </label>
-        <label class="check"><input type="checkbox" id="cr-bots" checked> Remplir avec des bots</label>
-        <label class="check"><input type="checkbox" id="cr-private"> Salon privé (accessible par code ou invitation)</label>
-        <button id="create-room" class="btn primary wide">CRÉER</button>
-        <p class="hint">Astuce : partage l'adresse du serveur à tes amis pour qu'ils rejoignent ton salon.</p>
+      <div class="panel pb-custom">
+        <div class="panel-head"><h2>🛠 PARTIES PERSO</h2><span class="muted small">Tes règles, tes amis : on rejoue autant qu'on veut</span><span class="grow"></span><button id="pb-cg-all" class="btn ghost small">TOUT VOIR</button></div>
+        <div id="pb-cg" class="cg-grid"></div>
+      </div>
+      <div class="panel pb-rooms">
+        <div class="panel-head"><h2>SALONS OUVERTS</h2><div class="seg" id="room-filter"><button data-v="all" class="active">TOUS</button><button data-v="custom">🛠 PERSO</button><button data-v="assault">ASSAUT</button><button data-v="ffa">MÊLÉE</button><button data-v="duel">DUEL</button><button data-v="other">AUTRES</button></div><label class="check small"><input type="checkbox" id="room-free"> Places libres</label><span class="grow"></span><button id="refresh-rooms" class="btn ghost small" title="Actualiser">↻</button></div>
+        <div id="room-list" class="room-list"></div>
       </div>
     </div>
   </section>
@@ -197,6 +177,7 @@
         <h2 id="room-title">Salon</h2>
         <div id="room-sub" class="muted"></div>
         <div id="room-rules" class="cg-chips"></div>
+        <div id="room-auto" class="room-auto hidden"></div>
       </div>
       <div id="room-code" class="room-code hidden"></div>
       <div class="room-actions">
@@ -254,9 +235,16 @@
 
   <!-- AGENTS -->
   <section id="tab-agents" class="tab">
-    <div class="agents-layout">
-      <div id="agents-list" class="agents-list"></div>
-      <div id="agent-detail" class="agent-detail"></div>
+    <div class="ag-page" id="ag-page">
+      <div class="ag-bgname" id="ag-bgname"></div>
+      <canvas id="ag-canvas"></canvas>
+      <div class="ag-left">
+        <h2 class="ag-title">AGENTS</h2>
+        <div class="ag-roles" id="ag-roles"></div>
+        <div class="ag-list" id="agents-list"></div>
+        <div class="muted small ag-tip">↑ ↓ pour changer d'agent · fais glisser le personnage pour le tourner</div>
+      </div>
+      <div class="ag-right" id="agent-detail"></div>
     </div>
   </section>
 

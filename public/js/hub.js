@@ -184,11 +184,12 @@ export function openGuide() {
 
 // ---------- visite guidée interactive : met en lumière chaque élément du menu, étape par étape ----------
 const TOUR = [
-  ['#quick-duel', 'DUEL RAPIDE', 'Un 1 contre 1 contre un autre joueur. Entre deux comptes, il compte pour ton rang Elo.'],
-  ['#quick-ffa', 'MÊLÉE ET GUN GAME', 'Chacun pour soi, réapparition immédiate : parfait pour s\'échauffer.'],
-  ['#quick-bots', 'ENTRAÎNEMENT', 'Une partie immédiate contre des bots, du niveau Facile à Expert, ou le champ de tir.'],
+  ['#lobby-slots', 'SALON DE GROUPE', 'Toi au centre, tes amis autour : clique sur un « + » pour inviter un ami dans ton groupe.'],
+  ['#lb-mode-card', 'CHOISIS TA PARTIE', 'Mode, bots ou autres joueurs, niveau et carte. Le duel contre un autre joueur compte pour ton rang Elo.'],
+  ['#lb-play', 'JOUER', 'Lance la partie : tu as ensuite 1 minute pour choisir ton agent avant le départ.'],
+  ['#lb-custom', 'PARTIES PERSO', 'Tes propres règles (armes, vitesse, dégâts…) à jouer et rejouer avec tes amis.'],
   ['#quests', 'QUÊTES', 'Des objectifs du jour et de la semaine qui rapportent de l\'XP et des Éclats.'],
-  ['#room-list', 'SALONS', 'Les parties ouvertes par les autres joueurs. ★ pour garder un salon en favori.'],
+  ['#room-list', 'SALONS OUVERTS', 'Les parties ouvertes par les autres joueurs. ★ pour garder un salon en favori.'],
   ['[data-tab="agents"]', 'AGENTS', 'Choisis ton agent et découvre ses capacités. Raccourci : touche 2.'],
   ['[data-tab="collection"]', 'COLLECTION', 'Les skins de tes armes et la boutique du jour.'],
   ['[data-tab="friends"]', 'AMIS ET GROUPE', 'Ajoute des amis, écris-leur et forme un groupe de 4 pour jouer ensemble.'],

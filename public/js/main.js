@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Game } from './game.js';
 import { profile, save, session, setToken, applyServerProfile } from './store.js';
-import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
+import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, ROLES, ABILITY_ICONS, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { masteryOf } from '/shared/progress.js';
 import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
@@ -48,7 +48,7 @@ function showTab(name) {
   if (name === 'agents') renderAgents();
   if (name === 'collection') renderCollection();
   if (name === 'settings') mountSettings($('settings-root'));
-  if (name === 'play') { net.send('listRooms'); renderMeCard(); renderQuests(); renderEvent(); renderPartyBar(); renderLobby(); }
+  if (name === 'play') { net.send('listRooms'); if (!state.guest) net.send('friends'); renderMeCard(); renderQuests(); renderEvent(); renderPartyBar(); renderLobby(); renderFriendsPlaying(state.friendsList); renderPlayCustom(); }
   if (name === 'profile') { net.send('myProfile'); renderProfile(); }
   if (name === 'leaderboard') { renderLeaderboard(); loadLeaderboard(); }
   if (name === 'friends') { net.send('friends'); renderFriends(); }
@@ -191,6 +191,7 @@ net.on('system', m => {
 
 // ======================= JOUER : SALONS =======================
 function renderMeCard() {
+  if (!$('me-card')) return; // remplacé par le salon de groupe (1.17)
   const st = profile.stats;
   const kd = st && st.deaths ? (st.kills / st.deaths).toFixed(2) : (st?.kills || 0);
   const pr = profile.progress;
@@ -203,8 +204,10 @@ const favRooms = (() => { try { return new Set(JSON.parse(localStorage.getItem('
 const saveFav = () => { try { localStorage.setItem('eclipse_fav_rooms', JSON.stringify([...favRooms].slice(-30))); } catch { /* */ } };
 function renderRooms() {
   const list = $('room-list');
-  if (!state.rooms.length) { list.innerHTML = '<div class="empty">Aucun salon pour le moment. Crée le tien ou lance un duel rapide !</div>'; return; }
-  const rows = state.rooms.slice().sort((a, b) => favRooms.has(b.name) - favRooms.has(a.name));
+  const f = state.roomFilter || 'all', free = $('room-free')?.checked;
+  const shown = state.rooms.filter(r => (f === 'all' || (f === 'custom' ? r.custom : f === 'other' ? ['gungame', 'lives'].includes(r.mode) : r.mode === f)) && (!free || r.humans < r.max));
+  if (!shown.length) { list.innerHTML = `<div class="empty">${state.rooms.length ? 'Aucun salon ne correspond à ce filtre.' : 'Aucun salon ouvert pour le moment. Lance une partie depuis le salon de groupe, ou crée une partie perso publique !'}</div>`; return; }
+  const rows = shown.sort((a, b) => favRooms.has(b.name) - favRooms.has(a.name));
   list.innerHTML = rows.map(r => `<div class="room-item ${favRooms.has(r.name) ? 'fav' : ''}" data-id="${r.id}">
     <button class="fav-star ${favRooms.has(r.name) ? 'on' : ''}" data-fav="${esc(r.name)}" title="${favRooms.has(r.name) ? 'Retirer des favoris' : 'Ajouter aux favoris'}">★</button>
     <div><div class="rn">${r.locked ? '<span title="Protégé par un mot de passe">🔒</span> ' : ''}${r.custom ? '<span title="Partie perso (règles modifiées)">🛠</span> ' : ''}${esc(r.name)}</div><div class="muted">${esc(MAP_INFO[r.mapId]?.name || r.mapId)} · ${r.humans} joueur(s)</div></div>
@@ -219,35 +222,33 @@ $('room-list').onclick = e => {
 };
 $('refresh-rooms').onclick = () => net.send('listRooms');
 net.on('rooms', m => { state.rooms = m.rooms; renderRooms(); });
-$('quick-duel').onclick = () => { SFX.initAudio(); net.send('quickDuel'); };
-$('quick-ffa').onclick = () => { SFX.initAudio(); net.send('quickFfa'); };
-$('quick-gun').onclick = () => { SFX.initAudio(); net.send('quickGun'); };
 $('open-guide').onclick = openGuide;
-$('quick-bots').onclick = () => { SFX.initAudio(); net.send('quickBots', { mode: $('qb-mode').value, difficulty: $('qb-diff').value }); };
 $('code-form').onsubmit = e => { e.preventDefault(); const code = $('code-input').value.trim(); if (code) net.send('joinCode', { code }); $('code-input').value = ''; };
-
-function renderCreateMaps() {
-  const ids = mapsForMode(state.create.mode);
-  if (!ids.includes(state.create.map)) state.create.map = ids[0];
-  $('cr-maps').style.gridTemplateColumns = `repeat(${Math.min(4, ids.length)}, 1fr)`;
-  $('cr-maps').innerHTML = ids.map(id => `<div class="map-card ${id === state.create.map ? 'active' : ''}" data-id="${id}"><canvas width="140" height="100"></canvas><span>${MAP_INFO[id].name}</span></div>`).join('');
-  $('cr-maps').querySelectorAll('.map-card').forEach(el => drawMapPreview(el.querySelector('canvas'), parseMap(el.dataset.id), { labels: false }));
+// filtres des salons ouverts
+state.roomFilter = 'all';
+$('room-filter').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; state.roomFilter = b.dataset.v; $('room-filter').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b)); renderRooms(); };
+$('room-free').onchange = () => renderRooms();
+// amis en ligne : rejoindre leur salon ou regarder leur partie en un clic
+function renderFriendsPlaying(list) {
+  const el = $('pb-friends'); if (!el) return;
+  if (state.guest) { el.innerHTML = '<p class="muted small">Crée un compte pour ajouter des amis et jouer ensemble.</p>'; return; }
+  const on = (list || []).filter(f => f.online).sort((a, b) => (b.roomId ? 1 : 0) - (a.roomId ? 1 : 0));
+  const inParty = new Set((hub.party?.members || []).map(m => m.name));
+  el.innerHTML = on.length ? on.slice(0, 8).map(f => `<div class="pbf-row"><span class="dot on"></span><div class="pbf-who"><b>${esc(f.alias || f.name)}</b><div class="muted small">${esc(f.customStatus || f.status || '')}${f.roomName ? ' · ' + esc(f.roomName) : ''}</div></div><span class="grow"></span>
+      ${!inParty.has(f.name) && (!hub.party || hub.party.lead) && !f.dnd ? `<button class="btn ghost small" data-pf="party" data-n="${esc(f.name)}" title="Inviter dans mon groupe">＋ GROUPE</button>` : ''}
+      ${f.watch ? `<button class="btn ghost small" data-pf="watch" data-n="${esc(f.name)}" title="Regarder sa partie (différé de 10 s)">👁</button>` : ''}
+      ${f.roomId && !f.full ? `<button class="btn small" data-pf="join" data-n="${esc(f.name)}">REJOINDRE</button>` : ''}</div>`).join('') + (on.length > 8 ? `<p class="muted small">+${on.length - 8} autre(s) en ligne</p>` : '')
+    : '<p class="muted small">Aucun ami en ligne pour le moment. Ajoute des amis dans l\'onglet AMIS.</p>';
 }
-$('cr-maps').onclick = e => { const c = e.target.closest('.map-card'); if (c) { state.create.map = c.dataset.id; renderCreateMaps(); } };
-function bindSeg(id, key, after) {
-  $(id).onclick = e => {
-    const b = e.target.closest('button'); if (!b) return;
-    state.create[key] = b.dataset.v;
-    $(id).querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
-    after && after();
-  };
-}
-bindSeg('cr-mode', 'mode', renderCreateMaps);
-bindSeg('cr-diff', 'diff');
-$('create-room').onclick = () => {
-  SFX.initAudio();
-  net.send('createRoom', { name: $('cr-name').value, mode: state.create.mode, mapId: state.create.map, difficulty: state.create.diff, fillBots: $('cr-bots').checked, private: $('cr-private').checked });
+$('pb-friends').onclick = e => {
+  const b = e.target.closest('[data-pf]'); if (!b) return;
+  const n = b.dataset.n, a = b.dataset.pf;
+  if (a === 'join') net.send('joinFriend', { name: n });
+  else if (a === 'watch') net.send('watchFriend', { name: n });
+  else if (a === 'party') { net.send('partyInvite', { name: n, cfg: lobby.cfg }); b.disabled = true; b.textContent = 'INVITÉ'; }
 };
+$('pb-friends-all').onclick = () => showTab('friends');
+net.on('friends', m => { state.friendsList = m.friends || []; if (state.tab === 'play') renderFriendsPlaying(state.friendsList); });
 
 // ======================= SALON =======================
 net.on('room', m => { state.room = m.room; renderRoom(); if (state.tab !== 'room' && !state.game) showTab('room'); });
@@ -347,6 +348,9 @@ function renderRoom() {
   const cv = $('room-map-preview').querySelector('canvas');
   drawMapPreview(cv, parseMap(r.mapId));
   $('room-map-preview').querySelector('.map-name').textContent = MAP_INFO[r.mapId].name;
+  // salle d'attente : départ automatique au bout d'une minute (ou dès que tout le monde est prêt)
+  if (r.autoStartIn > 0 && r.state === 'lobby') { state.autoEnd = performance.now() + r.autoStartIn * 1000; if (!state.autoTimer) { state.autoTimer = setInterval(tickRoomAuto, 250); } tickRoomAuto(); }
+  else { clearInterval(state.autoTimer); state.autoTimer = null; $('room-auto').classList.add('hidden'); }
   $('room-start').style.display = host && r.state === 'lobby' ? '' : 'none';
   $('room-ready').style.display = r.state === 'lobby' ? '' : 'none';
   $('room-ready').classList.toggle('on', !!me?.ready);
@@ -359,6 +363,12 @@ function renderRoom() {
   }).join('');
   const a = AGENTS[me?.agent];
   $('agent-pick-info').innerHTML = a ? ['q', 'e', 'x'].map(k => `<span><b>${k === 'x' ? 'ULTIME' : k.toUpperCase()}</b> · ${a.abilities[k].name}</span>`).join('') : '';
+}
+function tickRoomAuto() {
+  const el = $('room-auto'); const left = Math.max(0, Math.ceil((state.autoEnd - performance.now()) / 1000));
+  if (!state.room || state.room.state !== 'lobby' || state.game) { clearInterval(state.autoTimer); state.autoTimer = null; el.classList.add('hidden'); return; }
+  el.classList.remove('hidden'); el.classList.toggle('soon', left <= 10);
+  el.innerHTML = `⏱ <b>DÉPART DANS ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</b> · choisis ton agent, puis clique sur PRÊT : la partie part dès que tout le monde est prêt.`;
 }
 $('agent-pick').onclick = e => {
   const c = e.target.closest('.agent-card'); if (!c) return;
@@ -464,7 +474,7 @@ class Preview {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
     if (this.canvas.width !== Math.floor(w * this.renderer.getPixelRatio())) { this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); }
-    if (this.drag === null && !this.fixed) this.rotY += dt * 0.5;
+    if (this.drag === null && !this.fixed && !this.noSpin) this.rotY += dt * 0.5;
     this.pivot.rotation.y = this.fixed ? 0 : this.rotY;
     this.onFrame?.(dt);
     this.renderer.render(this.scene, this.camera);
@@ -644,7 +654,7 @@ function renderLobby() {
   else if (!p || p.lead) {
     const waiting = p ? p.members.filter(m => !m.leader && !m.ready).map(m => m.name) : [];
     btn.textContent = 'JOUER'; btn.classList.toggle('wait', waiting.length > 0);
-    hint.textContent = waiting.length ? `En attente : ${waiting.join(', ')}` : cfg.mode === 'duel' && p && p.members.length > 2 ? 'Le duel se joue à deux.' : cfg.fill ? 'Recherche d\'une partie publique (ou création, complétée par des bots).' : 'Partie privée contre des bots.';
+    hint.textContent = waiting.length ? `En attente : ${waiting.join(', ')}` : cfg.mode === 'duel' && p && p.members.length > 2 ? 'Le duel se joue à deux.' : cfg.fill ? 'Partie publique (complétée par des bots) · 1 minute pour choisir ton agent.' : 'Partie privée contre des bots · 1 minute pour choisir ton agent.';
   } else { btn.textContent = me?.ready ? '✔ PRÊT' : 'PRÊT'; btn.classList.toggle('ready', !!me?.ready); hint.textContent = me?.ready ? `En attente du lancement par ${p.leader}. Clique pour annuler.` : 'Clique sur PRÊT quand tu es prêt à jouer.'; }
   if (counting) { lobby.cdEnd = performance.now() + p.countdown * 1000; if (!lobby.cdTimer) { lobby.cdTimer = setInterval(tickLobbyCount, 100); tickLobbyCount(); } }
   else stopLobbyCount();
@@ -828,42 +838,103 @@ $('cg-body').addEventListener('change', e => {
   cgRead();
   cgSummary();
 });
-$('cg-body').onclick = e => {
+// parties perso sous le lobby : les miennes et quelques modèles
+function renderPlayCustom() {
+  const el = $('pb-cg'); if (!el) return;
+  const mine = cgMine();
+  el.innerHTML = `<button class="cg-new" data-cg="new"><span><b>＋</b>CRÉER UNE PARTIE PERSO</span></button>${mine.map(g => cgCard(g, true)).join('')}${CG_TEMPLATES.slice(0, Math.max(3, 7 - mine.length)).map(g => cgCard(g, false)).join('')}`;
+}
+const cgEditOpen = () => { openCustom('edit'); $('tab-play').scrollTo({ top: 0, behavior: 'smooth' }); };
+$('pb-cg-all').onclick = () => { openCustom('list'); $('tab-play').scrollTo({ top: 0, behavior: 'smooth' }); };
+$('pb-cg').onclick = e => cgClick(e);
+$('cg-body').onclick = e => cgClick(e);
+function cgClick(e) {
   const m = e.target.closest('#cg-mode [data-v]');
   if (m && cg.view === 'edit') { cgRead(); const keep = { id: cg.edit.id, name: cg.edit.name, opts: cg.edit.opts, bots: cg.edit.bots, priv: cg.edit.priv, diff: cg.edit.diff }; cg.edit = { ...cgDefaults(m.dataset.v), ...keep }; renderCustom(); return; }
   const b = e.target.closest('[data-cg]'); if (!b) return;
   const a = b.dataset.cg, g = b.dataset.id && cgFind(b.dataset.id);
-  if (a === 'new') { cg.edit = cgDefaults(lobby.cfg.mode); cg.view = 'edit'; renderCustom(); }
-  else if (a === 'edit' && g) { const own = cgMine().some(x => x.id === g.id); cg.edit = { ...cgDefaults(g.mode), ...JSON.parse(JSON.stringify(g)), id: own ? g.id : null, opts: cleanCustomOpts(g.opts) }; if (!own) cg.edit.name = g.name; cg.view = 'edit'; renderCustom(); }
+  if (a === 'new') { cg.edit = cgDefaults(lobby.cfg.mode); cgEditOpen(); }
+  else if (a === 'edit' && g) { const own = cgMine().some(x => x.id === g.id); cg.edit = { ...cgDefaults(g.mode), ...JSON.parse(JSON.stringify(g)), id: own ? g.id : null, opts: cleanCustomOpts(g.opts) }; if (!own) cg.edit.name = g.name; cgEditOpen(); }
   else if (a === 'del' && g) { if (confirm(`Supprimer la partie perso « ${g.name} » ?`)) net.send('cgDelete', { id: g.id }); }
   else if (a === 'play' && g) cgPlay({ ...cgDefaults(g.mode), ...g, opts: cleanCustomOpts(g.opts) });
   else if (a === 'back') { cg.view = 'list'; renderCustom(); }
   else if (a === 'save') { net.send('cgSave', { preset: cgRead() }); }
   else if (a === 'playEdit') cgPlay(cgRead());
-};
+}
 net.on('customGames', m => {
   if (profile.progress) profile.progress.customGames = m.list;
   if (m.saved) { toast('💾 Partie perso enregistrée.'); if (cg.edit) cg.edit.id = m.saved; cg.view = 'list'; }
   if (!$('cg').classList.contains('hidden')) renderCustom();
+  renderPlayCustom();
 });
 
 // ======================= AGENTS =======================
+// Page Agents (1.17) : liste à gauche (filtre par rôle), grand modèle 3D au centre devant le nom géant,
+// fiche à droite (rôle, histoire, capacités cliquables, maîtrise et statistiques, bouton pour choisir l'agent)
+state.agentRole = 'all'; state.agentAbility = 'q';
+const AB_KEYS = { q: 'abilityQ', e: 'abilityE', x: 'ult' };
 function renderAgents() {
-  $('agents-list').innerHTML = AGENT_ORDER.map(id => { const a = AGENTS[id]; return `<div class="agent-row ${id === state.agentView ? 'active' : ''}" data-id="${id}" style="--c:${a.color}">${agentIconHTML(id)}<div><div class="an">${a.name}</div><div class="ar">${a.role}</div></div></div>`; }).join('');
+  const roles = ['all', ...Object.keys(ROLES)];
+  $('ag-roles').innerHTML = roles.map(r => `<button data-role="${r}" class="${state.agentRole === r ? 'active' : ''}" title="${r === 'all' ? 'Tous les agents' : esc(ROLES[r].desc)}">${r === 'all' ? 'TOUS' : ROLES[r].icon + ' ' + r.toUpperCase()}</button>`).join('');
+  const ids = AGENT_ORDER.filter(id => state.agentRole === 'all' || AGENTS[id].role === state.agentRole);
+  if (!AGENTS[state.agentView]) state.agentView = AGENT_ORDER[0];
+  $('agents-list').innerHTML = ids.map(id => { const a = AGENTS[id]; return `<button class="ag-item ${id === state.agentView ? 'active' : ''} ${id === profile.agent ? 'mine' : ''}" data-id="${id}" style="--c:${a.color}">${agentIconHTML(id)}<span class="ag-n">${a.name}</span>${id === profile.agent ? '<span class="ag-mine" title="Ton agent">✔</span>' : ''}</button>`; }).join('');
   const a = AGENTS[state.agentView];
-  const det = $('agent-detail');
-  det.style.setProperty('--c', a.color);
-  if (!det.querySelector('canvas')) det.innerHTML = '<canvas></canvas><div class="agent-text"></div>';
-  const ms = masteryOf(profile.progress?.agentStats?.[a.id]);
-  const msHtml = state.guest || !profile.progress ? '' : `<div class="mastery" title="Points : éliminations + 4 par partie + 6 par victoire"><span>MAÎTRISE <b>${ms.level}</b>/10</span><div class="pf-bar"><i style="width:${ms.next ? Math.round((ms.pts - ms.prev) / (ms.next - ms.prev) * 100) : 100}%"></i></div><span class="muted small">${ms.next ? `${ms.pts} / ${ms.next} points` : 'maîtrise maximale !'}</span></div>`;
-  det.querySelector('.agent-text').innerHTML = `<div class="role">${a.role.toUpperCase()}</div><div class="big">${a.name}</div>${msHtml}<div class="bio">${esc(a.bio)}</div>
-    <div class="ab-list">${['q', 'e', 'x'].map(k => `<div class="ab"><div class="key">${esc(keyName(profile.settings.keys[k === 'x' ? 'ult' : k === 'q' ? 'abilityQ' : 'abilityE']))}</div><div><div class="nm">${esc(a.abilities[k].name)}${k === 'x' ? ` <span class="muted">(ultime · ${a.abilities.x.cost} points)</span>` : ` <span class="muted">(${a.abilities[k].charges} charge${a.abilities[k].charges > 1 ? 's' : ''})</span>`}</div><div class="ds">${esc(a.abilities[k].desc)}</div></div></div>`).join('')}</div>`;
-  if (!previews.agent) previews.agent = new Preview(det.querySelector('canvas'));
-  const ch = buildCharacter(a.id, '#19e3c4');
-  const w = buildWeapon('rifle', profile.equipped.lancer || 'default'); w.scale.setScalar(1.1); ch.hand.add(w);
-  previews.agent.set(ch.root, [0, 1.3, 4.2], [0, 1, 0]);
+  const page = $('ag-page');
+  page.style.setProperty('--c', a.color);
+  $('ag-bgname').textContent = a.name;
+  const st = profile.progress?.agentStats?.[a.id];
+  const ms = masteryOf(st);
+  const ab = a.abilities[state.agentAbility] || a.abilities.q;
+  const role = ROLES[a.role] || { icon: '•', desc: '' };
+  const mine = profile.agent === a.id;
+  $('agent-detail').innerHTML = `
+    <div class="ag-role"><span class="ag-role-ic">${role.icon}</span><div><div class="ag-k">// RÔLE</div><b>${esc(a.role.toUpperCase())}</b></div></div>
+    <div class="ag-name">${a.name}</div>
+    <div class="ag-bio">${esc(a.bio)}</div>
+    <div class="ag-k">// RÔLE : ${esc(role.desc)}</div>
+    <div class="ag-k ag-k2">// CAPACITÉS</div>
+    <div class="ag-abs">${['q', 'e', 'x'].map(k => `<button class="ag-ab ${k === state.agentAbility ? 'active' : ''} ${k === 'x' ? 'ult' : ''}" data-ab="${k}" title="${esc(a.abilities[k].name)}"><span class="ic">${ABILITY_ICONS[a.abilities[k].type] || '•'}</span><span class="key">${esc(keyName(profile.settings.keys[AB_KEYS[k]]))}</span></button>`).join('')}</div>
+    <div class="ag-abd">
+      <div class="ag-abn">${esc(ab.name)}</div>
+      <div class="ag-abt">${state.agentAbility === 'x' ? `ULTIME · ${ab.cost} points (éliminations et manches)` : `TOUCHE ${esc(keyName(profile.settings.keys[AB_KEYS[state.agentAbility]]))} · ${ab.charges} charge${ab.charges > 1 ? 's' : ''} par manche`}</div>
+      <p>${esc(ab.desc)}</p>
+    </div>
+    ${state.guest || !profile.progress ? '' : `<div class="ag-k ag-k2">// TES STATISTIQUES</div>
+    <div class="ag-stats">
+      <div class="ag-ms" title="Points : éliminations + 4 par partie + 6 par victoire"><span>MAÎTRISE <b>${ms.level}</b>/10</span><div class="pf-bar"><i style="width:${ms.next ? Math.round((ms.pts - ms.prev) / (ms.next - ms.prev) * 100) : 100}%"></i></div><span class="muted small">${ms.next ? `${ms.pts} / ${ms.next} points` : 'maîtrise maximale !'}</span></div>
+      <div class="ag-nums"><div><b>${st?.matches || 0}</b><span>parties</span></div><div><b>${st?.matches ? Math.round(st.wins / st.matches * 100) : 0} %</b><span>victoires</span></div><div><b>${st ? (st.kills / Math.max(1, st.deaths)).toFixed(2) : '0.00'}</b><span>K/D</span></div><div><b>${st?.kills || 0}</b><span>éliminations</span></div></div>
+    </div>`}
+    <button class="ag-pick ${mine ? 'on' : ''}" id="ag-pick">${mine ? '✔ TON AGENT' : 'CHOISIR CET AGENT'}</button>`;
+  if (!previews.agent) { previews.agent = new Preview($('ag-canvas')); previews.agent.noSpin = true; }
+  if (state.agentBuilt !== a.id + (profile.equipped.lancer || '')) {
+    state.agentBuilt = a.id + (profile.equipped.lancer || '');
+    const ch = buildCharacter(a.id, '#19e3c4');
+    const w = buildWeapon('rifle', profile.equipped.lancer || 'default'); w.scale.setScalar(1.1); ch.hand.add(w);
+    ch.root.rotation.y = Math.PI; // face à la caméra
+    previews.agent.set(ch.root, [0, 1.15, 4.6], [0, 1.0, 0]);
+    previews.agent.rotY = -0.35;
+  }
 }
-$('agents-list').onclick = e => { const r = e.target.closest('.agent-row'); if (r) { state.agentView = r.dataset.id; renderAgents(); } };
+function pickAgentView(id) { state.agentView = id; state.agentAbility = 'q'; renderAgents(); SFX.initAudio(); SFX.playUI?.('click'); }
+$('agents-list').onclick = e => { const r = e.target.closest('.ag-item'); if (r) pickAgentView(r.dataset.id); };
+$('ag-roles').onclick = e => { const b = e.target.closest('[data-role]'); if (b) { state.agentRole = b.dataset.role; renderAgents(); } };
+$('agent-detail').onclick = e => {
+  const ab = e.target.closest('[data-ab]'); if (ab) { state.agentAbility = ab.dataset.ab; renderAgents(); return; }
+  if (e.target.closest('#ag-pick')) {
+    profile.agent = state.agentView; save(); lobby.sig = '';
+    net.send('setAgent', { agent: state.agentView });
+    toast(`${AGENTS[state.agentView].name} est maintenant ton agent.`); renderAgents(); renderMeCard();
+  }
+};
+// flèches haut / bas : agent précédent / suivant
+document.addEventListener('keydown', e => {
+  if (state.tab !== 'agents' || state.game || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const ids = AGENT_ORDER.filter(id => state.agentRole === 'all' || AGENTS[id].role === state.agentRole);
+  const i = ids.indexOf(state.agentView);
+  e.preventDefault(); pickAgentView(ids[(i + (e.key === 'ArrowDown' ? 1 : -1) + ids.length) % ids.length] || ids[0]);
+});
 
 // ======================= COLLECTION =======================
 function renderShop() {
@@ -883,11 +954,14 @@ function renderCollection() {
   // filtres : tous, possédés, à acheter, par rareté
   const f = state.collFilter || 'all';
   const RORDER = ['common', 'rare', 'epic', 'legendary', 'exclusive'];
-  const list = SKINS.filter(s => f === 'all' || (f === 'owned' ? profile.owned.includes(s.id) || s.id === 'default' : f === 'buy' ? !profile.owned.includes(s.id) && !s.level && s.price > 0 : rarityOf(s) === f));
+  const sets = [...new Set(SKINS.map(s => s.set).filter(Boolean))];
+  const list = SKINS.filter(s => (f === 'all' || (f === 'owned' ? profile.owned.includes(s.id) || s.id === 'default' : f === 'buy' ? !profile.owned.includes(s.id) && !s.level && s.price > 0 : rarityOf(s) === f))
+    && (!state.collSet || (state.collSet === 'classic' ? !s.set : s.set === state.collSet)));
   if (state.collSort === 'price') list.sort((a, b) => (a.level ? 1e6 + a.level : a.price) - (b.level ? 1e6 + b.level : b.price));
   else if (state.collSort === 'rarity') list.sort((a, b) => RORDER.indexOf(rarityOf(b)) - RORDER.indexOf(rarityOf(a)) || b.price - a.price);
   const ownedN = SKINS.filter(s => s.id === 'default' || profile.owned.includes(s.id)).length;
   $('coll-filters').innerHTML = `<div class="seg small">${[['all', 'TOUS'], ['owned', 'POSSÉDÉS'], ['buy', 'À ACHETER'], ...RORDER.map(r => [r, RARITY[r].name.toUpperCase()])].map(([k, l]) => `<button data-cf="${k}" class="${f === k ? 'active' : ''}">${l}</button>`).join('')}</div>
+    <select id="coll-set" title="Collection"><option value="">Toutes les collections</option><option value="classic" ${state.collSet === 'classic' ? 'selected' : ''}>Classiques</option>${sets.map(x => `<option value="${esc(x)}" ${state.collSet === x ? 'selected' : ''}>${esc(x)} (${SKINS.filter(s => s.set === x && profile.owned.includes(s.id)).length}/${SKINS.filter(s => s.set === x).length})</option>`).join('')}</select>
     <span class="grow"></span><span class="muted small">${ownedN}/${SKINS.length} possédés</span>
     <select id="coll-sort" title="Trier"><option value="">Ordre d'origine</option><option value="price" ${state.collSort === 'price' ? 'selected' : ''}>Prix croissant</option><option value="rarity" ${state.collSort === 'rarity' ? 'selected' : ''}>Rareté</option></select>`;
   $('coll-skins').innerHTML = list.map(s => {
@@ -896,7 +970,7 @@ function renderCollection() {
     const rar = RARITY[rarityOf(s)];
     const sw = `${swatchCss(s)}${s.glow ? `;box-shadow:0 0 14px -2px ${s.accent}` : ''}`;
     const label = eq ? '<div class="sp eq">ÉQUIPÉ</div>' : owned ? '<div class="sp owned">Possédé — cliquer pour équiper</div>' : s.level ? `<div class="sp lock">🔒 Niveau ${s.level}</div>` : `<div class="sp"><span class="gem small"></span>${s.price}</div>`;
-    return `<div class="skin-card ${s.id === sel ? 'selected' : ''}" data-s="${s.id}" style="border-top-color:${rar.color}"><div class="sw" style="${sw}"></div><div class="sn">${s.name}</div>${s.id !== 'default' ? `<div class="rar small" style="color:${rar.color}">${rar.name}${s.animated ? ' · animé' : ''}</div>` : ''}${label}</div>`;
+    return `<div class="skin-card ${s.id === sel ? 'selected' : ''}" data-s="${s.id}" style="border-top-color:${rar.color}"><div class="sw" style="${sw}"></div><div class="sn">${s.name}</div>${s.id !== 'default' ? `<div class="rar small" style="color:${rar.color}">${rar.name}${s.animated ? ' · animé' : ''}${s.set ? `<span class="muted"> · ${esc(s.set)}</span>` : ''}</div>` : ''}${label}</div>`;
   }).join('') || '<p class="muted">Aucun skin dans cette catégorie.</p>';
   $('coll-title').textContent = `${WEAPONS[state.collWeapon].name.toUpperCase()} · ${SKINS.find(s => s.id === sel).name}`;
   if (!previews.coll) previews.coll = new Preview($('coll-canvas'));
@@ -916,7 +990,7 @@ function swatchCss(s) {
   return url ? `background:url(${url}) center/cover` : `background:linear-gradient(135deg, ${s.body} 0 55%, ${s.accent} 55%)`;
 }
 $('coll-filters').onclick = e => { const b = e.target.closest('[data-cf]'); if (b) { state.collFilter = b.dataset.cf; renderCollection(); } };
-$('coll-filters').onchange = e => { if (e.target.id === 'coll-sort') { state.collSort = e.target.value; renderCollection(); } };
+$('coll-filters').onchange = e => { if (e.target.id === 'coll-sort') { state.collSort = e.target.value; renderCollection(); } if (e.target.id === 'coll-set') { state.collSet = e.target.value; renderCollection(); } };
 $('coll-weapons').onclick = e => { const b = e.target.closest('button'); if (b) { state.collWeapon = b.dataset.w; state.collSkin = null; renderCollection(); } };
 $('coll-skins').onclick = e => {
   const c = e.target.closest('.skin-card'); if (!c) return;
@@ -1000,7 +1074,6 @@ document.querySelectorAll('.nav button').forEach(b => b.onclick = () => { if (b.
 setAuthMode(session.token ? 'login' : 'register');
 $('auth-name').value = profile.name || '';
 SFX.setVolume(profile.settings.vol);
-renderCreateMaps();
 showTab('login');
 
 net.on('open', () => { $('conn-status').textContent = 'en ligne'; $('conn-status').classList.add('on'); });
