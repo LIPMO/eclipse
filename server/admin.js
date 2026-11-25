@@ -368,6 +368,8 @@ export class Admin {
     try { pending = JSON.parse(fs.readFileSync(path.join(this.ctx.dataDir, 'maj', 'demande'), 'utf8')); } catch { /* aucune demande */ }
     return { installed: !!status, status, pending, version: this.ctx.version };
   }
+  // exécute une action de lecture de l'administration sans passer par HTTP (utilisé par le connecteur MCP)
+  runAction(name) { const def = ACTIONS[name]; if (!def) throw new Error('action inconnue'); return def.fn.call(this, { body: {}, q: new URLSearchParams(), user: null, lvl: 3 }); }
   backupDir() { return path.join(this.ctx.dataDir, 'backups'); }
   writeBackup(tag = '') {
     const dir = this.backupDir();

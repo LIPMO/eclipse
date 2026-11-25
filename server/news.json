@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.22.2",
+    "date": "2026-11-25",
+    "title": "Connecteur Claude amélioré",
+    "items": [
+      "Le connecteur Claude peut maintenant donner un résumé du serveur en un seul appel, lancer le contrôle de santé et lister les alertes récentes (sans adresses IP)."
+    ]
+  },
+  {
     "version": "1.22.0",
     "date": "2026-11-25",
     "title": "Suivi du serveur",

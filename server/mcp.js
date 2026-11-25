@@ -12,6 +12,9 @@ const hash = t => crypto.createHash('sha256').update(String(t)).digest('hex');
 const noIp = s => String(s).replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, '[IP]').replace(/\b(?:[0-9a-f]{1,4}:){3,7}[0-9a-f]{1,4}\b/gi, '[IP]');
 
 const TOOLS = [
+  { name: 'resume', description: 'À utiliser en premier : résumé du serveur en un appel (version, état de santé, joueurs, alertes, mise à jour, signalements en attente).', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } },
+  { name: 'sante', description: 'Contrôles de santé du serveur : écriture des données, sauvegardes, mémoire, réseau, intégrité des fichiers, etc. Renvoie chaque point en ok, attention ou problème.', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } },
+  { name: 'alertes', description: 'Problèmes récents : erreurs serveur, alertes de sécurité (connexions refusées, adresses secrètes invalides), fichiers modifiés, ralentissements.', inputSchema: { type: 'object', properties: { nombre: { type: 'integer', minimum: 1, maximum: 100, description: 'Nombre d\'alertes par catégorie (20 par défaut)' } } }, annotations: { readOnlyHint: true } },
   { name: 'statut_serveur', description: 'Version du jeu en ligne, empreinte de build, temps depuis le démarrage, mémoire, joueurs connectés, parties en cours, comptes, alertes d\'intégrité et maintenance.', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } },
   { name: 'mise_a_jour', description: 'État de la mise à jour automatique : commit installé, dernier commit sur GitHub, dernière vérification, demande en attente.', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } },
   { name: 'joueurs_en_ligne', description: 'Liste des joueurs connectés (pseudo, compte ou invité, où ils sont). Aucune adresse IP.', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } },
@@ -75,7 +78,7 @@ export class Mcp {
       case 'initialize': {
         const asked = msg.params?.protocolVersion;
         return reply({ protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0], capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'eclipse-serveur', title: 'Serveur ECLIPSE', version: this.ctx.version },
-          instructions: 'Serveur du jeu ECLIPSE. Utilise statut_serveur pour la version et l\'état, mise_a_jour pour savoir si la dernière version de GitHub est installée, lancer_mise_a_jour pour l\'installer.' });
+          instructions: 'Serveur du jeu ECLIPSE. Commence par resume (vue d\'ensemble). Puis : sante et alertes pour les problèmes, mise_a_jour et lancer_mise_a_jour pour les versions, joueurs_en_ligne, salons, journaux, signalements, statistiques, nouveautes. Les adresses IP ne sont jamais affichées.' });
       }
       case 'ping': return reply({});
       case 'tools/list': return reply({ tools: TOOLS });
@@ -85,7 +88,7 @@ export class Mcp {
         this.st.calls = (this.st.calls || 0) + 1;
         try {
           const data = await this.call(name, args);
-          return reply({ content: [{ type: 'text', text: JSON.stringify(data, null, 2) }], structuredContent: data });
+          return reply({ content: [{ type: 'text', text: name === 'resume' ? this.summaryText(data) : JSON.stringify(data, null, 2) }], structuredContent: data });
         } catch (e) {
           return reply({ content: [{ type: 'text', text: e.message || String(e) }], isError: true });
         }
@@ -96,9 +99,46 @@ export class Mcp {
     }
   }
 
+  // résumé en français, lisible directement dans la conversation
+  summaryText(d) {
+    const l = [`ECLIPSE ${d.version} — santé : ${d.sante === 'ok' ? 'OK' : d.sante === 'warn' ? 'attention' : 'problème'}`,
+      `Joueurs : ${d.joueurs_connectes} connecté(s), ${d.en_partie} en partie, ${d.parties_en_cours} partie(s) en cours`,
+      `Mise à jour : ${d.a_jour === true ? 'à jour' : d.a_jour === false ? 'pas à jour' : 'état inconnu'}`,
+      `Signalements en attente : ${d.signalements_en_attente}`];
+    l.push(d.besoin_d_action ? 'À regarder :\n- ' + d.a_surveiller.join('\n- ') : 'Rien à signaler.');
+    return l.join('\n');
+  }
+
   async call(name, a) {
     const { admin, accounts, clients, rooms, social } = this.ctx;
     const online = admin.onlineClients();
+    if (name === 'sante') {
+      const r = admin.runAction('health');
+      return { global: r.overall, points: r.checks.map(c => ({ point: c.name, etat: c.state, detail: c.detail || null })) };
+    }
+    if (name === 'alertes') {
+      const n = Math.max(1, Math.min(100, parseInt(a.nombre, 10) || 20));
+      const errs = (admin.errors || []).slice(-n).reverse().map(e => ({ le: new Date(e.t).toISOString(), texte: noIp(e.text) }));
+      const secu = admin.logs.filter(l => l.type === 'securite').slice(-n).reverse().map(l => ({ le: new Date(l.t).toISOString(), texte: noIp(l.text) }));
+      return { erreurs_serveur: errs, securite: secu, integrite: this.ctx.integrityAlerts.slice(0, n), ralentissements: admin.slowSamples >= 3 ? 'oui, le serveur est lent en ce moment' : 'non' };
+    }
+    if (name === 'resume') {
+      const h = admin.runAction('health'), up = admin.updInfo(), s = up.status || {};
+      const alertes = (admin.errors || []).length + this.ctx.integrityAlerts.length;
+      const secu = admin.logs.filter(l => l.type === 'securite' && Date.now() - l.t < 86400000).length;
+      const enLigne = admin.onlineClients().length;
+      const attention = [];
+      if (h.overall !== 'ok') attention.push(...h.checks.filter(c => c.state !== 'ok').map(c => `${c.name} : ${c.detail || c.state}`));
+      if (this.ctx.integrityAlerts.length) attention.push(`${this.ctx.integrityAlerts.length} alerte(s) d'intégrité`);
+      if (!up.installed) attention.push('service de mise à jour à distance non installé');
+      else if (s.deployed && s.latest && s.deployed !== s.latest) attention.push('une version plus récente existe sur GitHub');
+      if (secu) attention.push(`${secu} événement(s) de sécurité sur 24 h`);
+      return {
+        version: this.ctx.version, build: this.ctx.build, sante: h.overall, joueurs_connectes: enLigne, en_partie: admin.inGameCount(), parties_en_cours: [...rooms.values()].filter(r => r.match).length,
+        a_jour: s.deployed && s.latest ? s.deployed === s.latest : null, signalements_en_attente: admin.state.reports.filter(r => !r.status || r.status === 'open' || r.status === 'pending').length,
+        alertes_recentes: alertes, securite_24h: secu, a_surveiller: attention, besoin_d_action: attention.length > 0,
+      };
+    }
     if (name === 'statut_serveur') {
       const mem = process.memoryUsage(), users = Object.values(accounts.data.users);
       return {
