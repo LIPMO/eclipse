@@ -1092,7 +1092,9 @@ server.on('error', err => {
 });
 server.listen(PORT, HOST, () => {
   console.log(`ECLIPSE — serveur prêt sur http://localhost:${PORT}` + (HOST === '0.0.0.0' ? '' : ` (écoute sur ${HOST} uniquement)`));
-  const lan = Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => `http://${i.address}:${PORT}`);
+  // la liste des adresses du réseau local peut être interdite par la protection systemd (erreur 97) : simple information, on ignore
+  let ifs = {}; try { ifs = os.networkInterfaces(); } catch { /* service protégé */ }
+  const lan = Object.values(ifs).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => `http://${i.address}:${PORT}`);
   if (lan.length && HOST === '0.0.0.0' && !process.env.DATA_DIR?.startsWith('/data')) console.log(`Pour tes amis sur le même réseau : ${lan.join('  ')}`);
 });
 
