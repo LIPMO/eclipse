@@ -1213,8 +1213,20 @@ export class Game {
     this.setViewmodel(w[0]);
   }
 
+  // fin de recharge (prédiction côté joueur) : remplit le chargeur une seule fois
+  finishReload(now) {
+    const L = this.local;
+    if (!L.reloadEnd || now < L.reloadEnd) return;
+    const def = WEAPONS[this.curWeaponId()];
+    if (this.reloadSlot === L.slot && def?.mag) { const take = Math.min(def.mag - L.mag, L.reserve); L.mag += take; L.reserve -= take; }
+    L.reloadEnd = 0;
+    L.reloadDoneAt = now; // le serveur peut encore annoncer « en recharge » quelques instants : on ne le croit pas
+    L.lastShot = now - 0.2;
+  }
+
   reload() {
     const L = this.local, now = performance.now() / 1000;
+    this.finishReload(now); // une recharge terminée mais pas encore traitée est d'abord appliquée
     const def = WEAPONS[this.curWeaponId()];
     if (!def.mag || L.reloadEnd > now || L.mag >= def.mag || L.reserve <= 0 || !this.me?.al) return;
     L.reloadEnd = now + def.reload;
@@ -1816,6 +1828,9 @@ export class Game {
       L.stepT -= dt;
       if (L.stepT <= 0) { SFX.playStep(null, true); L.stepT = 0.36; }
     }
+    // fin de rechargement : traitée AVANT le tir et la recharge automatique, sinon celle-ci voyait
+    // « chargeur vide, pas de recharge en cours » et relançait une recharge qui effaçait la précédente (boucle)
+    this.finishReload(now);
     // tir
     if (H.has('fire')) this.tryFire(now);
     else L.triggerHeld = false;
@@ -1827,13 +1842,6 @@ export class Game {
       L.burst = Math.max(0, L.burst - dt * 20);
     }
     if (L.switchT > 0) L.switchT -= dt;
-    // fin de rechargement (prédiction)
-    if (L.reloadEnd && now >= L.reloadEnd) {
-      if (this.reloadSlot === L.slot && def.mag) { const take = Math.min(def.mag - L.mag, L.reserve); L.mag += take; L.reserve -= take; }
-      L.reloadEnd = 0;
-      L.reloadDoneAt = now; // le serveur peut encore annoncer « en recharge » quelques instants : on ne le croit pas
-      L.lastShot = now - 0.2;
-    }
     // envoi des entrées (30 Hz)
     if (now - this.lastInput > 1 / 30) {
       this.lastInput = now;

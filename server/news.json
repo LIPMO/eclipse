@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.22.5",
+    "date": "2026-11-25",
+    "title": "Recharge vraiment corrigée",
+    "items": [
+      "Corrigé : la recharge pouvait se relancer sans fin quand le chargeur était vide (le chargeur restait à 0 et l'animation se répétait). La fin de la recharge est maintenant toujours appliquée avant toute nouvelle recharge."
+    ]
+  },
+  {
     "version": "1.22.4",
     "date": "2026-11-25",
     "title": "Correction de la recharge",
