@@ -1139,6 +1139,33 @@ $('auth-name').value = profile.name || '';
 SFX.setVolume(profile.settings.vol);
 showTab('login');
 
+// ======================= ANCIENNE VERSION EN CACHE =======================
+// Le serveur envoie l'empreinte de la version qu'il sert. Si la page affichée est différente (cache du navigateur,
+// onglet ouvert avant une mise à jour), on vide le cache et on recharge une seule fois — la connexion et les réglages sont gardés.
+const PAGE_BUILD = document.querySelector('meta[name="eclipse-build"]')?.content || 'dev';
+net.on('build', async m => {
+  if (!m.build || PAGE_BUILD === 'dev' || m.build === PAGE_BUILD) { try { sessionStorage.removeItem('eclipse_maj'); } catch { /* */ } return; }
+  let tried = null; try { tried = sessionStorage.getItem('eclipse_maj'); } catch { /* */ }
+  if (tried === m.build) return; // déjà essayé pour cette version : pas de boucle de rechargement
+  try { sessionStorage.setItem('eclipse_maj', m.build); } catch { /* */ }
+  toast('Nouvelle version du jeu : mise à jour…', 4000);
+  try { await fetch('/vider-cache', { cache: 'no-store' }); } catch { /* */ }
+  try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch { /* */ }
+  try { if (navigator.serviceWorker) for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch { /* */ }
+  location.replace(location.pathname + '?v=' + encodeURIComponent(m.build) + location.hash);
+});
+// nettoie l'adresse après un rechargement de mise à jour
+if (/[?&]v=/.test(location.search)) { try { history.replaceState(null, '', location.pathname + location.hash); } catch { /* */ } }
+
+// ======================= BANDEAU COOKIES =======================
+(() => {
+  let seen = false; try { seen = localStorage.getItem('eclipse_cookies_ok') === '1'; } catch { /* */ }
+  const bar = $('cookie-bar'); if (!bar || seen) return;
+  bar.hidden = false;
+  $('cookie-ok').onclick = () => { bar.hidden = true; try { localStorage.setItem('eclipse_cookies_ok', '1'); } catch { /* */ } };
+  net.on('matchStart', () => { bar.hidden = true; }); // jamais par-dessus la partie
+})();
+
 net.on('open', () => { $('conn-status').textContent = 'en ligne'; $('conn-status').classList.add('on'); });
 net.on('close', () => {
   $('conn-status').textContent = 'hors ligne'; $('conn-status').classList.remove('on');

@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.20.1",
+    "date": "2026-11-25",
+    "title": "Mise à jour automatique de la page",
+    "items": [
+      "Si ton navigateur affiche une ancienne version du jeu, elle vide son cache et se recharge toute seule (une seule fois, ta connexion et tes réglages sont gardés).",
+      "Bandeau d'information sur les cookies : ECLIPSE n'utilise aucun cookie publicitaire ni de mesure d'audience."
+    ]
+  },
+  {
     "version": "1.20.0",
     "date": "2026-11-25",
     "title": "Pages de présentation du jeu",

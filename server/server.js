@@ -81,6 +81,20 @@ function loadIntegrity() {
 }
 loadIntegrity();
 
+// ---------- empreinte de la version servie ----------
+// Calculée sur tous les fichiers du jeu (public + shared) : si un joueur a encore une ancienne page en cache
+// ou un onglet ouvert d'avant la mise à jour, son empreinte diffère et la page vide son cache puis se recharge.
+const BUILD = (() => {
+  const scan = d => { try { return fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap(e => e.isDirectory() ? scan(d + '/' + e.name) : [d + '/' + e.name]); } catch { return []; } };
+  const h = crypto.createHash('sha256');
+  for (const rel of [...scan('public'), ...scan('shared')].sort()) {
+    const data = VERIFIED ? VERIFIED.get(rel) : (() => { try { return fs.readFileSync(path.join(ROOT, rel)); } catch { return null; } })();
+    if (data) h.update(rel + '\0').update(data);
+  }
+  return PKG_VERSION + '-' + h.digest('hex').slice(0, 10);
+})();
+const withBuild = data => Buffer.from(data.toString('utf8').replace('<meta name="eclipse-build" content="dev">', `<meta name="eclipse-build" content="${BUILD}">`).replace(/(src|href)="(\/js\/main\.js|\/css\/style\.css|\/css\/fonts\.css)"/g, `$1="$2?v=${BUILD}"`), 'utf8');
+
 const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const server = http.createServer((req, res) => {
@@ -92,6 +106,8 @@ const server = http.createServer((req, res) => {
   if (!(req.method === 'GET' || req.method === 'HEAD' || (req.method === 'POST' && isAdminApi))) { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
   if (!isAdminApi && !httpLimit.take(Admin.ipOf(req))) { res.writeHead(429, { 'Retry-After': '10' }); res.end('Trop de requêtes'); return; }
   if (req.url.startsWith('/admin/api/')) { admin.handle(req, res).catch(e => { console.error('Erreur admin', e); if (!res.headersSent) { res.writeHead(500); res.end('{}'); } }); return; }
+  // vide le cache HTTP du navigateur (demandé par la page quand elle détecte une ancienne version) ; garde la connexion et les réglages
+  if (req.url === '/vider-cache') { res.writeHead(204, { 'Clear-Site-Data': '"cache"', 'Cache-Control': 'no-store' }); res.end(); return; }
   if (req.url === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); return; }
   if (req.url === '/api/status' || req.url === '/api/news') {
     // lu par le launcher : CORS ouvert, aucune donnée personnelle
@@ -127,13 +143,13 @@ const server = http.createServer((req, res) => {
       // mode protégé : seuls les fichiers vérifiés au démarrage (empreinte conforme au manifeste) sont servis, depuis la mémoire
       const data = VERIFIED.get(path.relative(ROOT, file).split(path.sep).join('/'));
       if (!data) { notFound(req, res); return; }
-      res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : data);
+      res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : (url === '/index.html' ? withBuild(data) : data));
       return;
     }
     fs.readFile(file, (err, data) => {
       if (err) { notFound(req, res); return; }
       res.writeHead(200, headers);
-      res.end(data);
+      res.end(url === '/index.html' ? withBuild(data) : data);
     });
     return;
   }
@@ -973,6 +989,7 @@ wss.on('connection', (ws, req) => {
   const id = 'p' + (nextId++);
   const c = { id, ws, name: null, roomId: null, skins: {}, alive: true, missed: 0, account: null, ip: Admin.ipOf(req), country: Admin.countryOf(req), since: Date.now(), ping: 0 };
   clients.set(id, c);
+  send(id, { type: 'build', build: BUILD });
   connPerIp.set(c.ip, (connPerIp.get(c.ip) || 0) + 1);
   const msgLimit = new Bucket(90, 180); // ~30 entrées/s + tirs + actions
   let dropped = 0;
