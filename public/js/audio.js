@@ -166,12 +166,6 @@ export function playQuack(pos) {
   const g = ctx.createGain(); g.gain.setValueAtTime(0.32, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
   osc.connect(f); f.connect(g); g.connect(o); osc.start(t); osc.stop(t + 0.22);
 }
-// moment réalisé (1.15) : arpège montant et scintillement
-export function playMoment() {
-  if (!ctx) return; const t = ctx.currentTime;
-  [784, 988, 1175, 1568].forEach((f, i) => tone(C('ui'), t + i * 0.06, 0.22, f, f, 'triangle', 0.14));
-  noise(C('ui'), t + 0.22, 0.35, 6000, 0.7, 'highpass', 0.08);
-}
 export function playEmpty() { if (!ctx) return; const t = ctx.currentTime; noise(C('weapons'), t, 0.025, 5000, 6, 'bandpass', 0.3); noise(C('weapons'), t + 0.05, 0.02, 3500, 6, 'bandpass', 0.2); }
 export function playSwitch() { if (!ctx) return; const t = ctx.currentTime; noise(C('weapons'), t, 0.04, 2200, 3, 'bandpass', 0.22); noise(C('weapons'), t + 0.08, 0.05, 1400, 3, 'bandpass', 0.18); }
 export function playJump(self = true) { if (!ctx) return; noise(C('steps'), ctx.currentTime, 0.08, 400, 1, 'lowpass', self ? 0.18 : 0.1); }

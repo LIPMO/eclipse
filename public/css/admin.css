@@ -180,5 +180,5 @@ table.perms td:not(:first-child), table.perms th:not(:first-child) { text-align:
 .ty-client { color: #ff9a3d; }
 table.perms { width: 100%; } table.perms th:not(:first-child), table.perms td:not(:first-child) { width: 64px; }
 
-/* 1.15 : moments */
+/* 1.15 */
 .gold { color: #ffcf5a; }

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Game } from './game.js';
 import { profile, save, session, setToken, applyServerProfile } from './store.js';
-import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, MOMENTS } from '/shared/data.js';
+import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { masteryOf } from '/shared/progress.js';
 import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
@@ -207,7 +207,7 @@ function renderRooms() {
   const rows = state.rooms.slice().sort((a, b) => favRooms.has(b.name) - favRooms.has(a.name));
   list.innerHTML = rows.map(r => `<div class="room-item ${favRooms.has(r.name) ? 'fav' : ''}" data-id="${r.id}">
     <button class="fav-star ${favRooms.has(r.name) ? 'on' : ''}" data-fav="${esc(r.name)}" title="${favRooms.has(r.name) ? 'Retirer des favoris' : 'Ajouter aux favoris'}">★</button>
-    <div><div class="rn">${r.locked ? '<span title="Protégé par un mot de passe">🔒</span> ' : ''}${esc(r.name)}</div><div class="muted">${esc(MAP_INFO[r.mapId]?.name || r.mapId)} · ${r.humans} joueur(s)</div></div>
+    <div><div class="rn">${r.locked ? '<span title="Protégé par un mot de passe">🔒</span> ' : ''}${r.custom ? '<span title="Partie perso (règles modifiées)">🛠</span> ' : ''}${esc(r.name)}</div><div class="muted">${esc(MAP_INFO[r.mapId]?.name || r.mapId)} · ${r.humans} joueur(s)</div></div>
     <span class="pill ${r.mode === 'duel' ? 'duel' : ''}">${MODE_LABEL[r.mode]}</span>
     <span class="pill ${r.state === 'playing' ? 'playing' : ''}">${r.state === 'playing' ? 'EN JEU' : 'LOBBY'}</span>
     <span>${r.players}/${r.max}</span></div>`).join('');
@@ -298,7 +298,7 @@ function renderRoom() {
   if (r.code) $('room-code').innerHTML = `SALON PRIVÉ · CODE <b>${esc(r.code)}</b> <button class="btn ghost small" id="copy-code">COPIER</button>`;
   if ($('copy-code')) $('copy-code').onclick = () => { navigator.clipboard?.writeText(r.code).then(() => toast('Code copié !'), () => toast(`Code : ${r.code}`)); };
   $('room-invite').style.display = state.guest ? 'none' : '';
-  $('room-sub').textContent = `${MODE_LABEL[r.mode]} · ${MAP_INFO[r.mapId].name} · ${r.mode === 'gungame' ? `${r.target} armes` : r.mode === 'lives' ? `${r.target} vie(s)` : isFfa(r.mode) ? `${r.target} éliminations` : `premier à ${r.target} manches`} · bots ${DIFF_LABEL[r.difficulty]}${r.state === 'playing' ? ' · EN JEU' : ''}`;
+  $('room-sub').textContent = `${r.mode === 'assault' && r.max !== 10 ? `ASSAUT ${r.max / 2}v${r.max / 2}` : MODE_LABEL[r.mode]} · ${MAP_INFO[r.mapId].name} · ${r.mode === 'gungame' ? `${r.target} armes` : r.mode === 'lives' ? `${r.target} vie(s)` : isFfa(r.mode) ? `${r.target} éliminations` : `premier à ${r.target} manches`} · bots ${DIFF_LABEL[r.difficulty]}${r.state === 'playing' ? ' · EN JEU' : ''}`;
   document.querySelector('.room-grid').classList.toggle('ffa', isFfa(r.mode));
   $('team-alpha').querySelector('h3').textContent = isFfa(r.mode) ? 'JOUEURS' : r.mode === 'duel' ? 'DUELLISTE 1' : 'ÉQUIPE ALPHA';
   $('team-beta').querySelector('h3').textContent = r.mode === 'duel' ? 'DUELLISTE 2' : 'ÉQUIPE OMÉGA';
@@ -336,6 +336,13 @@ function renderRoom() {
   if (!TARGETS[r.mode].includes(r.target)) $('rs-target').insertAdjacentHTML('beforeend', `<option value="${r.target}">${r.target}</option>`);
   $('rs-target').value = r.target;
   $('rs-diff').value = r.difficulty;
+  // parties perso (1.16) : taille du salon, règles, résumé
+  $('rs-size').innerHTML = (r.sizes || [r.max]).map(n => `<option value="${n}">${cgSizeLabel(r.mode, n)}</option>`).join('');
+  $('rs-size').value = r.max;
+  $('rs-rules').innerHTML = Object.entries(CUSTOM_RULES).filter(([, x]) => !x.modes || x.modes.includes(r.mode)).map(([k, x]) => `<label>${esc(x.label)}<select data-rrule="${k}">${x.opts.map(([v, l]) => `<option value="${v}" ${String(r.opts?.[k] ?? x.def) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`).join('');
+  const rchips = customSummary(r.opts, r.mode);
+  $('room-rules').innerHTML = rchips.length ? `<span>🛠 PARTIE PERSO</span>${rchips.map(x => `<span>${esc(x)}</span>`).join('')}` : '';
+  $('rs-save-cg').style.display = host && !state.guest ? '' : 'none';
   $('rs-private').checked = !!r.private;
   const cv = $('room-map-preview').querySelector('canvas');
   drawMapPreview(cv, parseMap(r.mapId));
@@ -368,6 +375,13 @@ document.querySelectorAll('.team-panel .members').forEach(el => el.onclick = e =
 });
 $('room-invite').onclick = () => { net.send('friends'); setTimeout(openInvitePicker, 150); };
 $('rs-private').onchange = e => net.send('roomSettings', { private: e.target.checked });
+$('rs-size').onchange = e => net.send('roomSettings', { size: +e.target.value });
+$('rs-rules').onchange = e => { const el = e.target.closest('[data-rrule]'); if (!el) return; const x = CUSTOM_RULES[el.dataset.rrule]; net.send('roomSettings', { opts: { [el.dataset.rrule]: typeof x.def === 'number' ? +el.value : el.value } }); };
+$('rs-save-cg').onclick = () => {
+  const r = state.room; if (!r) return;
+  const name = prompt('Nom de la partie perso :', r.name); if (name === null) return;
+  net.send('cgSave', { preset: { name: name.trim() || r.name, mode: r.mode, map: r.opts?.randomMap ? 'random' : r.mapId, target: r.target, diff: r.difficulty, size: r.max, bots: r.members.some(m => m.isBot), priv: !!r.private, opts: r.opts } });
+};
 $('room-leave').onclick = () => net.send('leaveRoom');
 $('room-ready').onclick = () => { const me = state.room?.members.find(m => m.id === state.myId); net.send('setReady', { ready: !me?.ready }); };
 $('room-start').onclick = () => { SFX.initAudio(); net.send('start'); };
@@ -411,8 +425,7 @@ function renderPoll() {
   }).join('')}<div class="muted small">${voted ? `${p.total} vote(s) · tu peux changer ton vote en cliquant` : state.guest ? 'Crée un compte pour voter.' : 'Clique sur ta réponse.'}</div></div>`;
   el.onclick = e => { const b = e.target.closest('[data-poll], .poll-res'); if (!b || state.guest) return; const i = b.dataset.poll !== undefined ? +b.dataset.poll : [...el.querySelectorAll('.poll-res')].indexOf(b); if (i >= 0) net.send('pollVote', { id: p.id, idx: i }); };
 }
-// amis : moment rare (ACE, remontada, domination) et montée de niveau
-net.on('friendMoment', m => notify({ kind: 'AMI', type: 'friend', group: 'friendMoment', text: `🎉 ${m.name} vient de réaliser : ${m.k === 'ace' ? 'ACE' : MOMENTS[m.k]?.name || m.k}` }));
+// amis : montée de niveau
 net.on('friendLevel', m => notify({ kind: 'AMI', type: 'friend', group: 'friendLevel', text: `⬆ ${m.name} est passé niveau ${m.level} !` }));
 net.on('specEnd', m => { if (state.game?.spec) { state.game.destroy(); exitGame(); } toast(m.text || 'Observation terminée.', 4000); });
 function exitGame() {
@@ -640,7 +653,8 @@ function renderLobby() {
 // écran « choisis ta partie »
 function renderLobbyModes(cfg, edit) {
   const size = lobbyParty()?.members.length || 1;
-  $('lb-mode').innerHTML = LB_MODES.map(([v, l, d, sub, ic, c]) => `<button data-v="${v}" class="lb-mode-tile ${cfg.mode === v ? 'active' : ''} ${v === 'duel' && size > 2 ? 'off' : ''}" style="--bg: radial-gradient(ellipse at 30% 20%, ${c}66, transparent 70%), linear-gradient(160deg, ${c}33, #0d1020)"><span class="ic">${ic}</span><b>${l}</b><span>${d}</span><small>${sub}</small></button>`).join('');
+  $('lb-mode').innerHTML = LB_MODES.map(([v, l, d, sub, ic, c]) => `<button data-v="${v}" class="lb-mode-tile ${cfg.mode === v ? 'active' : ''} ${v === 'duel' && size > 2 ? 'off' : ''}" style="--bg: radial-gradient(ellipse at 30% 20%, ${c}66, transparent 70%), linear-gradient(160deg, ${c}33, #0d1020)"><span class="ic">${ic}</span><b>${l}</b><span>${d}</span><small>${sub}</small></button>`).join('')
+    + `<button data-cgopen="1" class="lb-mode-tile cg-tile"><span class="ic">🛠</span><b>PARTIE PERSO</b><span>Tes règles, tes amis</span><small>Armes, vitesse, dégâts, durée, taille…</small></button>`;
   for (const id of ['lb-mode', 'lb-fill', 'lb-diff', 'lb-map']) $(id).classList.toggle('ro', !edit);
   $('lb-fill').querySelectorAll('button').forEach(b => b.classList.toggle('active', (b.dataset.v === '1') === !!cfg.fill));
   $('lb-diff').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === cfg.diff));
@@ -679,7 +693,7 @@ const lobbyModes = show => $('lb-modes').classList.toggle('hidden', !show);
 $('lb-mode-card').onclick = () => { if (lobbyCanEdit()) lobbyModes(true); else toast(`Partie choisie par ${lobbyParty()?.leader} (chef du groupe).`); };
 $('lb-modes-x').onclick = $('lb-modes-ok').onclick = () => lobbyModes(false);
 $('lb-modes').addEventListener('keydown', e => { if (e.key === 'Escape') lobbyModes(false); });
-$('lb-mode').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ mode: b.dataset.v }); };
+$('lb-mode').onclick = e => { if (e.target.closest('[data-cgopen]')) { openCustom('list'); return; } const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ mode: b.dataset.v }); };
 $('lb-fill').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ fill: b.dataset.v === '1' }); };
 $('lb-diff').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ diff: b.dataset.v }); };
 $('lb-map').onclick = e => { const b = e.target.closest('[data-v]'); if (b) lobbySetCfg({ map: b.dataset.v }); };
@@ -718,6 +732,119 @@ net.on('chat', m => {
   const d = document.createElement('div');
   if (m.from === 'GROUPE') { d.className = 'sys'; d.textContent = m.text; } else d.innerHTML = `<b>${esc(m.from)}</b> : ${esc(emojify(m.text))}`;
   log.appendChild(d); while (log.children.length > 30) log.firstChild.remove(); log.scrollTop = log.scrollHeight;
+});
+
+// ======================= PARTIES PERSONNALISÉES (1.16) =======================
+// Modèles prêts à jouer, parties enregistrées sur le compte et éditeur de règles.
+// JOUER crée un salon avec ces règles : le groupe suit le chef, on ajuste puis on lance ; après la partie, tout le monde revient au salon.
+const CG_TEMPLATES = [
+  { id: 't-snipe', name: 'Snipers seulement', mode: 'ffa', map: 'random', target: 15, size: 8, opts: { weapons: 'snipers' } },
+  { id: 't-knife', name: 'Couteaux et vitesse', mode: 'ffa', map: 'random', target: 10, size: 8, opts: { weapons: 'knife', speed: 1.25 } },
+  { id: 't-head', name: 'Têtes uniquement', mode: 'ffa', map: 'random', target: 15, size: 8, opts: { headOnly: true } },
+  { id: 't-tank', name: 'Tanks 2v2', mode: 'assault', map: 'random', target: 5, size: 4, opts: { dmg: 0.33, money: 9000 } },
+  { id: 't-crazy', name: 'Course folle', mode: 'ffa', map: 'random', target: 20, size: 8, opts: { speed: 1.5, lowGrav: true, bigHead: true } },
+  { id: 't-pistol', name: 'Pistolets 3v3', mode: 'assault', map: 'random', target: 5, size: 6, opts: { weapons: 'pistols', roundTime: 60 } },
+  { id: 't-pump', name: 'Duel au fusil à pompe', mode: 'duel', map: 'random', target: 5, size: 2, opts: { weapons: 'shotguns' } },
+  { id: 't-gun', name: 'Gun Game éclair', mode: 'gungame', map: 'random', target: 8, size: 8, opts: { speed: 1.25, respawn: 1, timeLimit: 300 } },
+];
+const CG_COLORS = { ffa: '#8b5cff', gungame: '#ff8a3d', assault: '#19e3c4', lives: '#ff4f6d', duel: '#ffcf5a' };
+const CG_SIZES = mode => mode === 'duel' ? [2] : mode === 'assault' ? [2, 4, 6, 8, 10] : [2, 3, 4, 5, 6, 7, 8];
+const cgSizeLabel = (mode, n) => mode === 'assault' ? `${n / 2}v${n / 2}` : mode === 'duel' ? '1v1' : `${n} joueurs`;
+const cgTargetLabel = (mode, t) => mode === 'gungame' ? `${t} armes` : mode === 'lives' ? `${t} vie(s) par joueur` : isFfa(mode) ? `${t} éliminations` : `Premier à ${t} manches`;
+const cg = { view: 'list', edit: null };
+const cgMine = () => profile.progress?.customGames || [];
+function cgDefaults(mode = 'ffa') { return { id: null, name: 'Ma partie perso', mode, map: 'random', target: TARGETS[mode].includes(25) ? 25 : TARGETS[mode][Math.floor(TARGETS[mode].length / 2)], diff: 'normal', size: CG_SIZES(mode).slice(-1)[0], bots: true, priv: true, opts: cleanCustomOpts({}) }; }
+function openCustom(view = 'list') { lobbyModes(false); cg.view = view; $('cg').classList.remove('hidden'); renderCustom(); }
+function closeCustom() { $('cg').classList.add('hidden'); }
+function cgCard(g, own) {
+  const chips = customSummary(g.opts, g.mode);
+  const map = g.map && g.map !== 'random' ? (MAP_INFO[g.map]?.name || g.map) : 'Carte aléatoire';
+  const c = CG_COLORS[g.mode] || '#8b5cff';
+  return `<div class="cg-card" style="--cc:${c};--cc2:${c}33"><h4>${esc(g.name)}</h4><div class="cg-meta">${{ assault: 'ASSAUT', duel: 'DUEL' }[g.mode] || MODE_LABEL[g.mode]} · ${esc(map)} · ${cgSizeLabel(g.mode, g.size || 8)} · ${esc(cgTargetLabel(g.mode, g.target))}</div>
+    <div class="cg-chips">${chips.length ? chips.map(x => `<span>${esc(x)}</span>`).join('') : '<span>Règles normales</span>'}</div>
+    <div class="cg-acts"><button class="btn primary" data-cg="play" data-id="${g.id}">JOUER</button><button class="btn ghost" data-cg="edit" data-id="${g.id}">${own ? 'MODIFIER' : 'PERSONNALISER'}</button>${own ? `<button class="btn ghost x" data-cg="del" data-id="${g.id}" title="Supprimer">✕</button>` : ''}</div></div>`;
+}
+function cgFind(id) { return cgMine().find(g => g.id === id) || CG_TEMPLATES.find(g => g.id === id); }
+function renderCustom() {
+  const body = $('cg-body'); if (!body) return;
+  const p = lobbyParty(), member = p && !p.lead;
+  if (cg.view === 'list') {
+    $('cg-title').textContent = 'PARTIES PERSONNALISÉES';
+    const mine = cgMine();
+    body.innerHTML = `<p class="cg-intro">Choisis tes règles (armes, vitesse, dégâts, durée…), joue avec tes amis et rejoue autant que tu veux : après chaque partie, tout le monde revient au salon.${member ? ` <b>Seul ${esc(p.leader)}, le chef du groupe, peut lancer une partie perso.</b>` : ''}</p>
+      <div class="cg-sec">MES PARTIES PERSO${state.guest ? '' : ` (${mine.length}/12)`}</div>
+      <div class="cg-grid"><button class="cg-new" data-cg="new"><span><b>＋</b>CRÉER UNE PARTIE PERSO</span></button>${mine.map(g => cgCard(g, true)).join('')}</div>
+      ${state.guest ? '<p class="muted small">Crée un compte pour enregistrer tes parties perso (tu peux quand même en jouer).</p>' : ''}
+      <div class="cg-sec">MODÈLES PRÊTS À JOUER</div>
+      <div class="cg-grid">${CG_TEMPLATES.map(g => cgCard(g, false)).join('')}</div>`;
+    return;
+  }
+  // éditeur
+  const g = cg.edit;
+  $('cg-title').textContent = g.id && cgMine().some(x => x.id === g.id) ? 'MODIFIER LA PARTIE PERSO' : 'NOUVELLE PARTIE PERSO';
+  const maps = mapsForMode(g.mode);
+  const rules = Object.entries(CUSTOM_RULES).filter(([, r]) => !r.modes || r.modes.includes(g.mode));
+  body.innerHTML = `<div class="cg-form">
+    <label class="full">Nom<input id="cg-name" maxlength="24" value="${esc(g.name)}"></label>
+    <div class="full"><div class="lb-opt-k">MODE</div><div class="seg" id="cg-mode">${LB_MODES.map(([v, l]) => `<button data-v="${v}" class="${g.mode === v ? 'active' : ''}">${l}</button>`).join('')}</div></div>
+    <label>Carte<select id="cg-map"><option value="random">🎲 Aléatoire</option>${maps.map(id => `<option value="${id}" ${g.map === id ? 'selected' : ''}>${esc(MAP_INFO[id]?.name || id)}</option>`).join('')}</select></label>
+    <label>Objectif<select id="cg-target">${[...new Set([...TARGETS[g.mode], g.target])].sort((a, b) => a - b).map(t => `<option value="${t}" ${g.target === t ? 'selected' : ''}>${esc(cgTargetLabel(g.mode, t))}</option>`).join('')}</select></label>
+    <label>Taille<select id="cg-size">${CG_SIZES(g.mode).map(n => `<option value="${n}" ${g.size === n ? 'selected' : ''}>${cgSizeLabel(g.mode, n)}</option>`).join('')}</select></label>
+    <label>Niveau des bots<select id="cg-diff">${Object.entries(LB_DIFF).map(([v, l]) => `<option value="${v}" ${g.diff === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    ${rules.map(([k, r]) => `<label>${esc(r.label)}<select data-rule="${k}">${r.opts.map(([v, l]) => `<option value="${v}" ${String(g.opts[k]) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`).join('')}
+    <div class="full"><div class="lb-opt-k">OPTIONS</div><div class="cg-flags">
+      <label class="check"><input type="checkbox" id="cg-bots" ${g.bots ? 'checked' : ''}> Compléter avec des bots</label>
+      <label class="check"><input type="checkbox" id="cg-priv" ${g.priv ? 'checked' : ''}> Salon privé (sur invitation ou code)</label>
+      ${CUSTOM_FLAGS.filter(([k]) => !(k === 'friendlyFire' && isFfa(g.mode))).map(([k, l]) => `<label class="check"><input type="checkbox" data-flag="${k}" ${g.opts[k] ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
+    </div></div>
+    <div class="full"><div class="lb-opt-k">RÉSUMÉ</div><div class="cg-chips" id="cg-sum"></div></div>
+  </div>
+  <div class="cg-foot"><button class="btn ghost" data-cg="back">RETOUR</button>${state.guest ? '' : '<button class="btn ghost" data-cg="save">💾 ENREGISTRER</button>'}<button class="btn primary" data-cg="playEdit">JOUER</button></div>`;
+  cgSummary();
+}
+function cgSummary() { const el = $('cg-sum'); if (!el) return; const s = customSummary(cg.edit.opts, cg.edit.mode); el.innerHTML = s.length ? s.map(x => `<span>${esc(x)}</span>`).join('') : '<span>Règles normales</span>'; }
+// lit le formulaire de l'éditeur
+function cgRead() {
+  const g = cg.edit, body = $('cg-body');
+  g.name = $('cg-name').value.trim().slice(0, 24) || 'Ma partie perso';
+  g.map = $('cg-map').value; g.target = +$('cg-target').value; g.size = +$('cg-size').value; g.diff = $('cg-diff').value;
+  g.bots = $('cg-bots').checked; g.priv = $('cg-priv').checked;
+  body.querySelectorAll('[data-rule]').forEach(el => { const r = CUSTOM_RULES[el.dataset.rule]; g.opts[el.dataset.rule] = typeof r.def === 'number' ? +el.value : el.value; });
+  body.querySelectorAll('[data-flag]').forEach(el => { g.opts[el.dataset.flag] = el.checked; });
+  return g;
+}
+function cgPlay(g) {
+  const p = lobbyParty();
+  if (p && !p.lead) { toast(`Seul ${p.leader}, le chef du groupe, peut lancer une partie perso.`); return; }
+  SFX.initAudio();
+  net.send('customPlay', { preset: g });
+  closeCustom();
+}
+$('cg-x').onclick = closeCustom;
+$('lb-custom').onclick = () => openCustom('list');
+$('cg-body').addEventListener('keydown', e => e.stopPropagation());
+$('cg-body').addEventListener('change', e => {
+  if (cg.view !== 'edit') return;
+  cgRead();
+  cgSummary();
+});
+$('cg-body').onclick = e => {
+  const m = e.target.closest('#cg-mode [data-v]');
+  if (m && cg.view === 'edit') { cgRead(); const keep = { id: cg.edit.id, name: cg.edit.name, opts: cg.edit.opts, bots: cg.edit.bots, priv: cg.edit.priv, diff: cg.edit.diff }; cg.edit = { ...cgDefaults(m.dataset.v), ...keep }; renderCustom(); return; }
+  const b = e.target.closest('[data-cg]'); if (!b) return;
+  const a = b.dataset.cg, g = b.dataset.id && cgFind(b.dataset.id);
+  if (a === 'new') { cg.edit = cgDefaults(lobby.cfg.mode); cg.view = 'edit'; renderCustom(); }
+  else if (a === 'edit' && g) { const own = cgMine().some(x => x.id === g.id); cg.edit = { ...cgDefaults(g.mode), ...JSON.parse(JSON.stringify(g)), id: own ? g.id : null, opts: cleanCustomOpts(g.opts) }; if (!own) cg.edit.name = g.name; cg.view = 'edit'; renderCustom(); }
+  else if (a === 'del' && g) { if (confirm(`Supprimer la partie perso « ${g.name} » ?`)) net.send('cgDelete', { id: g.id }); }
+  else if (a === 'play' && g) cgPlay({ ...cgDefaults(g.mode), ...g, opts: cleanCustomOpts(g.opts) });
+  else if (a === 'back') { cg.view = 'list'; renderCustom(); }
+  else if (a === 'save') { net.send('cgSave', { preset: cgRead() }); }
+  else if (a === 'playEdit') cgPlay(cgRead());
+};
+net.on('customGames', m => {
+  if (profile.progress) profile.progress.customGames = m.list;
+  if (m.saved) { toast('💾 Partie perso enregistrée.'); if (cg.edit) cg.edit.id = m.saved; cg.view = 'list'; }
+  if (!$('cg').classList.contains('hidden')) renderCustom();
 });
 
 // ======================= AGENTS =======================

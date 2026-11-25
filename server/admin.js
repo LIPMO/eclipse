@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { SKINS, WEAPONS, ROUND, DUEL, AGENTS, SKINNABLE, isFfa, MOMENTS } from '../shared/data.js';
+import { SKINS, WEAPONS, ROUND, DUEL, AGENTS, SKINNABLE, isFfa } from '../shared/data.js';
 import { MAP_INFO, mapsForMode } from '../shared/maps.js';
 import { QUESTS, QUEST_REWARD, TITLES, STAFF_TITLES, RANKS, rankOf, levelOf, levelInfo, ELO_START, REPORT_REASONS, ACHIEVEMENTS } from '../shared/progress.js';
 import { addXp, setLevel, ensureUser, titlesOf, rankFor, weekKey } from './progression.js';
@@ -38,9 +38,8 @@ const DEFAULT_CONFIG = {
   clanMinLevel: 3,
   // déplacement : glissade (s'accroupir en courant)
   slide: true,
-  // 1.15 : XP des moments (×), blagues de l'administrateur (autorisées, durée max en s), événements serveur,
-  // alertes Discord des moments rares, message envoyé aux nouveaux comptes
-  momentXp: 1, trollsOn: true, trollMax: 30, eventBigHead: false, eventLowGrav: false, eventTurbo: false, discordMoments: true, welcomeMsg: '',
+  // 1.15 : blagues de l'administrateur (autorisées, durée max en s), événements serveur, message envoyé aux nouveaux comptes
+  trollsOn: true, trollMax: 30, eventBigHead: false, eventLowGrav: false, eventTurbo: false, welcomeMsg: '',
 };
 // filtre proposé au premier lancement (modifiable dans Modération → Filtre de mots)
 const DEFAULT_FILTER = ['connard', 'connasse', 'salope', 'pute', 'enculé', 'encule', 'fdp', 'ntm', 'nique ta mère', 'niquetamere', 'batard', 'bâtard', 'pédé', 'tg', 'ta gueule'];
@@ -56,7 +55,7 @@ const CONFIG_RULES = {
   anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool',
   alertSuspectLogin: 'bool', maxAccountsPerIp: [0, 50], weekendXp: 'bool',
   perfAlerts: 'bool', perfTickMs: [5, 200], discordPerf: 'bool', autoBackup: 'bool', backupKeep: [1, 30], rateChat: [2, 30], rateSocial: [4, 60], clanMinLevel: [1, 50], slide: 'bool',
-  momentXp: [0, 5], trollsOn: 'bool', trollMax: [5, 120], eventBigHead: 'bool', eventLowGrav: 'bool', eventTurbo: 'bool', discordMoments: 'bool', welcomeMsg: ['str', 300],
+  trollsOn: 'bool', trollMax: [5, 120], eventBigHead: 'bool', eventLowGrav: 'bool', eventTurbo: 'bool', welcomeMsg: ['str', 300],
 };
 // libellés lisibles de la configuration (historique des modifications)
 const CONFIG_LABELS = {
@@ -69,8 +68,8 @@ const CONFIG_LABELS = {
   discordCheat: 'Discord : triche', discordReports: 'Discord : signalements', discordBans: 'Discord : bans', discordTournaments: 'Discord : tournois', alertSuspectLogin: 'Alerte compte surveillé',
   maxAccountsPerIp: 'Comptes par IP', weekendXp: 'XP du week-end', perfAlerts: 'Alertes de lenteur', perfTickMs: 'Seuil de lenteur (ms)', discordPerf: 'Discord : lenteur',
   autoBackup: 'Sauvegarde automatique', backupKeep: 'Sauvegardes conservées', rateChat: 'Limite du chat', rateSocial: 'Limite des actions sociales', clanMinLevel: 'Niveau requis pour créer un clan', slide: 'Glissade',
-  momentXp: 'XP des moments', trollsOn: 'Blagues autorisées', trollMax: 'Durée max. des blagues', eventBigHead: 'Événement grosses têtes', eventLowGrav: 'Événement gravité basse', eventTurbo: 'Événement turbo',
-  discordMoments: 'Discord : moments rares', welcomeMsg: 'Message d\'accueil des nouveaux comptes',
+  trollsOn: 'Blagues autorisées', trollMax: 'Durée max. des blagues', eventBigHead: 'Événement grosses têtes', eventLowGrav: 'Événement gravité basse', eventTurbo: 'Événement turbo',
+  welcomeMsg: 'Message d\'accueil des nouveaux comptes',
 };
 // blagues de l'administrateur (1.15) : all = visible par toute la partie, max = durée plafonnée (s)
 export const TROLLS = {
@@ -80,12 +79,12 @@ export const TROLLS = {
   confetti: { name: 'Confettis', all: true }, dance: { name: 'Danse forcée', all: true }, flash: { name: 'Flash blanc', max: 3 }, freeze: { name: 'Gel sur place', max: 5 },
 };
 const BACKUP_RE = /^eclipse-\d{4}-\d{2}-\d{2}(-\d{6})?\.json$/;
-const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul', 'momentXp']);
+const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul']);
 export const ACCOUNT_TAGS = { surveille: 'Surveillé', suspect: 'Suspect', vip: 'VIP', testeur: 'Testeur', createur: 'Créateur', partenaire: 'Partenaire' };
 const DISCORD_RE = /^https:\/\/(discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)\/api\/webhooks\/\d{5,25}\/[\w-]{20,100}$/;
 const LINK_RE = /(https?:\/\/|www\.|discord\.gg|\b[a-z0-9-]{2,}\.(com|net|org|fr|io|gg|xyz|ru|info|me|be|co)\b)/i;
 const WEAPON_DEFAULTS = Object.fromEntries(Object.entries(WEAPONS).map(([id, w]) => [id, { damage: w.damage, headMul: w.headMul }]));
-const DEFAULT_STATS = () => ({ matches: 0, kills: 0, headshots: 0, modes: {}, maps: {}, agents: {}, weapons: {}, regsByDay: {}, matchesByDay: {}, peak: 0, peakAt: 0, agentWins: {}, earnByDay: {}, spendByDay: {}, skinSales: {}, weaponHs: {}, hourly: Array(24).fill(0), hourlyN: Array(24).fill(0), moments: {}, slides: 0, adsShots: 0 });
+const DEFAULT_STATS = () => ({ matches: 0, kills: 0, headshots: 0, modes: {}, maps: {}, agents: {}, weapons: {}, regsByDay: {}, matchesByDay: {}, peak: 0, peakAt: 0, agentWins: {}, earnByDay: {}, spendByDay: {}, skinSales: {}, weaponHs: {}, hourly: Array(24).fill(0), hourlyN: Array(24).fill(0), slides: 0, adsShots: 0 });
 
 function fail(msg, status = 400) { const e = new Error(msg); e.status = status; throw e; }
 const str = (v, n) => String(v ?? '').replace(/[<>]/g, '').trim().slice(0, n);
@@ -131,7 +130,6 @@ export class Admin {
     this.net = { out: 0, outMsgs: 0, inMsgs: 0 };
     this.rates = { outKBs: 0, outMsgs: 0, inMsgs: 0, cpu: 0 };
     this.ticks = [];
-    this.recentMoments = []; // derniers moments (tableau de bord)
     this.loginTries = new Map();
     this.lastCpu = process.cpuUsage(); this.lastSample = Date.now(); this.lastHistory = 0;
     this.applyConfig();
@@ -214,7 +212,7 @@ export class Admin {
   mul() {
     const c = this.state.config, ev = this.eventActive();
     const wd = new Date().getDay(), weekend = c.weekendXp && (wd === 0 || wd === 6);
-    return { xp: c.xpMul * (ev ? c.eventXpMul : 1) * (weekend ? 1.5 : 1), eclats: c.rewardMul * (ev ? c.eventEclatsMul : 1), moment: c.momentXp ?? 1 };
+    return { xp: c.xpMul * (ev ? c.eventXpMul : 1) * (weekend ? 1.5 : 1), eclats: c.rewardMul * (ev ? c.eventEclatsMul : 1) };
   }
   economy(kind, v) {
     const st = this.state.stats, d = today();
@@ -296,7 +294,7 @@ export class Admin {
   discord(kind, text) {
     const cfg = this.state.config;
     if (!cfg.discordWebhook || !DISCORD_RE.test(cfg.discordWebhook)) return;
-    const flag = { cheat: 'discordCheat', report: 'discordReports', ban: 'discordBans', tournament: 'discordTournaments', perf: 'discordPerf', moments: 'discordMoments' }[kind];
+    const flag = { cheat: 'discordCheat', report: 'discordReports', ban: 'discordBans', tournament: 'discordTournaments', perf: 'discordPerf' }[kind];
     if (flag && cfg[flag] === false) return;
     this.discordQ ||= [];
     if (this.discordQ.length >= 30) return;
@@ -562,15 +560,6 @@ export class Admin {
   }
 
   // Événements de partie (statistiques)
-  // moment réalisé en partie (1.15) : statistiques, tableau de bord, Discord pour les moments rares
-  momentEvent(d) {
-    const st = this.state.stats; st.moments ||= {};
-    st.moments[d.k] = (st.moments[d.k] || 0) + 1;
-    const label = MOMENTS[d.k]?.name || (d.k === 'ace' ? 'ACE' : d.k);
-    this.recentMoments.unshift({ t: Date.now(), name: d.name, k: d.k, label, x: d.x ?? null, room: d.room?.name || '' });
-    if (this.recentMoments.length > 30) this.recentMoments.length = 30;
-    if (d.rare) this.discord('moments', `🎉 **${d.name}** : ${label}${d.x ? ` (${d.x})` : ''} dans « ${d.room?.name || '?'} »`);
-  }
   matchEvent(type, d) {
     const st = this.state.stats;
     if (type === 'start') {
@@ -767,7 +756,7 @@ const ACTIONS = {
       recentSanctions: this.state.audit.filter(a => /^(Bannissement|Réduction au silence|Expulsion|Avertissement|Sanction annulée)/.test(a.action)).slice(-8).reverse(),
       pendingRestart: this.pendingRestart, maintSchedule: this.state.maintSchedule ? { at: this.state.maintSchedule.at, msg: this.state.maintSchedule.msg, by: this.state.maintSchedule.by } : null,
       lastBackup: this.state.lastBackup || 0,
-      recentMoments: this.recentMoments.slice(0, 15), topMoments: top(st.moments || {}, k => MOMENTS[k]?.name || k),
+
       usage: { slides: st.slides || 0, adsShots: st.adsShots || 0, matches: st.matches || 0 },
     };
   } },
@@ -863,7 +852,7 @@ const ACTIONS = {
       agentStats: u.agentStats, mapStats: u.mapStats, daily: u.daily, suspect: sus ? { count: sus.count, alerts: sus.alerts.slice(0, 8) } : null,
       reports: this.state.reports.filter(r => r.targetAccount === key || r.target?.toLowerCase() === key).length,
       sanctions: u.sanctions || [], tags: u.tags || [], avg: this.serverAverages(), regIp: lvl >= 2 ? u.regIp || null : null,
-      moments: u.stats?.moments || {}, winStreak: u.winStreak || 0, aimBest: u.aimBest || 0, customTitle: u.customTitle || '' };
+      winStreak: u.winStreak || 0, aimBest: u.aimBest || 0, customTitle: u.customTitle || '' };
   } },
   rooms: { level: 1, fn() { return [...this.ctx.rooms.values()].map(r => this.roomInfo(r)); } },
   room: { level: 1, fn({ q }) { return this.roomInfo(this.room(q.get('id')), true); } },

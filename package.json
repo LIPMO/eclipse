@@ -1,6 +1,6 @@
 {
   "name": "eclipse-tactics",
-  "version": "1.15.1",
+  "version": "1.16.0",
   "description": "Shooter tactique multijoueur web original (5v5, agents, capacités)",
   "type": "module",
   "main": "server/server.js",

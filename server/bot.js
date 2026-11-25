@@ -40,7 +40,7 @@ export class BotBrain {
     if (!p.alive) return;
     const $ = () => p.money;
     // n'achète que des armes débloquées pour le niveau de la partie (voir Match.weaponLocked)
-    const ok = id => !m.weaponLocked(p, id);
+    const ok = id => !m.weaponLocked(p, id) && m.weaponAllowed(id);
     if (!p.weapons[1]) {
       if ($() >= 2900 + 400 && ok('lancer')) m.handleBuy(p, Math.random() < 0.12 && $() >= 4700 + 400 && ok('longbow') ? 'longbow' : 'lancer');
       else if ($() >= 2250 + 400 && ok('tempest') && Math.random() < 0.5) m.handleBuy(p, 'tempest');

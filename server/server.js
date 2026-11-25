@@ -11,7 +11,7 @@ import { Admin } from './admin.js';
 import { Parties } from './party.js';
 import { Bucket, Strikes, baseHeaders, gameCsp, originAllowed } from './security.js';
 import crypto from 'node:crypto';
-import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE, isFfa, GUN_LADDER, MOMENTS } from '../shared/data.js';
+import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE, isFfa, GUN_LADDER, cleanCustomOpts } from '../shared/data.js';
 import { Social } from './social.js';
 import { Clans } from './clans.js';
 import { Tournaments } from './tournaments.js';
@@ -195,10 +195,10 @@ function memberInfo(c) {
 }
 
 function roomSummary(r) {
-  return { id: r.id, name: r.name, mapId: r.mapId, mode: r.mode, players: r.members.size, humans: [...r.members.values()].filter(m => !m.isBot).length, max: r.maxPlayers, state: r.state, quick: !!r.quick, official: !!r.official, locked: !!r.password };
+  return { id: r.id, name: r.name, mapId: r.mapId, mode: r.mode, players: r.members.size, humans: [...r.members.values()].filter(m => !m.isBot).length, max: r.maxPlayers, state: r.state, quick: !!r.quick, official: !!r.official, locked: !!r.password, custom: !!r.custom };
 }
 function roomState(r) {
-  return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: r.opts || {}, tournament: !!r.tournament, hasPassword: !!r.password,
+  return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: cleanCustomOpts(r.opts), custom: !!r.custom, sizes: sizeOptions(r.mode), tournament: !!r.tournament, hasPassword: !!r.password,
     members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
 }
 // les salons privés n'apparaissent pas dans la liste publique
@@ -219,6 +219,32 @@ const MODE_CFG = {
   gungame: { max: 8, target: GUN_LADDER.length, tmin: GUN_LADDER.length, tmax: GUN_LADDER.length },
   lives: { max: 8, target: 3, tmin: 1, tmax: 10 },
 };
+// ---------- parties personnalisées (1.16) ----------
+// tailles possibles d'un salon selon le mode (Assaut : 1v1 à 5v5)
+const sizeOptions = mode => mode === 'duel' ? [2] : mode === 'assault' ? [2, 4, 6, 8, 10] : [2, 3, 4, 5, 6, 7, 8];
+// partie perso enregistrée ou envoyée par le client : seules des valeurs prévues sont gardées
+function cleanPreset(p) {
+  p = p && typeof p === 'object' ? p : {};
+  const mode = MODE_CFG[p.mode] ? p.mode : 'ffa';
+  const cfg = MODE_CFG[mode], maps = mapsForMode(mode), t = parseInt(p.target, 10);
+  return {
+    id: typeof p.id === 'string' && /^[a-z0-9]{4,16}$/.test(p.id) ? p.id : null,
+    name: clean(p.name, 24) || 'Partie perso', mode, map: maps.includes(p.map) ? p.map : 'random',
+    target: t ? Math.max(cfg.tmin, Math.min(cfg.tmax, t)) : cfg.target, diff: validDiff(p.diff) ? p.diff : 'normal',
+    size: sizeOptions(mode).includes(+p.size) ? +p.size : cfg.max, bots: p.bots !== false, priv: p.priv !== false, opts: cleanCustomOpts(p.opts),
+  };
+}
+// crée le salon d'une partie perso (le groupe suit le chef) ; la partie se lance depuis le salon
+function customRoom(c, pr, party) {
+  const deny = admin.canCreateRoom(c); if (deny) { send(c.id, { type: 'error', text: deny }); return null; }
+  if (c.roomId) leaveRoom(c);
+  const room = newRoom(c, { name: pr.name, mode: pr.mode, mapId: pr.map === 'random' ? null : pr.map, difficulty: pr.diff, priv: pr.priv });
+  room.target = pr.target; room.maxPlayers = pr.size; room.opts = { ...pr.opts }; room.custom = true;
+  joinRoom(c, room);
+  if (pr.mode === 'duel' && party) for (const id of party.members) { const m = clients.get(id); if (m && m !== c && !(m.roomId && rooms.get(m.roomId)?.match)) { m.invites ||= new Set(); m.invites.add(room.id); joinRoom(m, room); } }
+  if (pr.bots) { fillRoom(room); pushRoom(room); }
+  return room;
+}
 function teamCounts(r) {
   const c = { alpha: 0, beta: 0, ffa: 0 };
   for (const m of r.members.values()) c[m.team]++;
@@ -319,12 +345,6 @@ function startMatch(r) {
     onFriendSpecEnd: cid => { const cl = clients.get(cid); if (cl) cl.watchMatch = null; },
     // joueur inactif (1.15) : retiré de la partie (en Assaut, un bot le remplace)
     onAfk: id => { const cl = clients.get(id); if (cl && cl.roomId === r.id) { leaveRoom(cl); send(cl.id, { type: 'left' }); send(cl.id, { type: 'system', kind: 'notice', text: 'Tu as été retiré de la partie pour inactivité.' }); admin.log('partie', `${cl.name} retiré pour inactivité de « ${r.name} »`); } },
-    // moment réalisé (1.15) : tableau de bord, Discord, et amis prévenus pour les moments rares
-    onMoment: (p, k, x, team) => {
-      const rare = k === 'ace' || !!MOMENTS[k]?.rare;
-      admin.momentEvent({ room: r, name: team ? team.map(q => q.name).join(', ') : p.name, k, x, rare });
-      if (rare) for (const q of team || [p]) if (q.account) social.notifyFriendsMoment(q.account, q.name, k);
-    },
     onEvent: (type, data) => admin.matchEvent(type, { room: r, ...data }),
     rewardMul: () => admin.mul().eclats,
     weaponUnlocks: () => admin.state.config.weaponUnlocks,
@@ -424,7 +444,7 @@ function lobbyLaunch(c, cfg, party) {
   }
   if (cfg.fill && cfg.mode !== 'duel') {
     // avec d'autres joueurs : une partie publique de ce mode avec assez de place pour tout le groupe
-    const open = [...rooms.values()].find(x => x.mode === cfg.mode && !x.private && !x.password && !x.tournament && !x.quick && (!mapId || x.mapId === mapId)
+    const open = [...rooms.values()].find(x => x.mode === cfg.mode && !x.private && !x.password && !x.tournament && !x.quick && !x.custom && (!mapId || x.mapId === mapId)
       && humansOf(x) + size <= x.maxPlayers && (x.state === 'lobby' || (x.match && x.match.phase !== 'over')));
     if (open) {
       if (c.roomId) leaveRoom(c);
@@ -553,7 +573,7 @@ function handleLobby(c, msg) {
       if (!roomLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends quelques secondes.' }); break; }
       if (c.roomId) leaveRoom(c);
       const qmode = msg.type === 'quickGun' ? 'gungame' : 'ffa';
-      const open = [...rooms.values()].find(x => x.mode === qmode && !x.private && !x.password && !x.tournament && [...x.members.values()].filter(m => !m.isBot).length < x.maxPlayers);
+      const open = [...rooms.values()].find(x => x.mode === qmode && !x.private && !x.password && !x.tournament && !x.custom && [...x.members.values()].filter(m => !m.isBot).length < x.maxPlayers);
       if (open) { joinRoom(c, open); if (open.state === 'lobby' && !open.official && open.hostId === c.id) startMatch(open); break; }
       const deny = admin.canCreateRoom(c); if (deny) { send(c.id, { type: 'error', text: deny }); break; }
       const room = newRoom(c, { name: qmode === 'gungame' ? 'Gun Game rapide' : 'Mêlée rapide', mode: qmode });
@@ -568,6 +588,14 @@ function handleLobby(c, msg) {
       if (p) { parties.launch(c); break; }
       if (!roomLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends quelques secondes.' }); break; }
       lobbyLaunch(c, cleanLobbyCfg(msg.cfg), null);
+      break;
+    }
+    // partie personnalisée (1.16) : salon avec les règles choisies ; le groupe suit le chef
+    case 'customPlay': {
+      const p = parties.partyOf(c);
+      if (p && p.leader !== c.id) { send(c.id, { type: 'error', text: 'Seul le chef du groupe lance la partie perso.' }); break; }
+      if (!roomLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends quelques secondes.' }); break; }
+      customRoom(c, cleanPreset(msg.preset), p);
       break;
     }
     case 'joinCode': {
@@ -642,7 +670,27 @@ function handleLobby(c, msg) {
       const t = parseInt(msg.target, 10);
       if (t) r.target = Math.max(MODE_CFG[r.mode].tmin, Math.min(MODE_CFG[r.mode].tmax, t));
       // options de partie (salon personnalisé)
-      if (msg.opts && typeof msg.opts === 'object') { r.opts = r.opts || {}; for (const k of ['infAmmo', 'noAbilities', 'headOnly', 'lowGrav', 'randomMap', 'friendlyFire']) if (k in msg.opts) r.opts[k] = !!msg.opts[k]; }
+      if (msg.opts && typeof msg.opts === 'object') {
+        // seules les valeurs prévues changent ; une valeur inconnue laisse la règle telle quelle
+        const cur = cleanCustomOpts(r.opts);
+        for (const [k, v] of Object.entries(msg.opts)) { if (!(k in cur)) continue; const ok = cleanCustomOpts({ [k]: v })[k]; if (typeof cur[k] === 'boolean' || String(ok) === String(v)) cur[k] = ok; }
+        r.opts = cur; r.custom = true;
+      }
+      // taille du salon (1v1 à 5v5 en Assaut) : jamais moins que les joueurs présents, les bots en trop partent
+      if (msg.size != null && sizeOptions(r.mode).includes(+msg.size)) {
+        const humans = [...r.members.values()].filter(m => !m.isBot);
+        const size = +msg.size;
+        const fits = isFfa(r.mode) ? humans.length <= size : ['alpha', 'beta'].every(t => humans.filter(m => m.team === t).length <= size / 2);
+        if (!fits) send(c.id, { type: 'error', text: 'Trop de joueurs dans le salon pour cette taille.' });
+        else {
+          r.maxPlayers = size;
+          for (const m of [...r.members.values()].reverse()) {
+            if (!m.isBot) continue;
+            const over = isFfa(r.mode) ? r.members.size > size : teamCounts(r)[m.team] > size / 2;
+            if (over) r.members.delete(m.id);
+          }
+        }
+      }
       // mot de passe du salon (1.15) : vide = aucun
       if (typeof msg.password === 'string') r.password = clean(msg.password, 20) || null;
       pushRoom(r); break;
@@ -838,7 +886,7 @@ const admin = new Admin({
   onPoll: () => { for (const cl of clients.values()) if (cl.name) send(cl.id, { type: 'poll', poll: admin.pollView(admin.state.poll, cl.account) }); },
 });
 admin.applyConfig();
-const social = new Social({ accounts, clients, rooms, send, joinRoom, admin, chatLimit });
+const social = new Social({ accounts, clients, rooms, send, joinRoom, admin, chatLimit, cleanPreset });
 admin.ctx.social = social;
 const clans = new Clans({ accounts, clients, send, admin, chatLimit, social, onTagChange: c => { const r = c.roomId && rooms.get(c.roomId); const m = r && r.members.get(c.id); if (m) { m.clan = c.clanTag || null; pushRoom(r); r.match?.updateMember(m); } } });
 admin.ctx.clans = clans; social.clans = clans;

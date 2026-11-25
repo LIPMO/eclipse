@@ -1,6 +1,6 @@
 // Progression des comptes : XP et niveaux, déblocages, quêtes, succès, titres, Elo, historique, bonus quotidien.
 import crypto from 'node:crypto';
-import { AGENT_ORDER, SKINS, isFfa, MOMENTS, momentCount } from '../shared/data.js';
+import { AGENT_ORDER, SKINS, isFfa } from '../shared/data.js';
 import { MAP_ORDER } from '../shared/maps.js';
 import {
   levelInfo, levelOf, xpForLevel, levelReward, LEVEL_SKINS, XP, QUESTS, QUEST_REWARD, QUESTS_PER,
@@ -51,7 +51,6 @@ export function ensureUser(u) {
   u.warnings = u.warnings || 0;
   u.notes = u.notes || [];
   u.ips = u.ips || [];
-  if (!u.stats.moments || typeof u.stats.moments !== 'object') u.stats.moments = {};
   if (typeof u.winStreak !== 'number') u.winStreak = 0;
   return u;
 }
@@ -170,9 +169,6 @@ export function applyMatch(u, res, { mul = { xp: 1, eclats: 1 }, overrides, eloD
   s.kills += res.kills; s.deaths += res.deaths; s.assists += res.assists;
   if (res.mode === 'duel') { s.duels++; if (res.won) s.duelWins++; }
   for (const k of ['hsKills', 'knifeKills', 'dmg', 'shots', 'hits', 'plants', 'defuses', 'aces', 'multi3', 'abilities', 'ults', 'slides', 'adsShots']) s[k] += Math.round(res[k] || 0);
-  // moments de la partie (1.15) : compteurs du profil et XP bonus
-  let momentBase = 0; const momentsN = momentCount(res.moments);
-  for (const [k, n] of Object.entries(res.moments || {})) if (MOMENTS[k] && typeof n === 'number' && n > 0) { s.moments[k] = (s.moments[k] || 0) + n; momentBase += MOMENTS[k].xp * n; }
   // série de victoires : +10 % d'XP par victoire d'affilée (à partir de la 2e), jusqu'à +50 %
   u.winStreak = res.won ? (u.winStreak || 0) + 1 : 0;
   const streakBonus = res.won ? Math.min(0.5, 0.1 * Math.max(0, u.winStreak - 1)) : 0;
@@ -202,12 +198,11 @@ export function applyMatch(u, res, { mul = { xp: 1, eclats: 1 }, overrides, eloD
   // XP
   const baseXp = Math.round((XP.match + res.kills * XP.kill + res.assists * XP.assist + (res.roundsWon || 0) * XP.roundWin + (res.won ? XP.win : 0)
     + (res.plants || 0) * XP.plant + (res.defuses || 0) * XP.defuse + (res.mvp ? XP.mvp : 0)) * mul.xp * (1 + streakBonus));
-  const momentXp = Math.round(momentBase * (mul.moment ?? 1) * mul.xp);
-  const xpGain = baseXp + momentXp;
+  const xpGain = baseXp;
   // quêtes
   const q = refreshQuests(u, overrides);
   const questsDone = [];
-  const statOf = { matches: 1, wins: res.won ? 1 : 0, duelWins: res.mode === 'duel' && res.won ? 1 : 0, ffaKills: isFfa(res.mode) ? res.kills : 0, momentsN };
+  const statOf = { matches: 1, wins: res.won ? 1 : 0, duelWins: res.mode === 'duel' && res.won ? 1 : 0, ffaKills: isFfa(res.mode) ? res.kills : 0 };
   let questXp = 0;
   for (const item of [...q.daily, ...q.weekly]) {
     if (item.done) continue;
@@ -230,13 +225,13 @@ export function applyMatch(u, res, { mul = { xp: 1, eclats: 1 }, overrides, eloD
   u.history.unshift({
     t: Date.now(), mode: res.mode, map: res.mapId, agent: res.agent, won: !!res.won, kills: res.kills, deaths: res.deaths, assists: res.assists,
     score: res.score, dmg: Math.round(res.dmg || 0), hs: res.hsKills || 0, acc, mvp: !!res.mvp, xp: xpGain + questXp, eclats: u.eclats - eclatsBefore,
-    elo: eloDelta, dur: Math.round(res.duration || 0), result: res.scoreLine || '', mo: momentsN || 0, moments: momentsN ? res.moments : undefined,
+    elo: eloDelta, dur: Math.round(res.duration || 0), result: res.scoreLine || '',
   });
   if (u.history.length > HISTORY_MAX) u.history.length = HISTORY_MAX;
   return {
     xp: xpGain, questXp, level: lv.after, levelBefore: lv.before, levelEclats: lv.eclats, skins: lv.skins,
     questsDone, achievements, eloDelta, elo: u.elo, eclatsTotal: u.eclats - eclatsBefore, acc,
-    momentXp, moments: res.moments || {}, winStreak: u.winStreak, streakBonus,
+    winStreak: u.winStreak, streakBonus,
   };
 }
 
@@ -281,7 +276,7 @@ export function privateProgress(u, overrides) {
     week: weekly(u), daily: u.daily, seasons: u.seasons, friendsCount: u.friends.length,
     banner: u.banner || 'nuit', motto: u.motto || '', showcase: u.showcase || [], blockInvites: !!u.blockInvites, noWatch: !!u.noWatch, lfg: !!u.lfg,
     modeStats: u.modeStats || {}, weaponKills: u.weaponKills || {}, bestStreak: u.bestStreak || 0, endorse: u.endorse || {}, tourHist: u.tourHist || [], tournamentWins: u.tournamentWins || 0,
-    loadouts: u.loadouts || null, aimBest: u.aimBest || 0, winStreak: u.winStreak || 0, customStatus: u.customStatus || '', dnd: !!u.dnd,
+    loadouts: u.loadouts || null, customGames: u.customGames || [], aimBest: u.aimBest || 0, winStreak: u.winStreak || 0, customStatus: u.customStatus || '', dnd: !!u.dnd,
   };
 }
 

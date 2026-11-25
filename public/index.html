@@ -106,7 +106,7 @@
       </div>
       <div class="lb-left">
         <div id="lb-chat" class="lb-chat hidden"><div id="lb-chat-log" class="lb-chat-log"></div><form id="lb-chat-form"><input id="lb-chat-in" maxlength="140" placeholder="Message au groupe…" autocomplete="off"><button class="btn ghost small" type="submit">➤</button></form></div>
-        <div class="lb-actions"><button id="lb-invite" class="btn ghost small">＋ INVITER DES AMIS</button><button id="lb-leave" class="btn ghost small hidden">QUITTER LE GROUPE</button></div>
+        <div class="lb-actions"><button id="lb-custom" class="btn ghost small">🛠 PARTIES PERSO</button><button id="lb-invite" class="btn ghost small">＋ INVITER DES AMIS</button><button id="lb-leave" class="btn ghost small hidden">QUITTER LE GROUPE</button></div>
       </div>
       <div class="lb-right">
         <button id="lb-mode-card" class="lb-mode-card" title="Changer de partie">
@@ -118,6 +118,13 @@
         <div id="lb-hint" class="lb-hint"></div>
       </div>
       <div id="lobby-count" class="lb-count hidden"></div>
+      <!-- parties personnalisées (1.16) : modèles, mes parties, éditeur de règles -->
+      <div id="cg" class="lb-modes cg hidden">
+        <div class="lb-modes-in">
+          <div class="lb-modes-head"><h2 id="cg-title">PARTIES PERSONNALISÉES</h2><button class="mx" id="cg-x">✕</button></div>
+          <div id="cg-body"></div>
+        </div>
+      </div>
       <!-- choix de la partie (chef du groupe ou joueur seul) -->
       <div id="lb-modes" class="lb-modes hidden">
         <div class="lb-modes-in">
@@ -189,6 +196,7 @@
       <div>
         <h2 id="room-title">Salon</h2>
         <div id="room-sub" class="muted"></div>
+        <div id="room-rules" class="cg-chips"></div>
       </div>
       <div id="room-code" class="room-code hidden"></div>
       <div class="room-actions">
@@ -210,18 +218,22 @@
           <label>Carte <select id="rs-map"></select></label>
           <label>Mode <select id="rs-mode"><option value="assault">Assaut 5v5 (pose du Noyau)</option><option value="duel">Duel 1v1 (petites cartes)</option><option value="ffa">Mêlée (chacun pour soi)</option><option value="gungame">Gun Game (une arme par élimination)</option><option value="lives">Dernier debout (vies limitées)</option></select></label>
           <label>Objectif <select id="rs-target"></select></label>
+          <label>Taille <select id="rs-size"></select></label>
           <label>Difficulté bots <select id="rs-diff"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option><option value="expert">Expert</option><option value="cible">Cibles (ne tirent pas)</option></select></label>
           <label class="check"><input type="checkbox" id="rs-private"> Salon privé (code d'accès)</label>
-          <details class="rs-opts"><summary>Options de partie</summary>
+          <details class="rs-opts" open><summary>Règles de la partie</summary>
+            <div id="rs-rules" class="rs-rules"></div>
             <label class="check"><input type="checkbox" data-opt="infAmmo"> Munitions infinies</label>
             <label class="check"><input type="checkbox" data-opt="noAbilities"> Sans capacités (armes uniquement)</label>
             <label class="check"><input type="checkbox" data-opt="headOnly"> Tirs à la tête uniquement</label>
             <label class="check"><input type="checkbox" data-opt="lowGrav"> Gravité basse</label>
+            <label class="check"><input type="checkbox" data-opt="bigHead"> Grosses têtes</label>
             <label class="check"><input type="checkbox" data-opt="randomMap"> Carte aléatoire à chaque partie</label>
             <label class="check"><input type="checkbox" data-opt="friendlyFire"> Tir allié (dégâts divisés par deux)</label>
             <div class="row rs-pass"><input id="rs-pass" maxlength="20" placeholder="Mot de passe du salon (facultatif)" autocomplete="off"><button id="rs-pass-save" class="btn small ghost" type="button">OK</button></div>
           </details>
           <button id="rs-fill" class="btn ghost small wide">REMPLIR DE BOTS</button>
+          <button id="rs-save-cg" class="btn ghost small wide">💾 ENREGISTRER COMME PARTIE PERSO</button>
         </div>
         <div class="chat">
           <div id="chat-log" class="chat-log"></div>
@@ -269,7 +281,7 @@
     <div class="lb-wrap">
       <div class="lb-head">
         <div><h2>CLASSEMENT</h2><div class="muted" id="lb-season"></div></div>
-        <div class="seg" id="lb-kind"><button data-v="level" class="active">NIVEAU</button><button data-v="week">SEMAINE</button><button data-v="elo">ELO DUEL</button><button data-v="kills">ÉLIMINATIONS</button><button data-v="wins">VICTOIRES</button><button data-v="moments">MOMENTS</button></div>
+        <div class="seg" id="lb-kind"><button data-v="level" class="active">NIVEAU</button><button data-v="week">SEMAINE</button><button data-v="elo">ELO DUEL</button><button data-v="kills">ÉLIMINATIONS</button><button data-v="wins">VICTOIRES</button></div>
         <div class="seg" id="lb-scope"><button data-v="all" class="active">TOUS</button><button data-v="friends">AMIS</button></div>
       </div>
       <div id="lb-list" class="panel"></div>
@@ -315,7 +327,6 @@
     <div id="hitmarker"></div>
     <div id="dmg-dir"></div>
     <div id="center-msg"></div>
-    <div id="moment-pop"><div class="mp-t"></div><div class="mp-s"></div></div>
     <div id="banner"><div class="b-title"></div><div class="b-sub"></div></div>
     <div id="progress"><div class="p-label"></div><div class="p-bar"><i></i></div></div>
     <div id="core-hint"></div>

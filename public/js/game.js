@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
-import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, MOMENTS, momentCount, KIT } from '/shared/data.js';
+import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary } from '/shared/data.js';
 import { tr } from './i18n.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm } from '/shared/physics.js';
 import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
@@ -117,7 +117,9 @@ export class Game {
     if (isTouchDevice() && !this.spec) this.touch = new TouchControls(this);
     if (this.spec) this.initSpectator();
     // événements serveur (1.15) annoncés au début de la partie
-    { const ev = [start.fx?.turbo && 'TURBO (VITESSE ×1,3)', start.fx?.bigHead && 'GROSSES TÊTES', this.opts.lowGrav && 'GRAVITÉ BASSE'].filter(Boolean); if (ev.length) setTimeout(() => { if (!this.destroyed) this.centerMsg('ÉVÉNEMENT : ' + ev.join(' · '), 4); }, 1800); }
+    { const ev = [start.fx?.turbo && 'TURBO (VITESSE ×1,3)', start.fx?.bigHead && !start.custom?.bigHead && 'GROSSES TÊTES', this.opts.lowGrav && !start.custom?.lowGrav && 'GRAVITÉ BASSE'].filter(Boolean); if (ev.length) setTimeout(() => { if (!this.destroyed) this.centerMsg('ÉVÉNEMENT : ' + ev.join(' · '), 4); }, 1800);
+      // partie perso (1.16) : rappel des règles au début
+      const rules = customSummary(start.custom || {}, this.mode); if (rules.length) setTimeout(() => { if (!this.destroyed) this.centerMsg('PARTIE PERSO : ' + rules.join(' · '), 5); }, ev.length ? 6200 : 1800); }
     pad.attach(this);
     this.applyRoster(start.players);
     $('game').classList.add('active');
@@ -559,7 +561,10 @@ export class Game {
       ['PRÉCISION', ['longbow']],
       ['PROTECTION', ['light', 'heavy', 'kit']],
     ];
-    $('buy-cols').innerHTML = cols.map(([title, items]) => `<div class="buy-col"><h4>${title}</h4>${items.map(id => {
+    // partie perso : seules les armes autorisées sont proposées
+    const rule = WEAPON_RULES[this.opts?.weapons];
+    if (rule) for (const c of cols) c[1] = c[1].filter(id => !WEAPONS[id] || rule.allow.includes(id));
+    $('buy-cols').innerHTML = cols.filter(([, items]) => items.length).map(([title, items]) => `<div class="buy-col"><h4>${title}</h4>${items.map(id => {
       const w = WEAPONS[id], a = ARMOR[id] || (id === KIT.id ? KIT : null);
       const name = w ? w.name : a.name;
       const cost = w ? w.cost : a.cost;
@@ -806,39 +811,6 @@ export class Game {
     if (el.textContent !== txt) el.textContent = txt;
   }
 
-  // ---- moments (1.15) : bannière dorée, son, voix d'annonceur, fil des éliminations ----
-  onMoment(m) {
-    const def = MOMENTS[m.k]; if (!def) return;
-    const meT = this.roster.get(this.myId)?.team;
-    const mine = m.i === this.myId || (!!m.team && m.team === meT);
-    const pref = ST().moments || 'all';
-    const extra = m.k === 'longshot' && m.x ? `${m.x} m` : (m.k === 'domination' || m.k === 'rescue') && m.x ? String(m.x) : '';
-    if (pref === 'off') return;
-    if (mine) { this.momentPop(def.name, extra); SFX.playMoment(); this.announce(def.name); }
-    if (mine || pref === 'all') {
-      const who = m.team ? (m.team === meT ? 'TON ÉQUIPE' : 'ADVERSAIRES') : this.nameOf(m.i);
-      const ally = m.team ? m.team === meT : (m.i === this.myId || !this.isEnemyId(m.i));
-      const kf = $('killfeed'); const div = document.createElement('div');
-      div.className = 'kf moment' + (mine ? ' mine' : '');
-      div.innerHTML = `<span class="${ally ? 'ally' : 'enemy'}">${esc(who)}</span><span class="mo">★ ${esc(def.name)}${extra ? ' · ' + esc(extra) : ''}</span>`;
-      kf.prepend(div); while (kf.children.length > 6) kf.lastChild.remove(); setTimeout(() => div.remove(), 7000);
-    }
-  }
-  momentPop(title, sub = '') {
-    const el = $('moment-pop'); if (!el) return;
-    el.querySelector('.mp-t').textContent = title; el.querySelector('.mp-s').textContent = sub;
-    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
-    clearTimeout(this.momentT); this.momentT = setTimeout(() => el.classList.remove('show'), 2300);
-  }
-  // voix d'annonceur (synthèse vocale du navigateur), désactivée par défaut
-  announce(text) {
-    if (!ST().announcer || !text || typeof speechSynthesis === 'undefined' || SFX.isMuted()) return;
-    try {
-      const u = new SpeechSynthesisUtterance(tr(String(text)).replace(/[!.]+$/, '').toLowerCase());
-      u.lang = (ST().lang || 'fr') === 'en' ? 'en-US' : 'fr-FR'; u.rate = 1.05; u.pitch = 0.85; u.volume = Math.max(0, Math.min(1, ST().announcerVol ?? 0.8));
-      speechSynthesis.cancel(); speechSynthesis.speak(u);
-    } catch { /* synthèse vocale indisponible */ }
-  }
 
   addChat(m) {
     const log = $('game-chat').querySelector('.log');
@@ -1199,9 +1171,9 @@ export class Game {
       const ag = AGENTS[r.agent] || AGENTS.ignis;
       const ally = !isFfa(this.mode) && r.team === me?.team;
       const lvl = r.level ? `<span class="sb-lvl">${r.level}</span>` : '';
-      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan && !ST().streamer ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${p.i === this.leaderId && isFfa(this.mode) ? '👑 ' : ''}${esc(this.nameOf(p.i))}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}${!r.bot && p.i !== this.myId && isFriendName(r.name) ? ' <span title="Ami">🤝</span>' : ''}${p.i === this.nemesisId ? ' <span class="sb-nem" title="Ce joueur t\'a éliminé 3 fois de suite">NÉMÉSIS</span>' : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : lives ? (p.lv > 0 ? '❤'.repeat(Math.min(p.lv, 5)) : 'éliminé') : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="sb-mo">${p.mo ? '★' + p.mo : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
+      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan && !ST().streamer ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${p.i === this.leaderId && isFfa(this.mode) ? '👑 ' : ''}${esc(this.nameOf(p.i))}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}${!r.bot && p.i !== this.myId && isFriendName(r.name) ? ' <span title="Ami">🤝</span>' : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : lives ? (p.lv > 0 ? '❤'.repeat(Math.min(p.lv, 5)) : 'éliminé') : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
     };
-    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : lives ? 'VIES' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span title="Moments">★</span><span>PING</span></div>`;
+    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : lives ? 'VIES' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span>PING</span></div>`;
     let html;
     if (this.mode === 'duel') html = `<h2>DUEL 1v1 — premier à ${this.target} manches</h2><br>${head}${players.map(row).join('')}`;
     else if (gun) html = `<h2>GUN GAME — chaque élimination donne l'arme suivante, le couteau pour finir</h2><br>${head}${players.map(row).join('')}`;
@@ -1428,7 +1400,7 @@ export class Game {
         const now = performance.now() / 1000;
         this.streak = now - (this.streakT || 0) < 4 ? (this.streak || 0) + 1 : 1;
         this.streakT = now;
-        if (this.streak >= 2) { const sm = ['', '', 'DOUBLE ÉLIMINATION', 'TRIPLE ÉLIMINATION', 'QUADRUPLE !', 'ACE !'][Math.min(5, this.streak)]; SFX.playStreak(this.streak); this.centerMsg(sm, 1.4); this.announce(sm); }
+        if (this.streak >= 2) { const sm = ['', '', 'DOUBLE ÉLIMINATION', 'TRIPLE ÉLIMINATION', 'QUADRUPLE !', 'QUINTUPLE !'][Math.min(5, this.streak)]; SFX.playStreak(this.streak); this.centerMsg(sm, 1.4); }
       }
       if (m.v === this.myId) {
         this.killedBy = m.k;
@@ -1481,10 +1453,8 @@ export class Game {
       if (ULTS.has(m.k) && this.isEnemyId(m.i)) { const w = $('ult-warn'); w.textContent = `⚠ ULTIME ENNEMIE : ${this.nameOf(m.i)}`; clearTimeout(this.ultT); this.ultT = setTimeout(() => { w.textContent = ''; }, 2500); }
     });
     on('notice', m => this.centerMsg(m.text, 2.5));
-    on('moment', m => this.onMoment(m));
     on('troll', m => this.onTroll(m));
     on('trollFx', m => { if (m.kind === 'stop') { this.trollFx.delete(m.i); return; } const e = this.trollFx.get(m.i) || {}; e[m.kind] = performance.now() / 1000 + m.s; this.trollFx.set(m.i, e); if (m.kind === 'confetti') this.confettiAt(m.i); });
-    on('nemesis', m => { this.nemesisId = m.i || null; if (m.i) { this.centerMsg(`NÉMÉSIS : ${String(m.n || '').toUpperCase()}`, 3); this.announce('Némésis'); } if (this.sbOpen) this.renderScoreboard(); });
     on('bought', m => { if (m.slot) { this.pendingSwitch = m.slot; this.bought['s' + m.slot] = m.item; } else if (ARMOR[m.item]) this.bought.armor = m.item; });
     on('sold', m => { const n = WEAPONS[m.item]?.name || ARMOR[m.item]?.name || ''; this.centerMsg(`${n.toUpperCase()} REVENDU · +${m.refund}`, 1.5); SFX.playUI('buy'); if (m.slot) delete this.bought['s' + m.slot]; else delete this.bought.armor; this.buyCache = {}; });
     on('dropped', m => { this.centerMsg(`${(WEAPONS[m.item]?.name || '').toUpperCase()} LÂCHÉ`, 1.2); SFX.playSwitch(); });
@@ -2269,7 +2239,7 @@ export class Game {
     if (this.hitT > 0) { this.hitT -= dt; $('hitmarker').style.opacity = Math.max(0, this.hitT / 0.18); }
     // aveuglement
     const fl = L.flashUntil - now;
-    $('frost-overlay').classList.toggle('on', !!(this.me && this.me.al && this.me.sm < 0.99));
+    $('frost-overlay').classList.toggle('on', !!(this.me && this.me.al && this.me.sm < (this.opts?.speed || 1) - 0.01));
     $('flash-overlay').style.opacity = fl > 0 ? Math.min(1, fl / Math.min(0.9, L.flashDur * 0.6)) * (ST().noFlash ? 0.85 : 1) : 0;
     if (L.hurtT > 0) L.hurtT -= dt;
     $('damage-overlay').style.opacity = Math.max(0, L.hurtT / 0.4) * 0.9 + (me.al && me.hp < 30 ? 0.25 : 0);
@@ -2753,11 +2723,8 @@ export class Game {
     $('end-progress').innerHTML = this.isGuest ? '<div class="muted">Crée un compte pour gagner de l\'XP, monter de niveau et accomplir des quêtes.</div>' : '<div class="muted">Calcul de la progression…</div>';
     const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
     const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[id] || '—';
-    const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span>${momentCount(s.mo) ? '★' + momentCount(s.mo) : ''}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
-    $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span title="Moments">★</span><span>ARME FAVORITE</span></div>${rows}`;
-    // tes moments de la partie
-    const myMo = Object.entries(mine.mo || {}).filter(([k, n]) => MOMENTS[k] && n > 0);
-    if (myMo.length) $('end-mvp').insertAdjacentHTML('beforeend', `<div class="end-mo">★ Tes moments : ${myMo.map(([k, n]) => `<b>${esc(MOMENTS[k].name)}</b>${n > 1 ? ' ×' + n : ''}`).join(' · ')}</div>`);
+    const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
+    $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span>ARME FAVORITE</span></div>${rows}`;
     this.myVote = null; this.myRematch = false;
     // recommander un joueur de la partie (comptes uniquement)
     if (!this.isGuest) {
@@ -2778,7 +2745,6 @@ export class Game {
     if (!m.summary) return;
     const s = m.summary;
     const parts = [`<div class="ep-row"><b class="xp">+${s.xp + s.questXp} XP</b>${s.questXp ? ` <span class="muted">(dont ${s.questXp} de quêtes)</span>` : ''}${s.acc != null ? ` · précision ${s.acc} %` : ''}${s.eloDelta != null ? ` · Elo <b class="${s.eloDelta >= 0 ? 'up' : 'down'}">${s.eloDelta >= 0 ? '+' : ''}${s.eloDelta}</b> (${s.elo})` : ''}</div>`];
-    if (s.momentXp) parts.push(`<div class="ep-row">★ Moments : +${s.momentXp} XP</div>`);
     if (s.streakBonus) parts.push(`<div class="ep-row">🔥 Série de ${s.winStreak} victoires : +${Math.round(s.streakBonus * 100)} % d'XP</div>`);
     if (s.level > s.levelBefore) parts.push(`<div class="ep-row lvlup">NIVEAU ${s.level} ATTEINT ! <span class="gem small"></span> +${s.levelEclats}${s.skins.length ? ` · skin débloqué : ${s.skins.map(esc).join(', ')}` : ''}</div>`);
     for (const q of s.questsDone) parts.push(`<div class="ep-row quest">✔ Quête terminée : ${esc(q.label)} <span class="gem small"></span> +${q.eclats} · +${q.xp} XP</div>`);

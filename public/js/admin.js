@@ -1,5 +1,5 @@
 // Panneau d'administration ECLIPSE
-import { AGENTS, SKINS, WEAPONS, isFfa, MOMENTS } from '/shared/data.js';
+import { AGENTS, SKINS, WEAPONS, isFfa } from '/shared/data.js';
 import { masteryOf } from '/shared/progress.js';
 import { MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { TITLES, REPORT_REASONS, RANKS } from '/shared/progress.js';
@@ -176,8 +176,6 @@ const VIEWS = {
         <div class="card"><h3>Rapport des 7 derniers jours</h3>${S.week ? `<dl class="kv"><dt>Nouveaux comptes</dt><dd>${S.week.newAccounts}</dd><dt>Joueurs actifs</dt><dd>${S.week.active}</dd><dt>Parties</dt><dd>${S.week.matches}</dd><dt>Pic de connexions</dt><dd>${S.week.peak}</dd><dt>Signalements</dt><dd>${S.week.reports}</dd><dt>Bans</dt><dd>${S.week.bans}</dd><dt>Meilleurs joueurs</dt><dd>${S.week.top.map(t => `${h(t.name)} <span class="muted small">(${t.xp} XP)</span>`).join(', ') || '—'}</dd></dl>` : ''}</div>
         <div class="card"><h3>Dernières sanctions</h3>${o.recentSanctions?.length ? `<table><tbody>${o.recentSanctions.map(a => `<tr><td class="small">${fmtDate(a.t)}</td><td><b>${h(a.action)}</b><div class="muted small">${h(a.detail)}</div></td><td class="small">${h(a.by)}</td></tr>`).join('')}</tbody></table>` : '<div class="muted small">Aucune sanction récente.</div>'}</div>
         <div class="card"><h3>Observations en cours</h3>${S.specs?.length ? S.specs.map(x => `<div class="small">👁 <b>${h(x.staff)}</b> observe <b>${h(x.target)}</b> <span class="muted">(${h(x.room)})</span></div>`).join('') : '<div class="muted small">Personne n\'observe de partie.</div>'}</div>
-        <div class="card"><h3>Moments récents</h3>${o.recentMoments?.length ? `<table><tbody>${o.recentMoments.map(x => `<tr><td class="small">${fmtDate(x.t)}</td><td><b>${h(x.name)}</b></td><td class="gold">★ ${h(x.label)}${x.x ? ` <span class="muted">(${h(String(x.x))})</span>` : ''}</td><td class="muted small">${h(x.room)}</td></tr>`).join('')}</tbody></table>` : '<div class="muted small">Aucun moment depuis le démarrage du serveur.</div>'}</div>
-        <div class="card"><h3>Moments les plus fréquents</h3>${bars(o.topMoments)}</div>
         <div class="card"><h3>Glissades et viseurs</h3>${o.usage ? `<dl class="kv"><dt>Glissades</dt><dd>${o.usage.slides.toLocaleString('fr-FR')} <span class="muted small">(${o.usage.matches ? (o.usage.slides / o.usage.matches).toFixed(1) : 0} par partie)</span></dd><dt>Tirs au viseur</dt><dd>${o.usage.adsShots.toLocaleString('fr-FR')} <span class="muted small">(${o.usage.matches ? (o.usage.adsShots / o.usage.matches).toFixed(1) : 0} par partie)</span></dd></dl>` : ''}</div>
         <div class="card"><h3>Inscriptions par jour</h3>${bars(o.regsByDay.map(([d, v]) => ({ label: d.slice(5).split('-').reverse().join('/'), value: v })))}</div>
         <div class="card"><h3>Parties par jour</h3>${bars(o.matchesByDay.map(([d, v]) => ({ label: d.slice(5).split('-').reverse().join('/'), value: v })))}</div>
@@ -456,11 +454,9 @@ const VIEWS = {
           ${chk('weekendXp', 'Bonus d\'XP du week-end (×1,5 le samedi et le dimanche)')}
           ${num('clanMinLevel', 'Niveau requis pour créer un clan', 1, 50, 1, '1 = tout le monde peut créer un clan dès l\'inscription.')}
           <button class="btn primary" data-act="cfgSave" data-section="regs">Enregistrer</button></div>
-        <div class="card" data-section="fun"><h3>Blagues, moments et événements</h3>
+        <div class="card" data-section="fun"><h3>Blagues et événements</h3>
           ${chk('trollsOn', 'Blagues de l\'administrateur autorisées', 'Effets visuels temporaires envoyés depuis le panneau. Jamais en tournoi ni en duel classé.')}
           ${num('trollMax', 'Durée maximale d\'une blague (secondes)', 5, 120)}
-          ${num('momentXp', 'Multiplicateur d\'XP des moments (vengeance, no-scope…)', 0, 5, 0.1, '0 = aucun bonus, 1 = normal, 2 = double.')}
-          ${chk('discordMoments', 'Discord : annoncer les moments rares (ACE, remontada, domination)')}
           ${chk('eventBigHead', 'Événement « grosses têtes » (toutes les parties)')}${chk('eventLowGrav', 'Événement « gravité basse » (toutes les parties)')}${chk('eventTurbo', 'Événement « turbo » : vitesse ×1,3 (toutes les parties)')}
           <div class="field"><label>Message d'accueil des nouveaux comptes</label><input data-k="welcomeMsg" value="${h(c.welcomeMsg || '')}" maxlength="300" placeholder="Bienvenue sur ECLIPSE ! Rejoins notre Discord…"><div class="help">Envoyé en message privé juste après l'inscription. Vide = aucun message.</div></div>
           <p class="muted small">Les événements s'appliquent aux nouvelles parties.</p>
@@ -759,8 +755,7 @@ async function openAccount(name) {
         <dt>Série de connexion</dt><dd>${a.daily?.streak || 0} jour(s) (record ${a.daily?.best || 0})</dd>
         <dt>Titre personnalisé</dt><dd>${a.customTitle ? h(a.customTitle) : '<span class="muted">aucun</span>'}</dd>
         <dt>Victoires d'affilée</dt><dd>${a.winStreak || 0}</dd><dt>Record du défi de visée</dt><dd>${a.aimBest || '—'}</dd></dl>
-      <h3>MOMENTS ET MAÎTRISE</h3><dl class="kv">
-        <dt>Moments</dt><dd>${Object.entries(a.moments || {}).filter(([, n]) => n > 0).map(([k, n]) => `${h(MOMENTS[k]?.name || k)} ×${n}`).join(' · ') || '<span class="muted">aucun</span>'}</dd>
+      <h3>MAÎTRISE</h3><dl class="kv">
         <dt>Maîtrise des agents</dt><dd>${Object.entries(a.agentStats || {}).map(([id, s]) => [id, masteryOf(s)]).sort((x, y) => y[1].pts - x[1].pts).slice(0, 6).map(([id, m]) => `${h(AGENTS[id]?.name || id)} <b>niv. ${m.level}</b>`).join(' · ') || '<span class="muted">aucune partie</span>'}</dd></dl>
       <h3>MODÉRATION</h3><dl class="kv">
         <dt>Avertissements</dt><dd>${a.warnings ? `<b class="bad">${a.warnings}</b>` : '0'}</dd>
@@ -818,7 +813,7 @@ async function openRoom(id, silent) {
 // ---------- blagues de l'administrateur (1.15) ----------
 async function trollModal(target, title) {
   let info; try { info = await api('trollLog'); } catch (e) { toast(e.message, true); return; }
-  if (!info.on) { toast('Les blagues sont désactivées (Configuration → Blagues, moments et événements).', true); return; }
+  if (!info.on) { toast('Les blagues sont désactivées (Configuration → Blagues et événements).', true); return; }
   const log = info.log.slice(0, 8).map(x => `<div class="small">${fmtDate(x.t)} · <b>${h(x.by)}</b> → ${h(x.target)} : ${h(x.label)}${x.s ? ` (${x.s} s)` : ''}</div>`).join('') || '<div class="muted small">Aucune blague pour le moment.</div>';
   const v = await modal({ title, body: `<p class="muted small">Effet temporaire, visible seulement par le joueur visé (sauf mention). Le joueur voit une pastille « Blague de l'admin ». Jamais en tournoi ni en duel classé.</p><div class="field"><label>Journal des blagues</label>${log}</div>`,
     fields: [{ name: 'kind', label: 'Blague', type: 'select', value: 'spin', options: [...info.kinds.map(k => [k.k, k.name + (k.all ? ' — visible par toute la partie' : '') + (k.max ? ` — ${k.max} s max.` : '')]), ['stop', '⛔ Arrêter toutes les blagues en cours']] },

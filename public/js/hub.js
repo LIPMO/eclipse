@@ -8,8 +8,7 @@ import { keyName } from './settings.js';
 import { playNotify } from './audio.js';
 import { isTouchDevice } from './touch.js';
 import { WEAPON_UNLOCK, LEVEL_SKINS, DAILY_BONUS, BANNERS, ENDORSE, CHAT_EMOJI } from '/shared/progress.js';
-import { WEAPONS, MOMENTS } from '/shared/data.js';
-import { tr } from './i18n.js';
+import { WEAPONS } from '/shared/data.js';
 // :gg: → 👍 dans les messages affichés
 export const emojify = t => String(t ?? '').replace(/:[a-z0-9]{2,6}:/g, m => CHAT_EMOJI[m] || m);
 const WNAME = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[id] || id || '—';
@@ -19,7 +18,7 @@ const ENDORSE_HTML = (e = {}) => Object.entries(ENDORSE).map(([k, l]) => `<span 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MODE = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout' };
-const LB_LABEL = { level: 'XP', week: 'XP cette semaine', elo: 'Elo', kills: 'Éliminations', wins: 'Victoires', moments: 'Moments' };
+const LB_LABEL = { level: 'XP', week: 'XP cette semaine', elo: 'Elo', kills: 'Éliminations', wins: 'Victoires' };
 const fmtDate = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `il y a ${Math.max(1, m)} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`; };
 const fmtDur = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${m} min` : `${m} min`; };
@@ -322,7 +321,7 @@ export function renderQuests() {
 // ---------- profil ----------
 const histRow = h => `<div class="h-row ${h.won ? 'win' : 'lose'}"><span class="h-res">${h.won ? 'VICTOIRE' : 'DÉFAITE'}${h.result ? ` <b>${esc(h.result)}</b>` : ''}</span>
   <span>${agentIconHTML(h.agent, 'sm')} ${MODE[h.mode] || h.mode} · ${esc(MAP_INFO[h.map]?.name || h.map)}</span><span>${h.kills}/${h.deaths}/${h.assists}${h.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span>
-  <span class="muted">${h.dmg} dég.${h.acc != null ? ` · ${h.acc} %` : ''}${h.mo ? ` · <b class="gold" title="${esc(Object.entries(h.moments || {}).map(([k, n]) => tr(MOMENTS[k]?.name || k) + (n > 1 ? ' ×' + n : '')).join(', '))}">★${h.mo}</b>` : ''}</span><span class="xp">+${h.xp} XP${h.elo != null ? ` · <b class="${h.elo >= 0 ? 'up' : 'down'}">${h.elo >= 0 ? '+' : ''}${h.elo}</b>` : ''}</span><span class="muted">${fmtDate(h.t)}</span></div>`;
+  <span class="muted">${h.dmg} dég.${h.acc != null ? ` · ${h.acc} %` : ''}</span><span class="xp">+${h.xp} XP${h.elo != null ? ` · <b class="${h.elo >= 0 ? 'up' : 'down'}">${h.elo >= 0 ? '+' : ''}${h.elo}</b>` : ''}</span><span class="muted">${fmtDate(h.t)}</span></div>`;
 
 export function renderProfile() {
   const root = $('profile-root');
@@ -357,13 +356,12 @@ export function renderProfile() {
     ['Tirs à la tête', pct(st.hsKills, st.kills)], ['Précision', pct(st.hits, st.shots)], ['Dégâts', (st.dmg || 0).toLocaleString('fr-FR')], ['MVP', st.mvps || 0], ['Duels', `${st.duelWins}/${st.duels}`],
     ['Noyaux posés', st.plants || 0], ['Désamorçages', st.defuses || 0], ['As', st.aces || 0], ['Temps de jeu', fmtDur(st.playTime)], ['Série de connexion', `${pr.daily?.streak || 0} j (record ${pr.daily?.best || 0})`],
     ['Meilleure série', pr.bestStreak || 0], ['Arme favorite', esc(WNAME(Object.entries(pr.weaponKills || {}).sort((a, b) => b[1] - a[1])[0]?.[0]))], ['Tournois gagnés', pr.tournamentWins || 0],
-    ['Glissades', st.slides || 0], ['Tirs au viseur', st.adsShots || 0], ['Record du défi de visée', pr.aimBest || '—'], ['Victoires d\'affilée', pr.winStreak || 0], ['Moments', Object.values(st.moments || {}).reduce((a, n) => a + n, 0)],
+    ['Glissades', st.slides || 0], ['Tirs au viseur', st.adsShots || 0], ['Record du défi de visée', pr.aimBest || '—'], ['Victoires d\'affilée', pr.winStreak || 0],
   ].map(([l, v]) => `<div class="pf-stat"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
   <div class="pf-grid">
     <div class="panel"><h3>STATISTIQUES PAR AGENT</h3>${agents.length ? `<table class="tbl"><tr><th>Agent</th><th>Maîtrise</th><th>Parties</th><th>Victoires</th><th>K/D</th><th>Dégâts / partie</th></tr>${agents.map(([id, a]) => `<tr><td>${agentIconHTML(id, 'sm')} ${esc(AGENTS[id]?.name || id)}</td><td title="${masteryOf(a).pts} points">${'★'.repeat(Math.min(5, Math.ceil(masteryOf(a).level / 2)))}<span class="muted">${'☆'.repeat(5 - Math.min(5, Math.ceil(masteryOf(a).level / 2)))}</span> ${masteryOf(a).level}/10</td><td>${a.matches}</td><td>${pct(a.wins, a.matches)}</td><td>${kd(a.kills, a.deaths)}</td><td>${Math.round((a.dmg || 0) / a.matches)}</td></tr>`).join('')}</table>` : '<p class="muted">Joue une partie pour voir tes statistiques.</p>'}</div>
     <div class="panel"><h3>STATISTIQUES PAR MODE</h3>${MODE_STATS(pr.modeStats)}</div>
     <div class="panel"><h3>ÉLIMINATIONS PAR ARME</h3>${Object.keys(pr.weaponKills || {}).length ? `<table class="tbl"><tr><th>Arme</th><th>Éliminations</th></tr>${Object.entries(pr.weaponKills).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([w, n]) => `<tr><td>${esc(WNAME(w))}</td><td>${n}</td></tr>`).join('')}</table>` : '<p class="muted">Aucune élimination.</p>'}</div>
-    <div class="panel"><h3>MOMENTS</h3>${Object.values(st.moments || {}).some(n => n > 0) ? `<table class="tbl"><tr><th>Moment</th><th>Nombre</th></tr>${Object.entries(MOMENTS).filter(([k]) => st.moments?.[k]).sort((a, b) => st.moments[b[0]] - st.moments[a[0]]).map(([k, d]) => `<tr><td class="gold">★ ${esc(d.name)}</td><td>${st.moments[k]}</td></tr>`).join('')}</table>` : '<p class="muted">Vengeance, no-scope, tir de loin, glissade mortelle… Réalise ton premier moment en partie !</p>'}</div>
     <div class="panel"><h3>RECOMMANDATIONS REÇUES</h3><div class="endorse-row">${ENDORSE_HTML(pr.endorse)}</div>${Object.values(pr.endorse || {}).reduce((a, b) => a + b, 0) >= 10 ? '<p class="gold">🤝 Badge fair-play obtenu !</p>' : '<p class="muted small">10 recommandations = badge fair-play sur ton profil.</p>'}</div>
     <div class="panel"><h3>TOURNOIS</h3>${(pr.tourHist || []).length ? `<table class="tbl"><tr><th>Tournoi</th><th>Résultat</th><th>Date</th></tr>${pr.tourHist.map(t => `<tr><td>${esc(t.name)}</td><td class="${t.place === 'Vainqueur' ? 'gold' : ''}">${esc(t.place)}</td><td>${new Date(t.t).toLocaleDateString('fr-FR')}</td></tr>`).join('')}</table>` : '<p class="muted">Aucun tournoi joué. Inscris-toi dans l\'onglet TOURNOIS !</p>'}</div>
     <div class="panel"><h3>STATISTIQUES PAR CARTE</h3>${maps.length ? `<table class="tbl"><tr><th>Carte</th><th>Parties</th><th>Victoires</th><th>K/D</th></tr>${maps.map(([id, m]) => `<tr><td>${esc(MAP_INFO[id]?.name || id)}</td><td>${m.matches}</td><td>${pct(m.wins, m.matches)}</td><td>${kd(m.kills, m.deaths)}</td></tr>`).join('')}</table>` : '<p class="muted">Aucune carte jouée.</p>'}</div>

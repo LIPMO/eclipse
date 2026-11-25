@@ -1,5 +1,5 @@
 // Logique de partie autoritaire côté serveur
-import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, MOMENTS, momentCount, KIT } from '../shared/data.js';
+import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts } from '../shared/data.js';
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
@@ -39,8 +39,14 @@ export class Match {
     this.paused = false; // pause décidée depuis l'administration
     // options du salon : munitions infinies, sans capacités, têtes uniquement, gravité basse
     const o = room.opts || {};
-    this.opts = { infAmmo: !!o.infAmmo, noAbilities: !!o.noAbilities, headOnly: !!o.headOnly, lowGrav: !!o.lowGrav || !!io.eventLowGrav?.(), friendlyFire: !!o.friendlyFire && !isFfa(room.mode) };
+    // règles personnalisées (1.16) : vitesse, dégâts reçus, armes autorisées, argent, durées, réapparition
+    const c = cleanCustomOpts(o);
+    this.opts = { ...c, lowGrav: c.lowGrav || !!io.eventLowGrav?.(), friendlyFire: c.friendlyFire && !isFfa(room.mode), bigHead: c.bigHead || !!io.eventBigHead?.() };
     this.turbo = !!io.eventTurbo?.(); // événement serveur « turbo » : vitesse ×1,3
+    this.customOpts = c; // règles choisies par l'hôte (sans les événements du serveur)
+    this.speedBase = (this.turbo ? 1.3 : 1) * (c.speed || 1);
+    this.dmgMul = c.dmg || 1;
+    this.wRule = this.mode === 'gungame' ? null : WEAPON_RULES[c.weapons] || null;
     this.firstBlood = false; this.roundHistory = []; this.leaderId = null; this.emoteT = new Map();
   }
 
@@ -61,7 +67,7 @@ export class Match {
       streak: 0, bestStreak: 0, lives: this.mode === 'lives' ? (this.target || 3) : 0, out: false, weaponKills: {}, roundDmg: 0,
       // statistiques détaillées (progression, quêtes, anti-triche)
       dmg: 0, hsKills: 0, knifeKills: 0, shots: 0, hits: 0, plants: 0, defuses: 0, aces: 0, multi3: 0, abilities: 0, ults: 0, roundKills: 0,
-      moments: {}, slides: 0, adsShots: 0, hsStreak: 0, dom: {}, revengeOn: null, nemesis: null, lastHit: null,
+      slides: 0, adsShots: 0,
     };
     this.refillCharges(p);
     if (p.isBot) p.brain = new BotBrain(this, p, this.difficulty);
@@ -116,11 +122,20 @@ export class Match {
 
   startMsg(id) {
     const p = this.players.get(id);
-    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty, slide: this.slideOn(), fx: { bigHead: !!this.io.eventBigHead?.(), turbo: this.turbo } };
+    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty, slide: this.slideOn(), fx: { bigHead: !!this.opts.bigHead, turbo: this.turbo }, custom: this.customOpts };
   }
 
   // déblocage des armes par niveau (désactivable dans l'administration)
   // en Mêlée, tout le monde a l'équipement complet ; les bots suivent le niveau du joueur humain le plus bas (combat équitable)
+  weaponAllowed(id) { return !this.wRule || this.wRule.allow.includes(id); }
+  // applique la règle « Armes » : retire les armes interdites, offre l'arme principale prévue
+  applyWeaponRule(p) {
+    const r = this.wRule; if (!r) return;
+    for (const s of [1, 2]) if (p.weapons[s] && !r.allow.includes(p.weapons[s].id)) p.weapons[s] = null;
+    if (r.give && !p.weapons[1]) p.weapons[1] = this.newWeapon(r.give);
+    if (!r.noPistol && !p.weapons[2]) p.weapons[2] = this.newWeapon('spark');
+    p.slot = p.weapons[1] ? 1 : p.weapons[2] ? 2 : 3;
+  }
   unlocksOn() { return !isFfa(this.mode) && (this.io.weaponUnlocks ? !!this.io.weaponUnlocks() : false); }
   humanCount() { let n = 0; for (const q of this.players.values()) if (!q.isBot) n++; return n; }
   humanMinLevel() { let l = Infinity; for (const q of this.players.values()) if (!q.isBot) l = Math.min(l, q.level || 1); return l === Infinity ? 999 : l; }
@@ -133,7 +148,7 @@ export class Match {
     if (isFfa(this.mode)) {
       for (const p of this.players.values()) this.spawnFFA(p);
       this.phase = 'live';
-      this.phaseEnd = this.time + (this.mode === 'gungame' ? FFA.gunTimeLimit : FFA.timeLimit);
+      this.phaseEnd = this.time + (this.opts.timeLimit || (this.mode === 'gungame' ? FFA.gunTimeLimit : FFA.timeLimit));
     } else {
       this.phase = 'warmup';
       this.phaseEnd = this.time + 2;
@@ -264,7 +279,8 @@ export class Match {
     const [mw, mh] = this.map.size;
     for (const p of this.players.values()) {
       const side = this.side(p);
-      if (reset) { p.money = ROUND.startMoney; p.kit = false; }
+      if (reset) { p.money = this.opts.money || ROUND.startMoney; p.kit = false; }
+      if (this.opts.money >= ROUND.maxMoney && this.mode === 'assault') p.money = ROUND.maxMoney; // argent illimité
       p.lastActive = this.time; p.afkWarned = false; // inactivité : remise à zéro à chaque manche
       if (this.mode === 'duel') p.money = DUEL.money;
       if (reset || !p.alive) {
@@ -274,6 +290,7 @@ export class Match {
         for (const s of [1, 2]) if (p.weapons[s]) { const d = WEAPONS[p.weapons[s].id]; p.weapons[s].mag = d.mag; p.weapons[s].reserve = d.reserve; }
       }
       p.alive = true; p.hp = 100; p.slot = p.weapons[1] ? 1 : 2; p.reloadEnd = 0;
+      this.applyWeaponRule(p);
       p.healEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.invisEnd = 0; p.revealEnd = 0; p.blindEnd = 0;
       p.interact = false; p.prog = 0; p.damagedBy = new Map(); p.joinedMidRound = false; p.roundKills = 0; p.roundDmg = 0; p.ready = false; p.armorBought = null;
       this.refillCharges(p);
@@ -309,13 +326,6 @@ export class Match {
     }
     this.phase = 'end';
     this.phaseEnd = this.time + ROUND.endTime;
-    if (winTeam && this.mode === 'assault') {
-      const winners = [...this.players.values()].filter(p => p.team === winTeam);
-      if (winners.length >= 2 && winners.every(p => p.alive)) this.teamMoment(winTeam, 'perfect');
-      const lose = winTeam === 'alpha' ? 'beta' : 'alpha';
-      if (this.roundValues && this.roundValues[winTeam] <= 900 && this.roundValues[lose] >= 2600) this.teamMoment(winTeam, 'eco');
-    }
-    if (!isFfa(this.mode)) { this.maxDef ||= { alpha: 0, beta: 0 }; for (const t of ['alpha', 'beta']) this.maxDef[t] = Math.max(this.maxDef[t], this.score[t === 'alpha' ? 'beta' : 'alpha'] - this.score[t]); }
     for (const p of this.players.values()) if (p.alive) this.sendDmgReport(p);
     this.roundHistory.push(winTeam || '');
     let mvp = null;
@@ -332,14 +342,13 @@ export class Match {
   ultCost(p) { return AGENTS[p.agent].abilities.x.cost; }
 
   matchOver(winner) {
-    if (this.mode === 'assault' && (winner === 'alpha' || winner === 'beta') && (this.maxDef?.[winner] || 0) >= 4) this.teamMoment(winner, 'remontada');
     this.phase = 'over';
     setTimeout(() => this.io.onOver?.(), 0);
     this.overAt = this.time + 9;
     // MVP : meilleur score de la partie
     let mvp = null;
     for (const p of this.players.values()) if (!mvp || p.score > mvp.score) mvp = p;
-    const stats = [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score, bot: p.isBot, dmg: Math.round(p.dmg), hs: p.hsKills, title: p.title, shots: p.shots, hits: p.hits, best: p.bestStreak, fav: Object.entries(p.weaponKills || {}).sort((x, y) => y[1] - x[1])[0]?.[0] || null, lives: this.mode === 'lives' ? p.lives : undefined, mo: { ...p.moments } }));
+    const stats = [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score, bot: p.isBot, dmg: Math.round(p.dmg), hs: p.hsKills, title: p.title, shots: p.shots, hits: p.hits, best: p.bestStreak, fav: Object.entries(p.weaponKills || {}).sort((x, y) => y[1] - x[1])[0]?.[0] || null, lives: this.mode === 'lives' ? p.lives : undefined }));
     const rewards = {}, results = [];
     const scoreLine = isFfa(this.mode) ? '' : `${this.score.alpha}-${this.score.beta}`;
     for (const p of this.players.values()) {
@@ -350,7 +359,7 @@ export class Match {
         id: p.id, account: p.account, name: p.name, team: p.team, reward: rewards[p.id], won, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score,
         mode: this.mode, mapId: this.map.id, agent: p.agent, dmg: p.dmg, hsKills: p.hsKills, knifeKills: p.knifeKills, shots: p.shots, hits: p.hits,
         plants: p.plants, defuses: p.defuses, aces: p.aces, multi3: p.multi3, abilities: p.abilities, ults: p.ults, roundsWon: p.roundsWon,
-        mvp: mvp === p, duration: this.time, weaponKills: p.weaponKills, bestStreak: p.bestStreak, moments: { ...p.moments }, slides: p.slides || 0, adsShots: p.adsShots || 0, others: [...this.players.values()].filter(q => q !== p && !q.isBot && q.account).map(q => q.account), scoreLine: p.team === 'beta' ? scoreLine.split('-').reverse().join('-') : scoreLine,
+        mvp: mvp === p, duration: this.time, weaponKills: p.weaponKills, bestStreak: p.bestStreak, slides: p.slides || 0, adsShots: p.adsShots || 0, others: [...this.players.values()].filter(q => q !== p && !q.isBot && q.account).map(q => q.account), scoreLine: p.team === 'beta' ? scoreLine.split('-').reverse().join('-') : scoreLine,
       });
       this.statCheck(p);
     }
@@ -386,6 +395,7 @@ export class Match {
       const prim = p.weapons?.[1]?.id || 'lancer';
       p.weapons = { 1: prim ? this.newWeapon(prim) : null, 2: this.newWeapon(p.weapons?.[2]?.id || 'spark'), 3: { id: 'knife' } };
       p.slot = p.weapons[1] ? 1 : 2;
+      this.applyWeaponRule(p);
     }
     p.reloadEnd = 0; p.damagedBy = new Map(); p.invisEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.blindEnd = 0;
     p.protEnd = this.time + 1.5; // protection de réapparition : annulée dès que le joueur tire ou utilise une capacité
@@ -533,6 +543,7 @@ export class Match {
     if (!ffa && this.phase !== 'buy') return;
     if (WEAPONS[item] && item !== 'knife') {
       const d = WEAPONS[item];
+      if (!this.weaponAllowed(item)) { if (!p.isBot) this.send(p, { type: 'notice', text: `${d.name.toUpperCase()} : ARME INTERDITE DANS CETTE PARTIE` }); return; }
       const cur = p.weapons[d.slot];
       if (cur && cur.id === item) return;
       if (this.weaponLocked(p, item)) { this.send(p, { type: 'notice', text: `${d.name.toUpperCase()} : DÉBLOQUÉ AU NIVEAU ${WEAPON_UNLOCK[item]}` }); return; }
@@ -626,7 +637,7 @@ export class Match {
       for (let i = 0; i < this.drops.length; i++) {
         const d = this.drops[i];
         const slot = WEAPONS[d.w.id]?.slot;
-        if (!slot || p.weapons[slot] || (d.from === p.id && T < d.noPick)) continue;
+        if (!slot || p.weapons[slot] || (d.from === p.id && T < d.noPick) || !this.weaponAllowed(d.w.id)) continue;
         if (Math.hypot(p.pos[0] - d.pos[0], p.pos[2] - d.pos[2]) > 1.4 || Math.abs(p.pos[1] - d.pos[1]) > 1.8) continue;
         p.weapons[slot] = d.w;
         this.drops.splice(i, 1); i--;
@@ -674,7 +685,6 @@ export class Match {
     }
     p.lastShot = this.time; p.protEnd = 0; p.lastActive = this.time;
     if (d.type !== 'melee') p.shots++;
-    p.lastShotScoped = !!msg.z; // lunette du Longbow (no-scope)
     if (msg.a && d.ads) p.adsShots++; // tir au viseur (statistiques)
     p.invisEnd = Math.min(p.invisEnd, this.time);
     const origin = this.eye(p);
@@ -721,12 +731,13 @@ export class Match {
 
   damage(q, amount, attacker, wpn, head, silent = false) {
     if (!q.alive || amount <= 0) return;
+    amount *= this.dmgMul; // règle « dégâts reçus » (partie personnalisée)
     if (attacker && attacker !== q && q.protEnd > this.time) return; // protection de réapparition
     if (attacker && attacker !== q) {
       q.damagedBy.set(attacker.id, (q.damagedBy.get(attacker.id) || 0) + Math.min(amount, Math.max(0, q.hp) + Math.max(0, q.armor)));
       q.lastDamagedBy = attacker.id; q.lastDamagedAt = this.time;
     }
-    if (attacker && attacker !== q && this.isEnemy(attacker, q)) { const real = Math.min(amount, q.hp + q.armor); attacker.dmg += real; attacker.roundDmg = (attacker.roundDmg || 0) + real; attacker.lastHit = { id: q.id, t: this.time }; }
+    if (attacker && attacker !== q && this.isEnemy(attacker, q)) { const real = Math.min(amount, q.hp + q.armor); attacker.dmg += real; attacker.roundDmg = (attacker.roundDmg || 0) + real; }
     let rest = amount;
     if (q.armor > 0) { const a = Math.min(q.armor, rest); q.armor -= a; rest -= a; }
     q.hp -= rest;
@@ -741,7 +752,7 @@ export class Match {
     if (this.core.carrier === v.id) this.dropCore(v);
     // l'arme principale (sinon le pistolet acheté) tombe au sol et peut être ramassée
     if (this.dropsOn()) { const s = v.weapons[1] ? 1 : v.weapons[2] && v.weapons[2].id !== 'spark' ? 2 : 0; if (s) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = s === 2 ? this.newWeapon('spark') : null; } }
-    const vStreak = v.streak; v.streak = 0; v.hsStreak = 0; v.kit = false;
+    const vStreak = v.streak; v.streak = 0; v.kit = false;
     if (a && a !== v && !this.isEnemy(a, v)) {
       a.score = Math.max(0, a.score - 100);
       this.broadcast({ type: 'notice', text: `${a.name.toUpperCase()} A ÉLIMINÉ UN ALLIÉ (−100)` });
@@ -757,11 +768,10 @@ export class Match {
       if (isFfa(this.mode) && v.id === this.leaderId) { a.score += 150; this.broadcast({ type: 'notice', text: `👑 ${a.name.toUpperCase()} A ABATTU LE MENEUR ${v.name.toUpperCase()} (+150)` }); }
       if (head) a.hsKills++;
       if (wpn === 'knife') a.knifeKills++;
-      if (this.isEnemy(a, v)) this.killMoments(v, a, wpn, head);
       if (!isFfa(this.mode)) {
         a.roundKills++;
         if (a.roundKills === 3) a.multi3++;
-        if (a.roundKills === 5 && this.mode === 'assault') { a.aces++; this.broadcast({ type: 'notice', text: `AS ! ${a.name.toUpperCase()} A ÉLIMINÉ TOUTE L'ÉQUIPE` }); this.io.onMoment?.(a, 'ace'); }
+        if (a.roundKills === 5 && this.mode === 'assault') a.aces++;
       }
       if (this.mode === 'assault') a.money = Math.min(ROUND.maxMoney, a.money + ROUND.killMoney);
       a.ult = Math.min(this.ultCost(a), a.ult + 1);
@@ -780,10 +790,9 @@ export class Match {
     }
     if (isFfa(this.mode)) this.updateLeader();
     if (this.mode === 'assault' || this.mode === 'duel') this.checkClutch();
-    if (this.mode === 'assault') this.checkLastEnemy();
     this.io.onEvent?.('kill', { weapon: wpn, head: !!head, killer: a && a !== v ? a.name : null, victim: v.name });
     if (isFfa(this.mode)) {
-      v.respawnAt = this.time + FFA.respawn;
+      v.respawnAt = this.time + (this.opts.respawn || FFA.respawn);
       if (this.mode === 'lives') return this.livesKill(v);
       if (this.mode === 'gungame') this.gunKill(v, a, wpn);
       else if (a && a !== v && a.kills >= this.target && this.phase !== 'over') this.matchOver(a.id);
@@ -824,74 +833,6 @@ export class Match {
       this.matchOver(team === 'alpha' ? 'beta' : 'alpha');
     }
     return null;
-  }
-
-  // ---------- moments (1.15) ----------
-  moment(p, k, x = null) {
-    if (!p || !MOMENTS[k]) return;
-    p.moments[k] = (p.moments[k] || 0) + 1;
-    p.score += 25;
-    this.broadcast({ type: 'moment', k, i: p.id, n: p.name, x });
-    if (!p.isBot) this.io.onMoment?.(p, k, x);
-  }
-  teamMoment(team, k) {
-    const ps = [...this.players.values()].filter(p => p.team === team);
-    if (!ps.length || !MOMENTS[k]) return;
-    for (const p of ps) { p.moments[k] = (p.moments[k] || 0) + 1; p.score += 25; }
-    this.broadcast({ type: 'moment', k, team });
-    const human = ps.find(p => !p.isBot); if (human) this.io.onMoment?.(human, k, null, ps.filter(p => !p.isBot));
-  }
-  killMoments(v, a, wpn, head) {
-    const T = this.time, def = WEAPONS[wpn];
-    const gun = !!def && def.type !== 'melee', hand = gun || wpn === 'knife';
-    const dist = Math.hypot(a.pos[0] - v.pos[0], a.pos[2] - v.pos[2]);
-    // vengeance : tu élimines le dernier joueur qui t'a tué
-    if (a.revengeOn === v.id) { a.revengeOn = null; this.moment(a, 'revenge'); }
-    v.revengeOn = a.id;
-    // domination : 3 éliminations de suite sur le même adversaire sans qu'il te tue ; il te voit comme sa némésis
-    a.dom[v.id] = (a.dom[v.id] || 0) + 1; v.dom[a.id] = 0;
-    if (a.dom[v.id] === 3) { this.moment(a, 'domination', v.name); v.nemesis = a.id; this.send(v, { type: 'nemesis', i: a.id, n: a.name }); }
-    if (a.nemesis === v.id) { a.nemesis = null; this.send(a, { type: 'nemesis', i: null }); }
-    if (!a.alive) this.moment(a, 'afterlife');
-    if (wpn === 'longbow' && !a.lastShotScoped && dist > 4) this.moment(a, 'noscope');
-    if (hand && a.alive && a.pos[1] - groundHeight(a.pos[0], a.pos[2], a.pos[1] + 0.2, this.allBoxes()) > 0.8) this.moment(a, 'airborne');
-    if (hand && a.sliding && (a.slideUntil || 0) > T) this.moment(a, 'slidekill');
-    if (wpn === 'knife' && this.mode !== 'gungame') this.moment(a, 'humiliation');
-    if (gun && head && dist >= 40) this.moment(a, 'longshot', Math.round(dist));
-    if (gun && this.smokes.length && this.throughSmoke(this.eye(a), [v.pos[0], v.pos[1] + 1.2, v.pos[2]])) this.moment(a, 'blind');
-    const w = a.weapons[a.slot];
-    if (gun && def.mag && w && w.id === wpn && w.mag === 0) this.moment(a, 'lastbullet');
-    if (gun) { a.hsStreak = head ? (a.hsStreak || 0) + 1 : 0; if (a.hsStreak === 3) this.moment(a, 'hsstreak'); }
-    // sauvetage : la victime venait de toucher un allié presque mort
-    const lh = v.lastHit;
-    if (lh && T - lh.t < 1.5) { const ally = this.players.get(lh.id); if (ally && ally !== a && ally.alive && !this.isEnemy(a, ally) && ally.hp <= 30) this.moment(a, 'rescue', ally.name); }
-  }
-  // la ligne de tir traverse-t-elle une fumée ?
-  throughSmoke(o, t) {
-    const d = [t[0] - o[0], t[1] - o[1], t[2] - o[2]]; const L2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] || 1;
-    for (const s of this.smokes) {
-      let k = ((s.pos[0] - o[0]) * d[0] + (s.pos[1] - o[1]) * d[1] + (s.pos[2] - o[2]) * d[2]) / L2; k = Math.max(0, Math.min(1, k));
-      if (Math.hypot(s.pos[0] - o[0] - d[0] * k, s.pos[1] - o[1] - d[1] * k, s.pos[2] - o[2] - d[2] * k) < s.r * 0.85) return true;
-    }
-    return false;
-  }
-  // dernier ennemi en vie : l'équipe adverse est prévenue (une fois par manche)
-  checkLastEnemy() {
-    if (this.phase !== 'live' && this.phase !== 'planted') return;
-    for (const team of ['alpha', 'beta']) {
-      const all = [...this.players.values()].filter(p => p.team === team);
-      const alive = all.filter(p => p.alive);
-      if (all.length >= 2 && alive.length === 1 && this.lastEnemyRound !== this.round + team) {
-        this.lastEnemyRound = this.round + team;
-        for (const q of this.players.values()) if (q.team !== team) this.send(q, { type: 'notice', text: 'DERNIER ENNEMI EN VIE' });
-      }
-    }
-  }
-  // valeur moyenne de l'équipement de chaque équipe au début de la manche (éco gagnante)
-  snapshotValues() {
-    const val = p => (WEAPONS[p.weapons[1]?.id]?.cost || 0) + (WEAPONS[p.weapons[2]?.id]?.cost || 0) + (p.armor >= 50 ? 1000 : p.armor >= 25 ? 400 : 0);
-    this.roundValues = {};
-    for (const t of ['alpha', 'beta']) { const ps = [...this.players.values()].filter(p => p.team === t); this.roundValues[t] = ps.length ? ps.reduce((s, p) => s + val(p), 0) / ps.length : 0; }
   }
 
   // 1 contre X : prévient le dernier survivant d'une équipe
@@ -1082,7 +1023,7 @@ export class Match {
       }
       if (p.buffEnd && T >= p.buffEnd) { p.buffEnd = 0; p.buffSpeed = 1; p.rateMul = 1; }
       // vitesse effective : bonus (ultime) × élan × ralentissement (givre)
-      const sm = Math.round((p.buffEnd ? p.buffSpeed : 1) * (p.hasteEnd > T ? 1.35 : 1) * (p.slowEnd > T ? 0.6 : 1) * (this.turbo ? 1.3 : 1) * 100) / 100;
+      const sm = Math.round((p.buffEnd ? p.buffSpeed : 1) * (p.hasteEnd > T ? 1.35 : 1) * (p.slowEnd > T ? 0.6 : 1) * this.speedBase * 100) / 100;
       if (sm < p.speedMul) { p.speedPeak = p.speedMul; p.speedPeakEnd = T + 0.8; } // le client met un instant à ralentir
       p.speedMul = sm;
       if (!assault) for (const k of ['q', 'e']) {
@@ -1151,8 +1092,7 @@ export class Match {
     const core = this.core;
     if (this.phase === 'warmup' && T >= this.phaseEnd) { this.startRound(); return; }
     if (this.phase === 'buy' && T >= this.phaseEnd) {
-      this.phase = 'live'; this.phaseEnd = T + (this.mode === 'duel' ? DUEL.roundTime : ROUND.roundTime);
-      this.snapshotValues();
+      this.phase = 'live'; this.phaseEnd = T + (this.opts.roundTime || (this.mode === 'duel' ? DUEL.roundTime : ROUND.roundTime));
       this.broadcast({ type: 'phase', phase: 'live' });
     }
     // ramassage du noyau
@@ -1186,8 +1126,6 @@ export class Match {
         if (p.prog >= (p.kit ? KIT.defuseTime : ROUND.defuseTime)) {
           core.status = 'defused'; p.ult = Math.min(this.ultCost(p), p.ult + 1); p.score += 100; p.defuses++;
           p.interact = false; p.prog = 0;
-          if (this.phaseEnd - T < 1) this.moment(p, 'clutchdefuse');
-          else if ([...this.players.values()].some(q => q.alive && this.side(q) === 'atk')) this.moment(p, 'ninja');
           this.broadcast({ type: 'defused', by: p.id });
           this.endRound('def', 'defuse');
         }
@@ -1301,7 +1239,6 @@ export class Match {
       };
       if (p.protEnd > T) base.sp = 1;
       if (p.sliding && p.alive && (p.slideUntil || 0) > T) base.sd = 1;
-      const mo = momentCount(p.moments); if (mo) base.mo = mo;
       pub.set(p.id, JSON.stringify(base));
       // santé, argent et porteur du Noyau : réservés aux alliés
       priv.set(p.id, JSON.stringify({ ...base, hp: Math.ceil(p.hp), ar: Math.ceil(p.armor), pw: p.weapons[1]?.id || p.weapons[2]?.id || null, cr: this.core.carrier === p.id ? 1 : 0, $: p.money, rd: p.ready ? 1 : 0 }));

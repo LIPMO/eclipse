@@ -57,11 +57,6 @@ export class Social {
     const u = key && this.A.get(key); if (!u) return;
     for (const fk of u.friends) { const fc = this.clientOfKey(fk); if (fc) this.sendFriends(fc); }
   }
-  // moment rare d'un ami (ACE, remontada, domination) : les amis connectés reçoivent une notification
-  notifyFriendsMoment(key, name, k) {
-    const u = this.A.get(key); if (!u) return;
-    for (const fk of u.friends || []) { const fc = this.clientOfKey(fk); if (fc) this.ctx.send(fc.id, { type: 'friendMoment', name, k }); }
-  }
   // montée de niveau : les amis connectés sont prévenus
   notifyFriendsLevel(key, name, level) {
     const u = this.A.get(key); if (!u) return;
@@ -222,11 +217,10 @@ export class Social {
     const wk = weekKey();
     const val = {
       level: u => u.xp, elo: u => u.elo, week: u => (u.week?.key === wk ? u.week.xp : 0), kills: u => u.stats.kills, wins: u => u.stats.wins,
-      moments: u => Object.values(u.stats.moments || {}).reduce((a, n) => a + (typeof n === 'number' ? n : 0), 0),
     }[kind] || (u => u.xp);
     let users = Object.values(this.A.data.users).filter(u => u && u.stats);
     if (kind === 'elo') users = users.filter(u => u.seasonDuels > 0);
-    if (kind === 'week' || kind === 'moments') users = users.filter(u => val(u) > 0);
+    if (kind === 'week') users = users.filter(u => val(u) > 0);
     const rows = users.map(u => ({ name: u.name, key: this.A.key(u.name), v: val(u), level: levelOf(u.xp), title: u.customTitle || (u.title ? TITLES[u.title] : null), elo: u.elo, rank: rankFor(u).name, rankColor: rankFor(u).color }))
       .sort((a, b) => b.v - a.v || a.name.localeCompare(b.name));
     rows.forEach((r, i) => { r.pos = i + 1; });
@@ -234,7 +228,7 @@ export class Social {
     return rows;
   }
   m_leaderboard(c, msg) {
-    const kind = ['level', 'elo', 'week', 'kills', 'wins', 'moments'].includes(msg.kind) ? msg.kind : 'level';
+    const kind = ['level', 'elo', 'week', 'kills', 'wins'].includes(msg.kind) ? msg.kind : 'level';
     let rows = this.leaderboardRows(kind);
     const u = this.userOf(c);
     if (msg.scope === 'friends' && u) { const set = new Set([c.account, ...u.friends]); rows = rows.filter(r => set.has(r.key)).map((r, i) => ({ ...r, pos: i + 1 })); }
@@ -331,6 +325,23 @@ export class Social {
     const i = Math.round(Number(msg.idx)); if (!(i >= 0 && i < p.opts.length)) return;
     p.votes[c.account] = i; this.ctx.admin.save();
     this.ctx.send(c.id, { type: 'poll', poll: this.ctx.admin.pollView(p, c.account) });
+  }
+  // parties perso enregistrées sur le compte (1.16) : 12 au maximum
+  m_cgSave(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const pr = this.ctx.cleanPreset(msg.preset);
+    u.customGames ||= [];
+    const i = pr.id ? u.customGames.findIndex(g => g.id === pr.id) : -1;
+    if (i < 0) { if (u.customGames.length >= 12) return this.err(c, '12 parties perso au maximum : supprimes-en une.'); pr.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); u.customGames.unshift(pr); }
+    else u.customGames[i] = pr;
+    this.A.save();
+    this.ctx.send(c.id, { type: 'customGames', list: u.customGames, saved: pr.id });
+  }
+  m_cgDelete(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    u.customGames = (u.customGames || []).filter(g => g.id !== msg.id);
+    this.A.save();
+    this.ctx.send(c.id, { type: 'customGames', list: u.customGames });
   }
   // signaler un bug ou proposer une idée (comptes uniquement, 1 par minute, 10 par jour)
   m_feedback(c, msg) {

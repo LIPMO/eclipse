@@ -43,6 +43,46 @@ export const SKINNABLE = ['knife', 'spark', 'hornet', 'viper', 'brute', 'tempest
 // kit de désamorçage (1.15) : défenseurs en Assaut, désamorçage plus rapide
 export const KIT = { id: 'kit', name: 'Kit de désamorçage', cost: 400, defuseTime: 4 };
 
+// ---------- parties personnalisées (1.16) ----------
+// règles réglables par l'hôte ; 0 = valeur normale du mode
+export const CUSTOM_RULES = {
+  speed: { label: 'Vitesse des joueurs', def: 1, opts: [[0.75, 'Lente'], [1, 'Normale'], [1.25, 'Rapide'], [1.5, 'Très rapide']] },
+  dmg: { label: 'Dégâts reçus', def: 1, opts: [[2, '×2 (fragile)'], [1, 'Normaux'], [0.5, '÷2 (solide)'], [0.33, '÷3 (tank)']] },
+  weapons: { label: 'Armes', def: 'all', opts: [['all', 'Toutes'], ['pistols', 'Pistolets seulement'], ['snipers', 'Snipers seulement'], ['shotguns', 'Fusils à pompe seulement'], ['knife', 'Couteau seulement']] },
+  money: { label: 'Argent de départ', def: 0, modes: ['assault'], opts: [[0, '800 (normal)'], [2000, '2 000'], [4000, '4 000'], [9000, 'Illimité (9 000 à chaque manche)']] },
+  roundTime: { label: 'Durée d\'une manche', def: 0, modes: ['assault', 'duel'], opts: [[0, 'Normale'], [45, '45 s'], [60, '1 min'], [100, '1 min 40'], [150, '2 min 30']] },
+  timeLimit: { label: 'Temps limite', def: 0, modes: ['ffa', 'gungame', 'lives'], opts: [[0, 'Normal'], [300, '5 min'], [600, '10 min'], [900, '15 min'], [1200, '20 min']] },
+  respawn: { label: 'Réapparition', def: 0, modes: ['ffa', 'gungame'], opts: [[0, '3 s (normal)'], [1, '1 s'], [5, '5 s']] },
+};
+// interrupteurs des parties personnalisées
+export const CUSTOM_FLAGS = [['infAmmo', 'Munitions infinies'], ['noAbilities', 'Sans capacités (armes uniquement)'], ['headOnly', 'Tirs à la tête uniquement'], ['lowGrav', 'Gravité basse'], ['bigHead', 'Grosses têtes'], ['friendlyFire', 'Tir allié (dégâts divisés par deux)'], ['randomMap', 'Carte aléatoire à chaque partie']];
+// armes autorisées selon la règle « Armes » (give : arme principale offerte à chaque apparition)
+export const WEAPON_RULES = {
+  pistols: { allow: ['spark', 'hornet', 'knife'], give: null },
+  snipers: { allow: ['longbow', 'spark', 'hornet', 'knife'], give: 'longbow' },
+  shotguns: { allow: ['brute', 'spark', 'hornet', 'knife'], give: 'brute' },
+  knife: { allow: ['knife'], give: null, noPistol: true },
+};
+// garde seulement des valeurs prévues (règles + interrupteurs)
+export function cleanCustomOpts(o) {
+  o = o && typeof o === 'object' ? o : {};
+  const out = {};
+  for (const [k, r] of Object.entries(CUSTOM_RULES)) { const v = r.opts.find(([x]) => x === o[k] || String(x) === String(o[k])); out[k] = v ? v[0] : r.def; }
+  for (const [k] of CUSTOM_FLAGS) out[k] = !!o[k];
+  return out;
+}
+// résumé lisible des règles qui changent (cartes, salon, début de partie)
+export function customSummary(opts, mode) {
+  const o = cleanCustomOpts(opts), out = [];
+  for (const [k, r] of Object.entries(CUSTOM_RULES)) {
+    if (o[k] === r.def || (r.modes && mode && !r.modes.includes(mode))) continue;
+    const lab = r.opts.find(([x]) => x === o[k])?.[1] || o[k];
+    out.push(k === 'weapons' ? lab : `${r.label} : ${lab}`);
+  }
+  for (const [k, l] of CUSTOM_FLAGS) if (o[k] && k !== 'randomMap') out.push(l.replace(/ \(.*\)$/, ''));
+  return out;
+}
+
 export const ARMOR = {
   light: { id: 'light', name: 'Gilet léger', cost: 400, value: 25 },
   heavy: { id: 'heavy', name: 'Gilet lourd', cost: 1000, value: 50 },
@@ -228,27 +268,6 @@ export const rarityOf = s => !s ? 'common' : s.level ? 'exclusive' : s.price >= 
 export const REWARDS = { kill: 10, roundWin: 15, matchWin: 150, matchPlayed: 50 };
 
 // moments annoncés en partie (1.15) : nom affiché, XP de base (× réglage de l'administration),
-// rare = les amis connectés et le salon Discord sont prévenus
-export const MOMENTS = {
-  revenge: { name: 'VENGEANCE', xp: 15 },
-  domination: { name: 'DOMINATION', xp: 25, rare: true },
-  afterlife: { name: 'DEPUIS L\'AU-DELÀ', xp: 25 },
-  noscope: { name: 'NO-SCOPE', xp: 30 },
-  airborne: { name: 'EN PLEIN VOL', xp: 15 },
-  slidekill: { name: 'GLISSADE MORTELLE', xp: 15 },
-  humiliation: { name: 'HUMILIATION', xp: 20 },
-  longshot: { name: 'TIR DE LOIN', xp: 20 },
-  blind: { name: 'À L\'AVEUGLE', xp: 20 },
-  lastbullet: { name: 'DERNIÈRE BALLE', xp: 15 },
-  hsstreak: { name: 'TÊTES EN SÉRIE', xp: 25 },
-  rescue: { name: 'SAUVETAGE', xp: 20 },
-  perfect: { name: 'MANCHE PARFAITE', xp: 20, team: true },
-  ninja: { name: 'DÉSAMORÇAGE NINJA', xp: 35 },
-  clutchdefuse: { name: 'AU DERNIER MOMENT', xp: 35 },
-  eco: { name: 'ÉCO GAGNANTE', xp: 25, team: true },
-  remontada: { name: 'REMONTADA', xp: 60, rare: true, team: true },
-};
-export const momentCount = m => Object.values(m || {}).reduce((a, n) => a + (typeof n === 'number' ? n : 0), 0);
 
 export function sideOf(team, half) {
   if (team === 'ffa') return 'ffa';
