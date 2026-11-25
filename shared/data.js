@@ -213,7 +213,7 @@ export const AGENTS = {
     id: 'orion', name: 'ORION', role: 'Initiateur', color: '#5ab4ff',
     bio: 'Ancien cartographe stellaire, Orion lit le terrain comme un ciel étoilé et guide son équipe vers chaque cible.',
     abilities: {
-      q: { name: 'Œil stellaire', type: 'recon', charges: 1, desc: 'Lance une sonde qui révèle les ennemis proches de son point d\'impact.' },
+      q: { name: 'Drone éclaireur', type: 'drone', charges: 1, desc: 'Envoie un drone vers l\'endroit visé : il repère tous les ennemis à 14 m autour de lui pendant 6 s.' },
       e: { name: 'Supernova', type: 'flash', charges: 2, desc: 'Une étoile éclate devant toi et aveugle les ennemis qui la regardent.' },
       x: { name: 'Constellation', type: 'hunt', cost: 7, desc: 'Révèle la position de tous les ennemis pendant 7 s.' },
     },
@@ -223,7 +223,7 @@ export const AGENTS = {
     bio: 'Venue d\'une cité engloutie, Maréa noie les lignes de vue sous l\'écume et le froid des abysses.',
     abilities: {
       q: { name: 'Écume', type: 'smoke', charges: 2, desc: 'Lance une grenade qui libère un nuage opaque pendant 14 s.' },
-      e: { name: 'Ressac glacé', type: 'cryo', charges: 1, desc: 'Grenade d\'eau glacée : les ennemis dans la zone sont ralentis pendant 6 s.' },
+      e: { name: 'Mur de glace', type: 'icewall', charges: 1, desc: 'Fait surgir un long mur de glace qui coupe le passage ; le sol gelé à ses pieds ralentit les ennemis.' },
       x: { name: 'Raz-de-marée', type: 'blizzard', cost: 7, desc: 'Une immense vague glacée ralentit et blesse les ennemis dans la zone visée pendant 8 s.' },
     },
   },
@@ -231,7 +231,7 @@ export const AGENTS = {
     id: 'vanta', name: 'VANTA', role: 'Duelliste', color: '#c95cff',
     bio: 'Vanta frappe depuis les ombres : on ne la voit qu\'au moment où il est déjà trop tard.',
     abilities: {
-      q: { name: 'Pas de l\'ombre', type: 'blink', charges: 1, desc: 'Téléportation instantanée de quelques mètres vers l\'avant.' },
+      q: { name: 'Grappin', type: 'grapple', charges: 2, desc: 'Lance un grappin vers l\'endroit visé et te propulse jusqu\'à lui, même sur une caisse en hauteur.' },
       e: { name: 'Encre brûlante', type: 'molotov', charges: 1, desc: 'Lance une fiole d\'encre corrosive qui brûle le sol et inflige de lourds dégâts.' },
       x: { name: 'Néant', type: 'phantom', cost: 7, desc: 'Invisibilité et vitesse accrue pendant 10 s.' },
     },
@@ -241,7 +241,7 @@ export const AGENTS = {
     bio: 'Ingénieure têtue, Kora transforme n\'importe quel couloir en forteresse et ne laisse personne derrière.',
     abilities: {
       q: { name: 'Rempart', type: 'wall', charges: 1, desc: 'Érige un mur destructible devant toi pour couper un passage.' },
-      e: { name: 'Sève', type: 'heal', charges: 2, desc: 'Régénère 60 PV sur 3 secondes.' },
+      e: { name: 'Piège à ressort', type: 'trap', charges: 2, desc: 'Pose un piège caché à tes pieds : l\'ennemi qui marche dessus est ralenti, révélé 5 s et perd 25 PV.' },
       x: { name: 'Bastion vivant', type: 'fortress', cost: 6, desc: 'Soigne complètement les alliés proches et leur donne 50 d\'armure.' },
     },
   },
@@ -255,7 +255,16 @@ export const ROLES = {
   Sentinelle: { icon: '⛨', desc: 'Défend et soutient : murs, soins et protection de l\'équipe.' },
 };
 // icônes des capacités (page Agents, menus)
-export const ABILITY_ICONS = { molotov: '🔥', dash: '💨', overdrive: '⚡', smoke: '☁', heal: '✚', megasmoke: '🌫', flash: '✦', recon: '◉', hunt: '🎯', wall: '▦', shield: '⛨', fortress: '🏰', blink: '✧', invis: '◐', phantom: '👻', firestorm: '☄', haste: '➤', cryo: '❄', blizzard: '❅' };
+export const ABILITY_ICONS = { molotov: '🔥', dash: '💨', overdrive: '⚡', smoke: '☁', heal: '✚', megasmoke: '🌫', flash: '✦', recon: '◉', hunt: '🎯', wall: '▦', shield: '⛨', fortress: '🏰', blink: '✧', invis: '◐', phantom: '👻', firestorm: '☄', haste: '➤', cryo: '❄', blizzard: '❅', grapple: '🪝', drone: '🛸', icewall: '🧊', trap: '⚠' };
+// tenues des agents (1.19) : débloquées par la maîtrise de l'agent ; glow null = couleur de l'agent
+export const OUTFITS = {
+  base: { name: 'Standard', mastery: 1 },
+  ombre: { name: 'Ombre', mastery: 2, armor: '#1c1d26', suit: '#14151c', glow: null },
+  neon: { name: 'Néon', mastery: 4, armor: '#14142a', suit: '#0c0c18', glow: '#ff3fd2' },
+  givre: { name: 'Givre', mastery: 6, armor: '#a8d8f0', suit: '#5a7d93', glow: '#e8fdff' },
+  or: { name: 'Or', mastery: 8, armor: '#c9a04a', suit: '#3a2a10', glow: '#fff1a8' },
+  eclipse: { name: 'Éclipse', mastery: 10, armor: '#08080c', suit: '#0d0d14', glow: '#ffb84d' },
+};
 
 export const SKINS = [
   { id: 'default', name: 'Standard', price: 0, body: '#3b4048', accent: '#9aa3ad', metal: 0.55, rough: 0.45 },

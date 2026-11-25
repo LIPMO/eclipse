@@ -11,13 +11,13 @@ import { Admin } from './admin.js';
 import { Parties } from './party.js';
 import { Bucket, Strikes, baseHeaders, gameCsp, originAllowed } from './security.js';
 import crypto from 'node:crypto';
-import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE, isFfa, GUN_LADDER, cleanCustomOpts } from '../shared/data.js';
+import { TICK_RATE, AGENTS, AGENT_ORDER, SKINS, SKINNABLE, isFfa, GUN_LADDER, cleanCustomOpts, OUTFITS } from '../shared/data.js';
 import { Social } from './social.js';
 import { Clans } from './clans.js';
 import { Tournaments } from './tournaments.js';
 import { DIFFICULTIES } from './bot.js';
-import { dailyLogin, eloUpdate } from './progression.js';
-import { levelOf, TITLES, RADIO, REPORT_REASONS } from '../shared/progress.js';
+import { dailyLogin, eloUpdate, checkAchievements } from './progression.js';
+import { levelOf, TITLES, RADIO, REPORT_REASONS, masteryOf } from '../shared/progress.js';
 import { MAP_ORDER, mapsForMode } from '../shared/maps.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -226,7 +226,7 @@ const sizeOptions = mode => mode === 'duel' ? [2] : mode === 'assault' ? [2, 4, 
 function cleanPreset(p) {
   p = p && typeof p === 'object' ? p : {};
   const mode = MODE_CFG[p.mode] ? p.mode : 'ffa';
-  const cfg = MODE_CFG[mode], maps = mapsForMode(mode), t = parseInt(p.target, 10);
+  const cfg = MODE_CFG[mode], maps = allowedMaps(mode), t = parseInt(p.target, 10);
   return {
     id: typeof p.id === 'string' && /^[a-z0-9]{4,16}$/.test(p.id) ? p.id : null,
     name: clean(p.name, 24) || 'Partie perso', mode, map: maps.includes(p.map) ? p.map : 'random',
@@ -245,6 +245,12 @@ function customRoom(c, pr, party) {
   if (pr.bots) { fillRoom(room); pushRoom(room); }
   return room;
 }
+// succès débloqués hors partie (collection complète après un achat…)
+function achNotify(c, u) {
+  const got = checkAchievements(u); if (!got.length) return;
+  accounts.save();
+  for (const a of got) send(c.id, { type: 'achUnlocked', label: a.label, reward: a.reward, title: a.title });
+}
 function teamCounts(r) {
   const c = { alpha: 0, beta: 0, ffa: 0 };
   for (const m of r.members.values()) c[m.team]++;
@@ -255,10 +261,14 @@ function pickTeam(r) {
   const c = teamCounts(r);
   return c.alpha <= c.beta ? 'alpha' : 'beta';
 }
+// agents et cartes désactivés depuis l'administration (1.19)
+const offList = k => String(admin.state.config[k] || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+const agentOff = id => offList('disabledAgents').includes(id);
+function allowedMaps(mode) { const all = mapsForMode(mode), off = offList('disabledMaps'), ok = all.filter(id => !off.includes(id)); return ok.length ? ok : all; }
 function freeAgent(r, team, prefer) {
   const taken = new Set([...r.members.values()].filter(m => m.team === team && !isFfa(r.mode)).map(m => m.agent));
-  if (prefer && AGENTS[prefer] && !taken.has(prefer)) return prefer;
-  const free = AGENT_ORDER.filter(a => !taken.has(a));
+  if (prefer && AGENTS[prefer] && !taken.has(prefer) && !agentOff(prefer)) return prefer;
+  const free = AGENT_ORDER.filter(a => !taken.has(a) && !agentOff(a));
   return free.length ? free[(Math.random() * free.length) | 0] : AGENT_ORDER[(Math.random() * AGENT_ORDER.length) | 0];
 }
 
@@ -318,7 +328,7 @@ function joinRoom(c, r) {
     if (r.match) r.match.removePlayer(bot.id);
   }
   const team = pickTeam(r);
-  const m = { id: c.id, name: c.name, team, agent: freeAgent(r, team, c.prefAgent), isBot: false, ready: false, skins: c.skins, account: c.account, ...memberInfo(c) };
+  const m = { id: c.id, name: c.name, team, agent: freeAgent(r, team, c.prefAgent), isBot: false, ready: false, skins: c.skins, outfits: c.outfits || {}, account: c.account, ...memberInfo(c) };
   r.members.set(c.id, m);
   c.roomId = r.id;
   social.pushFriendsOf(c.account);
@@ -375,7 +385,7 @@ function startMatch(r) {
     slideEnabled: () => admin.state.config.slide !== false,
     onOver: () => {
       if (r.tournament) return;
-      const pool = mapsForMode(r.mode).filter(id => id !== r.mapId);
+      const pool = allowedMaps(r.mode).filter(id => id !== r.mapId);
       const options = shuffle(pool.slice()).slice(0, 3);
       r.vote = { options, maps: new Map(), rematch: new Set() };
       for (const m of r.members.values()) if (!m.isBot) send(m.id, { type: 'voteOpen', options });
@@ -414,11 +424,11 @@ function startMatch(r) {
         const tally = {}; for (const v of r.vote.maps.values()) tally[v] = (tally[v] || 0) + 1;
         const best = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
         if (best) r.mapId = best[0];
-        else if (r.opts?.randomMap) { const pool = mapsForMode(r.mode); r.mapId = pool[(Math.random() * pool.length) | 0]; }
+        else if (r.opts?.randomMap) { const pool = allowedMaps(r.mode); r.mapId = pool[(Math.random() * pool.length) | 0]; }
         const humans = [...r.members.values()].filter(m => !m.isBot);
         r.rematchNow = humans.length > 0 && humans.every(h => r.vote.rematch.has(h.id));
         r.vote = null;
-      } else if (r.opts?.randomMap && !r.tournament) { const pool = mapsForMode(r.mode); r.mapId = pool[(Math.random() * pool.length) | 0]; }
+      } else if (r.opts?.randomMap && !r.tournament) { const pool = allowedMaps(r.mode); r.mapId = pool[(Math.random() * pool.length) | 0]; }
       r.tacPauseUsed = false;
       for (const cl of clients.values()) if (cl.spectating === r.id) cl.spectating = null;
       r.match.closeFriendSpecs();
@@ -441,7 +451,7 @@ function startMatch(r) {
 
 function newRoom(c, { name, mode, mapId, difficulty, priv = false, quick = false }) {
   mode = MODE_CFG[mode] ? mode : 'assault';
-  const allowed = mapsForMode(mode);
+  const allowed = allowedMaps(mode);
   const room = {
     id: 'r' + (nextId++), name: name || `Salon de ${c.name}`, hostId: c.id, mapId: allowed.includes(mapId) ? mapId : allowed[(Math.random() * allowed.length) | 0], mode, quick,
     target: MODE_CFG[mode].target, difficulty: validDiff(difficulty) ? difficulty : 'normal', maxPlayers: MODE_CFG[mode].max, state: 'lobby', members: new Map(), match: null,
@@ -455,7 +465,7 @@ function newRoom(c, { name, mode, mapId, difficulty, priv = false, quick = false
 function cleanLobbyCfg(o) {
   o = o && typeof o === 'object' ? o : {};
   const mode = MODE_CFG[o.mode] ? o.mode : 'ffa';
-  return { mode, fill: !!o.fill, diff: validDiff(o.diff) ? o.diff : 'normal', map: mapsForMode(mode).includes(o.map) ? o.map : 'random' };
+  return { mode, fill: !!o.fill, diff: validDiff(o.diff) ? o.diff : 'normal', map: allowedMaps(mode).includes(o.map) ? o.map : 'random' };
 }
 // c = chef (ou joueur seul) ; party = groupe (ses membres suivent le chef grâce à parties.follow)
 function lobbyLaunch(c, cfg, party) {
@@ -534,7 +544,7 @@ function handleLobby(c, msg) {
       c.token = res.token;
       c.name = res.user.name;
       c.skins = cleanSkins(res.user.equipped, res.user.owned);
-      c.prefAgent = res.user.agent;
+      c.prefAgent = res.user.agent; c.outfits = res.user.outfits || {};
       accounts.touch(res.user, c.ip);
       const bonus = admin.state.config.dailyBonus ? dailyLogin(res.user, admin.mul().eclats) : null;
       if (bonus) { accounts.save(); admin.economy('earn', bonus.eclats); }
@@ -567,6 +577,7 @@ function handleLobby(c, msg) {
       if (!u) break;
       const err = msg.type === 'buySkin' ? accounts.buySkin(u, msg.skin) : accounts.equip(u, msg.weapon, msg.skin);
       if (err) send(c.id, { type: 'error', text: err });
+      if (msg.type === 'buySkin' && !err) achNotify(c, u);
       send(c.id, { type: 'profile', profile: accounts.publicProfile(u) });
       if (msg.type === 'equipSkin') handleLobby(c, { type: 'setSkins', skins: u.equipped });
       break;
@@ -636,7 +647,7 @@ function handleLobby(c, msg) {
       const deny = admin.canCreateRoom(c);
       if (deny) { send(c.id, { type: 'error', text: deny }); break; }
       const room = newRoom(c, { name: clean(msg.name, 28), mode: msg.mode, mapId: msg.mapId, difficulty: msg.difficulty, priv: !!msg.private });
-      if (!mapsForMode(room.mode).includes(msg.mapId)) room.mapId = mapsForMode(room.mode)[0];
+      if (!allowedMaps(room.mode).includes(msg.mapId)) room.mapId = allowedMaps(room.mode)[0];
       joinRoom(c, room);
       if (msg.fillBots) { for (let i = 0; i < room.maxPlayers - 1; i++) addBot(room, pickTeam(room)); pushRoom(room); }
       break;
@@ -658,8 +669,22 @@ function handleLobby(c, msg) {
       m.team = msg.team; m.agent = freeAgent(r, m.team, m.agent);
       pushRoom(r); break;
     }
+    // tenue d'agent (1.19) : débloquée par la maîtrise de cet agent
+    case 'setOutfit': {
+      const u = c.account && accounts.get(c.account);
+      if (!u || !AGENTS[msg.agent] || !OUTFITS[msg.outfit]) break;
+      const need = OUTFITS[msg.outfit].mastery || 1;
+      if (!u.outfitsAll && masteryOf(u.agentStats?.[msg.agent]).level < need) { send(c.id, { type: 'error', text: `Tenue débloquée au niveau de maîtrise ${need} de cet agent.` }); break; }
+      u.outfits ||= {}; if (msg.outfit === 'base') delete u.outfits[msg.agent]; else u.outfits[msg.agent] = msg.outfit;
+      accounts.save(); c.outfits = { ...u.outfits };
+      if (r) { const m = r.members.get(c.id); if (m) { m.outfits = c.outfits; if (r.match) r.match.updateMember(m); pushRoom(r); } }
+      parties.push(parties.partyOf(c));
+      send(c.id, { type: 'outfits', outfits: c.outfits });
+      break;
+    }
     case 'setAgent': {
       if (!AGENTS[msg.agent]) break;
+      if (agentOff(msg.agent)) { send(c.id, { type: 'error', text: `${AGENTS[msg.agent].name} est désactivé pour le moment.` }); break; }
       c.prefAgent = msg.agent;
       if (c.account) { const u = accounts.get(c.account); if (u) accounts.setAgent(u, msg.agent); }
       if (!r) { parties.push(parties.partyOf(c)); break; }
@@ -688,9 +713,9 @@ function handleLobby(c, msg) {
         for (const m of [...r.members.values()]) if (m.isBot) r.members.delete(m.id);
         let k = 0;
         for (const m of r.members.values()) m.team = isFfa(r.mode) ? 'ffa' : (k++ % 2 ? 'beta' : 'alpha');
-        if (!mapsForMode(r.mode).includes(r.mapId)) r.mapId = mapsForMode(r.mode)[0];
+        if (!allowedMaps(r.mode).includes(r.mapId)) r.mapId = allowedMaps(r.mode)[0];
       }
-      if (mapsForMode(r.mode).includes(msg.mapId)) r.mapId = msg.mapId;
+      if (allowedMaps(r.mode).includes(msg.mapId)) r.mapId = msg.mapId;
       const t = parseInt(msg.target, 10);
       if (t) r.target = Math.max(MODE_CFG[r.mode].tmin, Math.min(MODE_CFG[r.mode].tmax, t));
       // options de partie (salon personnalisé)
@@ -891,7 +916,7 @@ function closeRoom(r, text) {
 }
 function createOfficialRoom({ name, mode, mapId, difficulty, bots }) {
   mode = MODE_CFG[mode] ? mode : 'assault';
-  const allowed = mapsForMode(mode);
+  const allowed = allowedMaps(mode);
   const room = {
     id: 'r' + (nextId++), name: name || 'Salon officiel', hostId: null, official: true,
     mapId: allowed.includes(mapId) ? mapId : allowed[0], mode, target: MODE_CFG[mode].target,
@@ -918,7 +943,7 @@ const parties = new Parties({ accounts, clients, rooms, send, joinRoom, pushRoom
 social.parties = parties;
 // salon d'un match de tournoi : privé, sans bots, réservé aux deux joueurs du match
 function createTourRoom(t, m, name) {
-  const maps = mapsForMode('duel');
+  const maps = allowedMaps('duel');
   const room = {
     id: 'r' + (nextId++), name: name.slice(0, 60), hostId: null, mapId: maps[(Math.random() * maps.length) | 0], mode: 'duel', quick: false,
     target: t.target, difficulty: 'normal', maxPlayers: 2, state: 'lobby', members: new Map(), match: null, private: true, code: null,

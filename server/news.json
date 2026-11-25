@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.19.0",
+    "date": "2026-11-25",
+    "title": "Capacités uniques, tenues, collections et échauffement",
+    "items": [
+      "Nouvelles capacités : grappin (Vanta), drone éclaireur (Orion), mur de glace (Maréa) et piège à ressort (Kora).",
+      "Tenues d'agents : Ombre, Néon, Givre, Or et Éclipse, débloquées avec la maîtrise de chaque agent (page Agents).",
+      "Collections de skins : finis-en une pour gagner 800 Éclats et un titre ; les 10 = 3 000 Éclats et « Grand collectionneur ».",
+      "Carte de joueur dans le salon de groupe (bannière et rang), meilleure et pire carte dans le profil.",
+      "Échauffement dans la salle d'attente (cibles à cliquer, record), et 16 nouvelles quêtes."
+    ]
+  },
+  {
     "version": "1.18.0",
     "date": "2026-11-25",
     "title": "Mise à jour à distance depuis l'administration",

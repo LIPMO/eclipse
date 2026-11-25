@@ -1193,3 +1193,36 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
   .ag-right { margin: 0 12px 12px; }
 }
 @media (max-width: 800px) { .ag-left { order: 0; } .ag-page > canvas { order: 1; } .ag-right { order: 2; } }
+
+/* 1.19 : tenues des agents */
+.ag-outfits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ag-of { display: flex; align-items: center; gap: 6px; padding: 5px 6px; color: #d6dae8; cursor: pointer; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); font-size: 11px; text-align: left; }
+.ag-of i { width: 18px; height: 18px; flex: none; background: linear-gradient(135deg, var(--a) 55%, var(--g) 55%); box-shadow: 0 0 6px var(--g); }
+.ag-of.prev { border-color: var(--c, #8b5cff); }
+.ag-of.cur span { color: #3dff8a; }
+.ag-of.lock { opacity: .55; }
+
+/* 1.19 : statistiques par carte */
+.map-bw { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.map-bw > div { padding: 8px 10px; font-family: var(--head); font-size: 11px; letter-spacing: .1em; display: flex; flex-direction: column; gap: 2px; }
+.map-bw .good { background: rgba(61,255,138,.08); border-left: 3px solid #3dff8a; color: #3dff8a; }
+.map-bw .bad { background: rgba(255,79,109,.08); border-left: 3px solid #ff4f6d; color: #ff4f6d; }
+.map-bw b { font-size: 18px; color: #fff; letter-spacing: .05em; }
+.map-bw span { font-family: var(--body); font-size: 12px; letter-spacing: 0; color: #c4c9dc; }
+.map-wr { position: relative; height: 18px; background: rgba(255,255,255,.06); min-width: 90px; }
+.map-wr i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #8b5cff, #19e3c4); opacity: .6; }
+.map-wr span { position: relative; padding-left: 6px; font-size: 12px; }
+
+/* 1.19 : récompense de collection */
+.set-goal { flex-basis: 100%; margin-top: 6px; padding: 8px 10px; font-size: 12px; background: rgba(255,207,90,.08); border-left: 3px solid #ffcf5a; color: #ffe6a8; }
+.set-goal.done { background: rgba(61,255,138,.08); border-left-color: #3dff8a; color: #3dff8a; }
+.set-bar { height: 4px; background: rgba(255,255,255,.08); margin-top: 6px; }
+.set-bar i { display: block; height: 100%; background: #ffcf5a; }
+.set-goal.done .set-bar i { background: #3dff8a; }
+
+/* 1.19 : échauffement en salle d'attente */
+.wu-open { margin-top: 8px; }
+.wu { margin-top: 8px; background: rgba(8,10,20,.6); border: 1px solid rgba(255,255,255,.08); padding: 8px; }
+.wu-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.wu-head b { font-family: var(--head); letter-spacing: .1em; }
+.wu canvas { width: 100%; max-width: 720px; display: block; cursor: crosshair; }

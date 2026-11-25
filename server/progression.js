@@ -109,7 +109,7 @@ export function rerollQuest(u, kind, idx, overrides) {
 }
 
 // ---------- succès ----------
-function checkAchievements(u) {
+export function checkAchievements(u) {
   const got = [];
   for (const a of ACHIEVEMENTS) {
     if (u.achievements.includes(a.id)) continue;
@@ -212,7 +212,7 @@ export function applyMatch(u, res, { mul = { xp: 1, eclats: 1 }, overrides, eloD
     item.p = Math.min(def.goal, item.p + inc);
     if (item.p >= def.goal) {
       item.done = true; s.questsDone++;
-      const r = questReward(item.id, overrides);
+      const r0 = questReward(item.id, overrides), qm = mul.quest ?? 1, r = { eclats: Math.round(r0.eclats * qm), xp: Math.round(r0.xp * qm) };
       const e = Math.round(r.eclats * mul.eclats);
       u.eclats += e; questXp += Math.round(r.xp * mul.xp);
       questsDone.push({ id: item.id, label: def.label, eclats: e, xp: Math.round(r.xp * mul.xp) });
@@ -276,7 +276,7 @@ export function privateProgress(u, overrides) {
     week: weekly(u), daily: u.daily, seasons: u.seasons, friendsCount: u.friends.length,
     banner: u.banner || 'nuit', motto: u.motto || '', showcase: u.showcase || [], blockInvites: !!u.blockInvites, noWatch: !!u.noWatch, lfg: !!u.lfg,
     modeStats: u.modeStats || {}, weaponKills: u.weaponKills || {}, bestStreak: u.bestStreak || 0, endorse: u.endorse || {}, tourHist: u.tourHist || [], tournamentWins: u.tournamentWins || 0,
-    loadouts: u.loadouts || null, customGames: u.customGames || [], aimBest: u.aimBest || 0, winStreak: u.winStreak || 0, customStatus: u.customStatus || '', dnd: !!u.dnd,
+    loadouts: u.loadouts || null, customGames: u.customGames || [], outfits: u.outfits || {}, outfitsAll: !!u.outfitsAll, aimBest: u.aimBest || 0, winStreak: u.winStreak || 0, customStatus: u.customStatus || '', dnd: !!u.dnd,
   };
 }
 

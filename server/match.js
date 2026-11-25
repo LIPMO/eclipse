@@ -54,7 +54,7 @@ export class Match {
   makePlayer(m) {
     const agent = AGENTS[m.agent] ? m.agent : AGENT_ORDER[0];
     const p = {
-      id: m.id, name: m.name, isBot: !!m.isBot, team: m.team, agent, skins: m.skins || {},
+      id: m.id, name: m.name, isBot: !!m.isBot, team: m.team, agent, skins: m.skins || {}, outfits: m.outfits || {},
       pos: [0, 0, 0], yaw: 0, pitch: 0, crouch: false, alive: false,
       hp: 100, armor: 0, money: ROUND.startMoney,
       weapons: { 1: null, 2: this.newWeapon('spark'), 3: { id: 'knife' } }, slot: 2,
@@ -88,7 +88,7 @@ export class Match {
   rosterMsg() {
     return {
       type: 'roster',
-      players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, bot: p.isBot, skins: p.skins, title: p.title, clan: p.clan || null, level: p.isBot ? null : p.level })),
+      players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, of: p.outfits?.[p.agent] || null, bot: p.isBot, skins: p.skins, title: p.title, clan: p.clan || null, level: p.isBot ? null : p.level })),
     };
   }
 
@@ -116,6 +116,7 @@ export class Match {
     const p = this.players.get(m.id);
     if (!p) return;
     if (m.skins) p.skins = m.skins;
+    if (m.outfits) p.outfits = m.outfits;
     if ('clan' in m) p.clan = m.clan || null;
     this.broadcast(this.rosterMsg());
   }
@@ -269,7 +270,8 @@ export class Match {
     this.round++;
     this.phase = 'buy';
     this.phaseEnd = this.time + (this.mode === 'duel' ? DUEL.buyTime : ROUND.buyTime);
-    this.projectiles = []; this.smokes = []; this.fires = []; this.walls = []; this.wallBoxesCache = null; this.drops = []; this.readyDone = false;
+    for (const tr of this.traps || []) this.broadcast({ type: 'trapGone', id: tr.id });
+    this.projectiles = []; this.smokes = []; this.fires = []; this.walls = []; this.wallBoxesCache = null; this.drops = []; this.readyDone = false; this.traps = [];
     this.core = { status: 'carried', carrier: null, pos: null, site: null, plantedAt: 0 };
     this.botSite = Math.random() < 0.5 ? 'A' : 'B';
     const spawnSets = { atk: shuffle(this.map.spawns.atk.slice()), def: shuffle(this.map.spawns.def.slice()) };
@@ -893,6 +895,7 @@ export class Match {
     const dir = Array.isArray(m.d) && m.d.length === 3 && m.d.every(finite) ? norm(m.d) : [0, 0, -1];
     const eye = this.eye(p);
     const T = this.time;
+    if (ab.type === 'grapple') { p.moveBonus = (p.moveBonus || 0) + 26; p.moveBonusEnd = T + 2; }
     if (ab.type === 'dash' || ab.type === 'blink') { p.moveBonus = (p.moveBonus || 0) + (ab.type === 'blink' ? MOVE.blinkDist + 2 : MOVE.dashSpeed * MOVE.dashTime + 3); p.moveBonusEnd = T + 1.5; }
     const shock = p.agent === 'volta';
     const aimPoint = (maxT) => {
@@ -942,6 +945,37 @@ export class Match {
         this.fires.push({ id: this.nextId++, pos: pt, r: 8, end: T + 8, dps: 12, slow: true, owner: p.id, kind: 'frost' });
         break;
       }
+      // ---- capacités des nouveaux agents (1.19) ----
+      case 'drone': { // repère les ennemis autour du point visé
+        const pt = aimPoint(40); let n = 0;
+        for (const q of this.players.values()) if (q.alive && this.isEnemy(p, q) && Math.hypot(q.pos[0] - pt[0], q.pos[2] - pt[2]) < 14) { q.revealEnd = T + 6; n++; }
+        for (const q of this.players.values()) if (!q.isBot && !this.isEnemy(p, q)) this.send(q, { type: 'mark', i: p.id, n: 'DRONE', p: pt.map(r2), d: n > 0 });
+        this.send(p, { type: 'notice', text: n ? `DRONE : ${n} ENNEMI${n > 1 ? 'S' : ''} REPÉRÉ${n > 1 ? 'S' : ''}` : 'DRONE : PERSONNE ICI' });
+        break;
+      }
+      case 'icewall': { // long mur de glace + sol gelé
+        const flat = norm([dir[0], 0, dir[2]]);
+        const r = raycastBoxes(eye, flat, 14, this.map.boxes);
+        const t = Math.max(2.5, r.t - 1.2);
+        const c = [eye[0] + flat[0] * t, 0, eye[2] + flat[2] * t];
+        const g = groundHeight(c[0], c[2], p.pos[1] + 0.5, this.map.boxes);
+        const alongX = Math.abs(flat[2]) > Math.abs(flat[0]);
+        const half = alongX ? [5.2, 0.5] : [0.5, 5.2];
+        const box = { min: [c[0] - half[0], g, c[2] - half[1]], max: [c[0] + half[0], g + 3.6, c[2] + half[1]], kind: 'ice', wallId: this.nextId++, hp: 300, end: T + 10 };
+        this.walls.push(box); this.wallBoxesCache = null;
+        for (const q of this.players.values()) if (q.isBot && q.alive) depenetrate(q.pos, [box]);
+        this.fires.push({ id: this.nextId++, pos: [c[0], g, c[2]], r: 4, end: T + 8, dps: 0, slow: true, owner: p.id, kind: 'frost' });
+        break;
+      }
+      case 'trap': { // piège caché, visible seulement par l'équipe
+        this.traps ||= [];
+        const mine = this.traps.filter(x => x.owner === p.id);
+        if (mine.length >= 2) { this.traps = this.traps.filter(x => x !== mine[0]); this.broadcast({ type: 'trapGone', id: mine[0].id }); }
+        const tr = { id: this.nextId++, owner: p.id, team: p.team, pos: [p.pos[0] + dir[0] * 0.8, p.pos[1], p.pos[2] + dir[2] * 0.8], armAt: T + 1 };
+        this.traps.push(tr);
+        for (const q of this.players.values()) if (!q.isBot && !this.isEnemy(p, q)) this.send(q, { type: 'trap', id: tr.id, p: tr.pos.map(r2) });
+        break;
+      }
       case 'fortress':
         for (const q of this.players.values()) if (q.alive && !this.isEnemy(p, q) && Math.hypot(q.pos[0] - p.pos[0], q.pos[2] - p.pos[2]) < 18) { q.hp = 100; q.armor = Math.max(q.armor, 50); }
         break;
@@ -965,6 +999,20 @@ export class Match {
     this.broadcast({ type: 'ability', i: p.id, k: ab.type, p: p.pos.map(r2) });
   }
 
+  tickTraps(T) {
+    for (const tr of this.traps.slice()) {
+      if (T < tr.armAt) continue;
+      const owner = this.players.get(tr.owner);
+      const v = [...this.players.values()].find(q => q.alive && owner && this.isEnemy(owner, q) && Math.hypot(q.pos[0] - tr.pos[0], q.pos[2] - tr.pos[2]) < 1.6 && Math.abs(q.pos[1] - tr.pos[1]) < 1.5);
+      if (!v) continue;
+      this.traps = this.traps.filter(x => x !== tr);
+      v.slowEnd = T + 3; v.revealEnd = T + 5;
+      this.damage(v, 25, owner, 'trap', false);
+      this.broadcast({ type: 'trapGone', id: tr.id, hit: v.id });
+      if (owner) this.send(owner, { type: 'notice', text: `PIÈGE DÉCLENCHÉ : ${v.name.toUpperCase()}` });
+      this.send(v, { type: 'notice', text: 'TU AS MARCHÉ SUR UN PIÈGE !' });
+    }
+  }
   deployProjectile(pr) {
     const T = this.time;
     const g = groundHeight(pr.pos[0], pr.pos[2], pr.pos[1] + 0.3, this.map.boxes);
@@ -995,6 +1043,7 @@ export class Match {
     this.time += dt;
     this.tickCount++;
     const T = this.time;
+    if (this.traps?.length) this.tickTraps(T);
     const assault = !isFfa(this.mode); // modes à manches (assaut, duel)
 
     for (const p of this.players.values()) if (p.brain) p.brain.update(dt);

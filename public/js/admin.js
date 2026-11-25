@@ -477,6 +477,12 @@ const VIEWS = {
           <div class="field"><label>Message d'accueil des nouveaux comptes</label><input data-k="welcomeMsg" value="${h(c.welcomeMsg || '')}" maxlength="300" placeholder="Bienvenue sur ECLIPSE ! Rejoins notre Discord…"><div class="help">Envoyé en message privé juste après l'inscription. Vide = aucun message.</div></div>
           <p class="muted small">Les événements s'appliquent aux nouvelles parties.</p>
           <button class="btn primary" data-act="cfgSave" data-section="fun">Enregistrer</button></div>
+        <div class="card" data-section="content"><h3>Contenu : agents, cartes et quêtes</h3>
+          <div class="field"><label>Agents désactivés</label><input data-k="disabledAgents" value="${h(c.disabledAgents || '')}" maxlength="300" placeholder="ex. : vanta, orion"><p class="muted small">Identifiants séparés par des virgules : ${h(Object.keys(AGENTS).join(', '))}. Ils ne peuvent plus être choisis (ni par les bots).</p></div>
+          <div class="field"><label>Cartes désactivées</label><input data-k="disabledMaps" value="${h(c.disabledMaps || '')}" maxlength="300" placeholder="ex. : temple"><p class="muted small">Identifiants : ${h(Object.keys(MAP_INFO).join(', '))}. Il reste toujours au moins une carte par mode.</p></div>
+          ${num('questMul', 'Multiplicateur des récompenses de quêtes', 0, 5, 0.1, '1 = normal, 2 = Éclats et XP des quêtes doublés.')}
+          ${lvl() >= 3 ? '<button class="btn" data-act="questsResetAll">Nouvelles quêtes pour tout le monde</button>' : ''}
+          <button class="btn primary" data-act="cfgSave" data-section="content">Enregistrer</button></div>
         <div class="card" data-section="perf"><h3>Performances, sauvegardes et limites</h3>
           ${chk('perfAlerts', 'Alerter le staff quand le serveur ralentit', 'Message au staff connecté (et sur Discord si coché) quand le calcul du jeu dépasse le seuil pendant 15 s, ou si la mémoire dépasse 85 %. Au plus une alerte toutes les 10 minutes.')}
           ${num('perfTickMs', 'Seuil de lenteur (ms par image de jeu)', 5, 200, 1, 'Le budget est de 33 ms. 30 ms = le jeu commence à saccader.')}
@@ -761,7 +767,7 @@ async function openAccount(name) {
         ${btn('accBan', 'Bannir', 'danger')}${btn('accMute', 'Silence')}
         ${btn('accWarn', 'Avertir')}${btn('accNote', 'Ajouter une note')}${btn('accUndo', 'Annuler une sanction')}
         ${L >= 2 ? btn('accCustomTitle', 'Titre personnalisé') : ''}
-        ${L >= 2 ? btn('accXp', 'Niveau / XP') + btn('accElo', 'Elo') + btn('accTitle', 'Titres') + (a.warnings ? btn('accWarnReset', 'Effacer les avertissements') : '') + btn('accEclats', 'Éclats') + btn('accSkin', 'Offrir un skin') + btn('accSkinsNone', 'Retirer les skins') + btn('accResetStats', 'Remettre les stats à zéro') + btn('accResetPw', 'Nouveau mot de passe') + btn('accRename', 'Renommer') + btn('accRole', 'Changer le rôle') + btn('accLogout', 'Déconnecter partout') + btn('accDelete', 'Supprimer le compte', 'danger') : ''}
+        ${L >= 2 ? btn('accXp', 'Niveau / XP') + btn('accElo', 'Elo') + btn('accTitle', 'Titres') + (a.warnings ? btn('accWarnReset', 'Effacer les avertissements') : '') + btn('accEclats', 'Éclats') + btn('accSkin', 'Offrir un skin') + btn('accGiveSet', 'Offrir une collection') + btn('accOutfits', a.outfitsAll ? 'Retirer les tenues offertes' : 'Débloquer toutes les tenues') + btn('accResetQuests', 'Nouvelles quêtes') + btn('accSkinsNone', 'Retirer les skins') + btn('accResetStats', 'Remettre les stats à zéro') + btn('accResetPw', 'Nouveau mot de passe') + btn('accRename', 'Renommer') + btn('accRole', 'Changer le rôle') + btn('accLogout', 'Déconnecter partout') + btn('accDelete', 'Supprimer le compte', 'danger') : ''}
       </div>
       <h3>PROGRESSION</h3><dl class="kv">
         <dt>Niveau</dt><dd><b>${a.level}</b> <span class="muted small">(${a.lvlCur} / ${a.lvlNeed} XP · ${a.xp} XP au total)</span></dd>
@@ -882,6 +888,14 @@ const ACT = {
     const v = await modal({ title: `Offrir un skin à ${d.name}`, fields: [{ name: 'skin', label: 'Skin', type: 'select', value: 'all', options: [['all', '★ Tous les skins'], ...SKINS.filter(s => s.id !== 'default').map(s => [s.id, `${s.name} (${s.price} Éclats)`])] }], ok: 'Offrir' });
     if (v && await act('account/skins', { name: d.name, skin: v.skin }, 'Skin offert')) openAccount(d.name);
   },
+  async accGiveSet(d) {
+    const sets = [...new Set(SKINS.filter(s => s.set).map(s => s.set))];
+    const v = await modal({ title: `Offrir une collection à ${d.name}`, fields: [{ name: 'set', label: 'Collection', type: 'select', options: sets.map(x => [x, x]) }], ok: 'Offrir' });
+    if (v?.set && await act('account/giveSet', { name: d.name, set: v.set }, `Collection ${v.set} offerte`)) openAccount(d.name);
+  },
+  async accOutfits(d) { if (await act('account/outfitsAll', { name: d.name }, 'Tenues mises à jour')) openAccount(d.name); },
+  async accResetQuests(d) { if (await confirmBox(`Donner de nouvelles quêtes à ${d.name} ?`, { danger: false })) act('account/resetQuests', { name: d.name }, 'Quêtes renouvelées'); },
+  async questsResetAll() { if (await confirmBox('Donner de nouvelles quêtes à TOUS les joueurs (la progression des quêtes en cours est perdue) ?')) act('questsResetAll', {}, 'Quêtes renouvelées pour tous'); },
   async accSkinsNone(d) { if (await confirmBox(`Retirer tous les skins de ${d.name} ?`)) { await act('account/skins', { name: d.name, skin: 'none' }, 'Skins retirés'); openAccount(d.name); } },
   async accResetStats(d) { if (await confirmBox(`Remettre à zéro les statistiques de ${d.name} ?`)) { await act('account/resetStats', { name: d.name }, 'Statistiques remises à zéro'); openAccount(d.name); } },
   async accResetPw(d) {

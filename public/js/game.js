@@ -438,7 +438,7 @@ export class Game {
       this.roster.set(p.id, p);
       if (p.id === this.myId) continue;
       let o = this.others.get(p.id);
-      const needRebuild = !o || prev?.agent !== p.agent || prev?.team !== p.team;
+      const needRebuild = !o || prev?.agent !== p.agent || prev?.team !== p.team || prev?.of !== p.of;
       if (needRebuild) {
         if (o) this.scene.remove(o.ch.root);
         o = this.createOther(p, o);
@@ -484,7 +484,7 @@ export class Game {
 
   createOther(p, old) {
     const enemy = this.isEnemyId(p.id);
-    const ch = buildCharacter(p.agent, enemy ? ST().enemyColor : ALLY);
+    const ch = buildCharacter(p.agent, enemy ? ST().enemyColor : ALLY, p.of);
     if (enemy) ch.xmat.color.set(ST().enemyColor);
     this.scene.add(ch.root);
     ch.root.visible = false;
@@ -758,7 +758,7 @@ export class Game {
   addKillfeed(m) {
     const kf = $('killfeed');
     const cls = id => id === this.myId ? 'ally' : this.isEnemyId(id) ? 'enemy' : 'ally';
-    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', core: 'Noyau', admin: 'Admin' }[m.w] || m.w;
+    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', core: 'Noyau', admin: 'Admin' }[m.w] || m.w;
     const div = document.createElement('div');
     div.className = 'kf' + (m.k === this.myId || m.v === this.myId ? ' mine' : '');
     div.innerHTML = (m.k ? `<span class="${cls(m.k)}">${esc(this.nameOf(m.k))}</span>` : '') +
@@ -1346,6 +1346,16 @@ export class Game {
       const l = Math.hypot(dx, dz) || 1;
       L.vel[0] = dx / l * MOVE.dashSpeed; L.vel[2] = dz / l * MOVE.dashSpeed; L.vel[1] = Math.max(L.vel[1], 1.5);
       L.dashT = MOVE.dashTime;
+    } else if (ab.type === 'grapple') {
+      // grappin : on vise un point (mur, caisse, sol) jusqu'à 22 m et on y est propulsé
+      const o = [L.pos[0], L.pos[1] + (L.crouch ? PLAYER.eyeCrouch : PLAYER.eye), L.pos[2]];
+      const r = raycastBoxes(o, dir, 22, this.boxes);
+      const t = Math.min(22, r.t);
+      const tgt = [o[0] + dir[0] * (t - 0.8), Math.min(4.2, o[1] + dir[1] * (t - 0.8)), o[2] + dir[2] * (t - 0.8)];
+      const v = [tgt[0] - L.pos[0], tgt[1] - L.pos[1] + 0.6, tgt[2] - L.pos[2]], dl = Math.hypot(...v) || 1;
+      L.vel[0] = v[0] / dl * 24; L.vel[2] = v[2] / dl * 24; L.vel[1] = Math.max(4, v[1] / dl * 24 + 3);
+      L.dashT = Math.min(0.9, dl / 24);
+      this.addImpact?.(tgt, '#c95cff', 0.25, 0.4);
     } else if (ab.type === 'blink') {
       const fl = norm([-Math.sin(L.yaw), 0, -Math.cos(L.yaw)]);
       const o = [L.pos[0], L.pos[1] + 1, L.pos[2]];
@@ -1463,6 +1473,17 @@ export class Game {
     on('dmgReport', m => this.showDmgReport(m.rows));
     on('wallBreak', () => SFX.playAbility('wall', null));
     on('mark', m => this.addMark(m));
+    // pièges de Kora (1.19) : visibles seulement par son équipe
+    on('trap', m => {
+      this.trapMeshes ||= new Map();
+      const g = new THREE.Group();
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.5, 0.06, 20), new THREE.MeshStandardMaterial({ color: '#2a2410', emissive: '#ffd166', emissiveIntensity: 0.6 }));
+      disc.position.y = 0.04; g.add(disc);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.03, 6, 24), new THREE.MeshBasicMaterial({ color: '#ffd166' }));
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.08; g.add(ring);
+      g.position.set(m.p[0], m.p[1], m.p[2]); this.scene.add(g); this.trapMeshes.set(m.id, g);
+    });
+    on('trapGone', m => { const g = this.trapMeshes?.get(m.id); if (g) { this.scene.remove(g); this.trapMeshes.delete(m.id); } });
     on('killcam', m => this.startKillcam(m));
     on('emote', m => this.showEmote(m));
     on('leader', m => { this.leaderId = m.id; $('leader').textContent = m.id && isFfa(this.mode) ? `👑 MENEUR : ${this.nameOf(m.id)}${m.id === this.myId ? ' (toi !)' : ''}` : ''; });
@@ -2528,7 +2549,7 @@ export class Game {
     const ghost = buildCharacter(r?.agent || 'ignis', ALLY);
     this.scene.add(ghost.root);
     this.kc = { m, t0, dur: t1 - t0, start: performance.now() / 1000 + 0.35, ghost, shotIdx: 0 };
-    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[m.w] || '';
+    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège' }[m.w] || '';
     $('kc-who').innerHTML = `Éliminé par <b style="color:${ENEMY}">${esc(m.kn || '?')}</b>${wn ? ` · ${esc(wn)}` : ''}${m.h ? ' · <b>tête</b>' : ''} <span class="muted">(${m.hp} PV restants)</span>`;
     $('kc-skip').textContent = `${KB('jump')} ou clic pour passer`;
     $('killcam').classList.add('on');
@@ -2722,7 +2743,7 @@ export class Game {
     $('end-mvp').innerHTML = mvp ? `<span class="mvp-badge">MVP</span> ${agentIconHTML(mvp.agent, 'sm')} <b>${esc(mvp.name)}</b> <span class="muted">${mvp.score} pts · ${mvp.kills}/${mvp.deaths}/${mvp.assists} · ${mvp.dmg} dégâts</span>` : '';
     $('end-progress').innerHTML = this.isGuest ? '<div class="muted">Crée un compte pour gagner de l\'XP, monter de niveau et accomplir des quêtes.</div>' : '<div class="muted">Calcul de la progression…</div>';
     const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
-    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[id] || '—';
+    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège' }[id] || '—';
     const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
     $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span>ARME FAVORITE</span></div>${rows}`;
     this.myVote = null; this.myRematch = false;

@@ -11,7 +11,7 @@ import { WEAPON_UNLOCK, LEVEL_SKINS, DAILY_BONUS, BANNERS, ENDORSE, CHAT_EMOJI }
 import { WEAPONS } from '/shared/data.js';
 // :gg: → 👍 dans les messages affichés
 export const emojify = t => String(t ?? '').replace(/:[a-z0-9]{2,6}:/g, m => CHAT_EMOJI[m] || m);
-const WNAME = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre' }[id] || id || '—';
+const WNAME = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège' }[id] || id || '—';
 const MODE_STATS = (ms = {}) => Object.entries(ms).length ? `<table class="tbl"><tr><th>Mode</th><th>Parties</th><th>Victoires</th><th>K/D</th></tr>${Object.entries(ms).sort((a, b) => b[1].matches - a[1].matches).map(([m, v]) => `<tr><td>${esc(MODE[m] || m)}</td><td>${v.matches}</td><td>${pct(v.wins, v.matches)}</td><td>${kd(v.kills, v.deaths)}</td></tr>`).join('')}</table>` : '<p class="muted">Aucune partie.</p>';
 const ENDORSE_HTML = (e = {}) => Object.entries(ENDORSE).map(([k, l]) => `<span class="endorse">${l} <b>${e[k] || 0}</b></span>`).join('');
 
@@ -365,7 +365,13 @@ export function renderProfile() {
     <div class="panel"><h3>ÉLIMINATIONS PAR ARME</h3>${Object.keys(pr.weaponKills || {}).length ? `<table class="tbl"><tr><th>Arme</th><th>Éliminations</th></tr>${Object.entries(pr.weaponKills).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([w, n]) => `<tr><td>${esc(WNAME(w))}</td><td>${n}</td></tr>`).join('')}</table>` : '<p class="muted">Aucune élimination.</p>'}</div>
     <div class="panel"><h3>RECOMMANDATIONS REÇUES</h3><div class="endorse-row">${ENDORSE_HTML(pr.endorse)}</div>${Object.values(pr.endorse || {}).reduce((a, b) => a + b, 0) >= 10 ? '<p class="gold">🤝 Badge fair-play obtenu !</p>' : '<p class="muted small">10 recommandations = badge fair-play sur ton profil.</p>'}</div>
     <div class="panel"><h3>TOURNOIS</h3>${(pr.tourHist || []).length ? `<table class="tbl"><tr><th>Tournoi</th><th>Résultat</th><th>Date</th></tr>${pr.tourHist.map(t => `<tr><td>${esc(t.name)}</td><td class="${t.place === 'Vainqueur' ? 'gold' : ''}">${esc(t.place)}</td><td>${new Date(t.t).toLocaleDateString('fr-FR')}</td></tr>`).join('')}</table>` : '<p class="muted">Aucun tournoi joué. Inscris-toi dans l\'onglet TOURNOIS !</p>'}</div>
-    <div class="panel"><h3>STATISTIQUES PAR CARTE</h3>${maps.length ? `<table class="tbl"><tr><th>Carte</th><th>Parties</th><th>Victoires</th><th>K/D</th></tr>${maps.map(([id, m]) => `<tr><td>${esc(MAP_INFO[id]?.name || id)}</td><td>${m.matches}</td><td>${pct(m.wins, m.matches)}</td><td>${kd(m.kills, m.deaths)}</td></tr>`).join('')}</table>` : '<p class="muted">Aucune carte jouée.</p>'}</div>
+    <div class="panel"><h3>STATISTIQUES PAR CARTE</h3>${maps.length ? (() => {
+      // meilleure et pire carte (au moins 3 parties), barre du taux de victoire
+      const rated = maps.filter(([, m]) => m.matches >= 3).map(([id, m]) => [id, m, m.wins / m.matches]).sort((a, b) => b[2] - a[2]);
+      const best = rated[0], worst = rated.length > 1 ? rated[rated.length - 1] : null;
+      return `${best ? `<div class="map-bw"><div class="good">🏆 MEILLEURE CARTE<b>${esc(MAP_INFO[best[0]]?.name || best[0])}</b><span>${Math.round(best[2] * 100)} % de victoires</span></div>${worst && worst[0] !== best[0] ? `<div class="bad">⚠ À TRAVAILLER<b>${esc(MAP_INFO[worst[0]]?.name || worst[0])}</b><span>${Math.round(worst[2] * 100)} % de victoires</span></div>` : ''}</div>` : '<p class="muted small">Joue au moins 3 parties sur une carte pour voir ta meilleure et ta pire carte.</p>'}
+      <table class="tbl"><tr><th>Carte</th><th>Parties</th><th>Victoires</th><th>K/D</th></tr>${maps.map(([id, m]) => `<tr><td>${esc(MAP_INFO[id]?.name || id)}</td><td>${m.matches}</td><td><div class="map-wr"><i style="width:${Math.round(m.wins / Math.max(1, m.matches) * 100)}%"></i><span>${pct(m.wins, m.matches)}</span></div></td><td>${kd(m.kills, m.deaths)}</td></tr>`).join('')}</table>`;
+    })() : '<p class="muted">Aucune carte jouée.</p>'}</div>
   </div>
   <div class="panel"><h3>HISTORIQUE DES PARTIES <span class="muted small">(20 dernières)</span></h3><div class="hist">${pr.history.map(histRow).join('') || '<p class="muted">Aucune partie pour le moment.</p>'}</div></div>
   <div class="panel"><h3>SUCCÈS <span class="muted small">${pr.achievements.length} / ${ACHIEVEMENTS.length}</span></h3><div class="ach-grid">${ACHIEVEMENTS.map(a => {

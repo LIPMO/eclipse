@@ -1,4 +1,5 @@
 // Progression partagée client/serveur : niveaux, déblocages, quêtes, succès, titres, rangs Elo, messages radio.
+import { SKINS } from './data.js';
 
 export const MAX_LEVEL = 100;
 // XP nécessaire pour passer du niveau L au niveau L+1
@@ -38,6 +39,9 @@ export const XP = { match: 100, kill: 20, assist: 8, roundWin: 15, win: 150, pla
 
 // ---------- quêtes ----------
 // stat : clé du résultat de partie qui fait avancer la quête
+// collections de skins (1.19)
+export const SKIN_SETS = [...new Set(SKINS.filter(s => s.set).map(s => s.set))];
+export const setKey = set => set.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 export const QUESTS = {
   d_play3:   { kind: 'daily', label: 'Jouer 3 parties', stat: 'matches', goal: 3 },
   d_win1:    { kind: 'daily', label: 'Gagner une partie', stat: 'wins', goal: 1 },
@@ -60,6 +64,23 @@ export const QUESTS = {
   w_dmg20k:   { kind: 'weekly', label: 'Infliger 20 000 dégâts', stat: 'dmg', goal: 20000 },
   w_ult15:    { kind: 'weekly', label: 'Utiliser 15 ultimes', stat: 'ults', goal: 15 },
   w_multi5:   { kind: 'weekly', label: '5 manches à 3 éliminations ou plus', stat: 'multi3', goal: 5 },
+  // 1.19 : nouvelles quêtes
+  d_slide8:   { kind: 'daily', label: 'Glisser 8 fois', stat: 'slides', goal: 8 },
+  d_ads40:    { kind: 'daily', label: 'Tirer 40 fois en visant au viseur', stat: 'adsShots', goal: 40 },
+  d_defuse1:  { kind: 'daily', label: 'Désamorcer le Noyau une fois', stat: 'defuses', goal: 1 },
+  d_ult2:     { kind: 'daily', label: 'Utiliser 2 ultimes', stat: 'ults', goal: 2 },
+  d_multi1:   { kind: 'daily', label: 'Faire une manche à 3 éliminations ou plus', stat: 'multi3', goal: 1 },
+  d_mvp1:     { kind: 'daily', label: 'Être MVP d\'une partie', stat: 'mvp', goal: 1 },
+  d_kills30:  { kind: 'daily', label: 'Réaliser 30 éliminations', stat: 'kills', goal: 30 },
+  d_win2:     { kind: 'daily', label: 'Gagner 2 parties', stat: 'wins', goal: 2 },
+  w_slide60:  { kind: 'weekly', label: 'Glisser 60 fois', stat: 'slides', goal: 60 },
+  w_ads300:   { kind: 'weekly', label: 'Tirer 300 fois au viseur', stat: 'adsShots', goal: 300 },
+  w_abil80:   { kind: 'weekly', label: 'Utiliser 80 capacités', stat: 'abilities', goal: 80 },
+  w_ffa150:   { kind: 'weekly', label: '150 éliminations en Mêlée', stat: 'ffaKills', goal: 150 },
+  w_assist40: { kind: 'weekly', label: '40 assistances', stat: 'assists', goal: 40 },
+  w_plant10:  { kind: 'weekly', label: 'Poser le Noyau 10 fois', stat: 'plants', goal: 10 },
+  w_mvp5:     { kind: 'weekly', label: 'Être MVP de 5 parties', stat: 'mvp', goal: 5 },
+  w_knife10:  { kind: 'weekly', label: '10 éliminations au couteau', stat: 'knifeKills', goal: 10 },
 };
 export const QUEST_REWARD = { daily: { eclats: 120, xp: 250 }, weekly: { eclats: 500, xp: 1200 } };
 export const QUESTS_PER = { daily: 3, weekly: 3 };
@@ -91,6 +112,10 @@ export const ACHIEVEMENTS = [
   { id: 'elo_1700', label: 'Éclipse', desc: 'Atteindre 1 700 d\'Elo en duel', reward: 1500, title: 'eclipse', check: u => (u.eloPeak || 0) >= 1700 },
   { id: 'friends_5', label: 'Bien entouré', desc: 'Avoir 5 amis', reward: 150, check: u => (u.friends || []).length >= 5 },
   { id: 'quests_50', label: 'Aventurier', desc: 'Terminer 50 quêtes', reward: 600, check: u => (u.stats.questsDone || 0) >= 50 },
+  // 1.19 : collections de skins complètes (bonus d'Éclats et titre)
+  ...SKIN_SETS.map(set => ({ id: 'set_' + setKey(set), label: `Collection ${set}`, desc: `Posséder les 10 skins de la collection ${set}`, reward: 800, title: 'set_' + setKey(set),
+    check: u => SKINS.filter(s => s.set === set).every(s => (u.owned || []).includes(s.id)) })),
+  { id: 'sets_all', label: 'Grand collectionneur', desc: 'Compléter les 10 collections de skins', reward: 3000, title: 'collectionneur', check: u => SKINS.filter(s => s.set).every(s => (u.owned || []).includes(s.id)) },
 ];
 
 // ---------- titres ----------
@@ -98,7 +123,9 @@ export const TITLES = {
   recrue: 'Recrue', tireur: 'Tireur d\'élite', lame: 'Lame silencieuse', duelliste: 'Duelliste', as: 'As',
   demolisseur: 'Démolisseur', demineur: 'Démineur', mvp: 'Joueur décisif', veteran: 'Vétéran', legende: 'Légende',
   fidele: 'Fidèle', polyvalent: 'Polyvalent', explorateur: 'Explorateur', eclipse: 'Éclipse', vengeur: 'Vengeur', faucon: 'Œil de faucon', remontada: 'Roi de la remontada',
-  fondateur: 'Fondateur', champion: 'Champion', testeur: 'Testeur',
+  fondateur: 'Fondateur', champion: 'Champion', testeur: 'Testeur', collectionneur: 'Grand collectionneur',
+  set_ocean: 'Seigneur des océans', set_volcan: 'Cœur de lave', set_foret: 'Gardien de la forêt', set_arctique: 'Roi des glaces', set_cyber: 'Cyber-légende',
+  set_desert: 'Nomade des sables', set_royal: 'Altesse', set_sauvage: 'Bête sauvage', set_retro: 'Icône rétro', set_cosmos: 'Voyageur cosmique',
 };
 // titres attribuables uniquement par l'équipe
 export const STAFF_TITLES = ['fondateur', 'champion', 'testeur'];

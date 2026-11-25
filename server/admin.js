@@ -40,6 +40,8 @@ const DEFAULT_CONFIG = {
   slide: true,
   // 1.15 : blagues de l'administrateur (autorisées, durée max en s), événements serveur, message envoyé aux nouveaux comptes
   trollsOn: true, trollMax: 30, eventBigHead: false, eventLowGrav: false, eventTurbo: false, welcomeMsg: '',
+  // 1.19 : agents et cartes désactivés (identifiants séparés par des virgules), multiplicateur des récompenses de quêtes
+  disabledAgents: '', disabledMaps: '', questMul: 1,
 };
 // filtre proposé au premier lancement (modifiable dans Modération → Filtre de mots)
 const DEFAULT_FILTER = ['connard', 'connasse', 'salope', 'pute', 'enculé', 'encule', 'fdp', 'ntm', 'nique ta mère', 'niquetamere', 'batard', 'bâtard', 'pédé', 'tg', 'ta gueule'];
@@ -55,7 +57,7 @@ const CONFIG_RULES = {
   anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool',
   alertSuspectLogin: 'bool', maxAccountsPerIp: [0, 50], weekendXp: 'bool',
   perfAlerts: 'bool', perfTickMs: [5, 200], discordPerf: 'bool', autoBackup: 'bool', backupKeep: [1, 30], rateChat: [2, 30], rateSocial: [4, 60], clanMinLevel: [1, 50], slide: 'bool',
-  trollsOn: 'bool', trollMax: [5, 120], eventBigHead: 'bool', eventLowGrav: 'bool', eventTurbo: 'bool', welcomeMsg: ['str', 300],
+  disabledAgents: ['str', 300], disabledMaps: ['str', 300], questMul: [0, 5], trollsOn: 'bool', trollMax: [5, 120], eventBigHead: 'bool', eventLowGrav: 'bool', eventTurbo: 'bool', welcomeMsg: ['str', 300],
 };
 // libellés lisibles de la configuration (historique des modifications)
 const CONFIG_LABELS = {
@@ -68,7 +70,7 @@ const CONFIG_LABELS = {
   discordCheat: 'Discord : triche', discordReports: 'Discord : signalements', discordBans: 'Discord : bans', discordTournaments: 'Discord : tournois', alertSuspectLogin: 'Alerte compte surveillé',
   maxAccountsPerIp: 'Comptes par IP', weekendXp: 'XP du week-end', perfAlerts: 'Alertes de lenteur', perfTickMs: 'Seuil de lenteur (ms)', discordPerf: 'Discord : lenteur',
   autoBackup: 'Sauvegarde automatique', backupKeep: 'Sauvegardes conservées', rateChat: 'Limite du chat', rateSocial: 'Limite des actions sociales', clanMinLevel: 'Niveau requis pour créer un clan', slide: 'Glissade',
-  trollsOn: 'Blagues autorisées', trollMax: 'Durée max. des blagues', eventBigHead: 'Événement grosses têtes', eventLowGrav: 'Événement gravité basse', eventTurbo: 'Événement turbo',
+  disabledAgents: 'Agents désactivés', disabledMaps: 'Cartes désactivées', questMul: 'Récompenses des quêtes', trollsOn: 'Blagues autorisées', trollMax: 'Durée max. des blagues', eventBigHead: 'Événement grosses têtes', eventLowGrav: 'Événement gravité basse', eventTurbo: 'Événement turbo',
   welcomeMsg: 'Message d\'accueil des nouveaux comptes',
 };
 // blagues de l'administrateur (1.15) : all = visible par toute la partie, max = durée plafonnée (s)
@@ -79,7 +81,7 @@ export const TROLLS = {
   confetti: { name: 'Confettis', all: true }, dance: { name: 'Danse forcée', all: true }, flash: { name: 'Flash blanc', max: 3 }, freeze: { name: 'Gel sur place', max: 5 },
 };
 const BACKUP_RE = /^eclipse-\d{4}-\d{2}-\d{2}(-\d{6})?\.json$/;
-const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul']);
+const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul', 'questMul']);
 export const ACCOUNT_TAGS = { surveille: 'Surveillé', suspect: 'Suspect', vip: 'VIP', testeur: 'Testeur', createur: 'Créateur', partenaire: 'Partenaire' };
 const DISCORD_RE = /^https:\/\/(discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)\/api\/webhooks\/\d{5,25}\/[\w-]{20,100}$/;
 const LINK_RE = /(https?:\/\/|www\.|discord\.gg|\b[a-z0-9-]{2,}\.(com|net|org|fr|io|gg|xyz|ru|info|me|be|co)\b)/i;
@@ -212,7 +214,7 @@ export class Admin {
   mul() {
     const c = this.state.config, ev = this.eventActive();
     const wd = new Date().getDay(), weekend = c.weekendXp && (wd === 0 || wd === 6);
-    return { xp: c.xpMul * (ev ? c.eventXpMul : 1) * (weekend ? 1.5 : 1), eclats: c.rewardMul * (ev ? c.eventEclatsMul : 1) };
+    return { xp: c.xpMul * (ev ? c.eventXpMul : 1) * (weekend ? 1.5 : 1), eclats: c.rewardMul * (ev ? c.eventEclatsMul : 1), quest: c.questMul ?? 1 };
   }
   economy(kind, v) {
     const st = this.state.stats, d = today();
@@ -859,7 +861,7 @@ const ACTIONS = {
       agentStats: u.agentStats, mapStats: u.mapStats, daily: u.daily, suspect: sus ? { count: sus.count, alerts: sus.alerts.slice(0, 8) } : null,
       reports: this.state.reports.filter(r => r.targetAccount === key || r.target?.toLowerCase() === key).length,
       sanctions: u.sanctions || [], tags: u.tags || [], avg: this.serverAverages(), regIp: lvl >= 2 ? u.regIp || null : null,
-      winStreak: u.winStreak || 0, aimBest: u.aimBest || 0, customTitle: u.customTitle || '' };
+      outfitsAll: !!u.outfitsAll, winStreak: u.winStreak || 0, aimBest: u.aimBest || 0, customTitle: u.customTitle || '' };
   } },
   rooms: { level: 1, fn() { return [...this.ctx.rooms.values()].map(r => this.roomInfo(r)); } },
   room: { level: 1, fn({ q }) { return this.roomInfo(this.room(q.get('id')), true); } },
@@ -1073,6 +1075,27 @@ const ACTIONS = {
     else { if (!SKINS.some(s => s.id === body.skin)) fail('Skin inconnu'); if (!u.owned.includes(body.skin)) u.owned.push(body.skin); }
     this.ctx.accounts.save(); this.notifyProfile(u);
     return { owned: u.owned, _detail: `${u.name} — ${body.skin}` };
+  } },
+  // 1.19 : collection offerte, tenues débloquées, quêtes renouvelées
+  'account/giveSet': { level: 2, post: true, label: 'Collection offerte', fn({ body }) {
+    const u = this.findUser(body.name);
+    const ids = SKINS.filter(s => s.set === body.set).map(s => s.id); if (!ids.length) fail('Collection inconnue');
+    for (const id of ids) if (!u.owned.includes(id)) u.owned.push(id);
+    this.ctx.accounts.save(); this.notifyProfile(u);
+    return { _detail: `${u.name} — ${body.set}` };
+  } },
+  'account/outfitsAll': { level: 2, post: true, label: 'Tenues débloquées', fn({ body }) {
+    const u = this.findUser(body.name); u.outfitsAll = !u.outfitsAll; this.ctx.accounts.save(); this.notifyProfile(u);
+    return { on: u.outfitsAll, _detail: `${u.name} — ${u.outfitsAll ? 'oui' : 'non'}` };
+  } },
+  'account/resetQuests': { level: 2, post: true, label: 'Quêtes renouvelées', fn({ body }) {
+    const u = this.findUser(body.name); u.quests = null; this.ctx.accounts.save(); this.notifyProfile(u);
+    return { _detail: u.name };
+  } },
+  questsResetAll: { level: 3, post: true, label: 'Nouvelles quêtes pour tous', fn() {
+    let n = 0; for (const u of Object.values(this.ctx.accounts.data.users)) if (u) { u.quests = null; n++; }
+    this.ctx.accounts.save();
+    return { n, _detail: `${n} compte(s)` };
   } },
   'account/resetStats': { level: 2, post: true, label: 'Statistiques remises à zéro', fn({ body, lvl, user }) {
     const u = this.findUser(body.name); this.guard(lvl, u, user);

@@ -4,9 +4,9 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Game } from './game.js';
 import { profile, save, session, setToken, applyServerProfile } from './store.js';
-import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, ROLES, ABILITY_ICONS, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
+import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, ROLES, ABILITY_ICONS, OUTFITS, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
-import { masteryOf } from '/shared/progress.js';
+import { masteryOf, BANNERS, TITLES, setKey } from '/shared/progress.js';
 import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
 import * as SFX from './audio.js';
 import { mountSettings, keyName, sanitizeSettings, applyPreset } from './settings.js';
@@ -351,6 +351,8 @@ function renderRoom() {
   // salle d'attente : départ automatique au bout d'une minute (ou dès que tout le monde est prêt)
   if (r.autoStartIn > 0 && r.state === 'lobby') { state.autoEnd = performance.now() + r.autoStartIn * 1000; if (!state.autoTimer) { state.autoTimer = setInterval(tickRoomAuto, 250); } tickRoomAuto(); }
   else { clearInterval(state.autoTimer); state.autoTimer = null; $('room-auto').classList.add('hidden'); }
+  $('wu-open').style.display = r.state === 'lobby' ? '' : 'none';
+  if (r.state !== 'lobby' && wu.run) { wu.run = false; cancelAnimationFrame(wu.raf); }
   $('room-start').style.display = host && r.state === 'lobby' ? '' : 'none';
   $('room-ready').style.display = r.state === 'lobby' ? '' : 'none';
   $('room-ready').classList.toggle('on', !!me?.ready);
@@ -364,6 +366,50 @@ function renderRoom() {
   const a = AGENTS[me?.agent];
   $('agent-pick-info').innerHTML = a ? ['q', 'e', 'x'].map(k => `<span><b>${k === 'x' ? 'ULTIME' : k.toUpperCase()}</b> · ${a.abilities[k].name}</span>`).join('') : '';
 }
+// ---- échauffement de la salle d'attente (1.19) : cibles à cliquer pendant 30 s ----
+const wu = { run: false, t0: 0, hits: 0, shots: 0, targets: [], raf: 0 };
+const wuBest = () => { try { return +localStorage.getItem('eclipse_wu_best') || 0; } catch { return 0; } };
+function wuInfo(txt) { $('wu-info').textContent = txt; }
+function wuStart() {
+  Object.assign(wu, { run: true, t0: performance.now(), hits: 0, shots: 0, targets: [] });
+  for (let i = 0; i < 3; i++) wuSpawn();
+  cancelAnimationFrame(wu.raf); wu.raf = requestAnimationFrame(wuLoop); SFX.initAudio();
+}
+function wuSpawn() { const cv = $('wu-cv'); wu.targets.push({ x: 30 + Math.random() * (cv.width - 60), y: 30 + Math.random() * (cv.height - 60), r: 22, born: performance.now() }); }
+function wuLoop(now) {
+  const cv = $('wu-cv'), g = cv.getContext('2d'); if (!cv.isConnected) return;
+  const left = Math.max(0, 30 - (now - wu.t0) / 1000);
+  g.fillStyle = '#0b0e1c'; g.fillRect(0, 0, cv.width, cv.height);
+  g.strokeStyle = 'rgba(255,255,255,.04)'; for (let x = 0; x < cv.width; x += 40) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, cv.height); g.stroke(); }
+  for (const t of wu.targets) {
+    const age = (now - t.born) / 1000, r = Math.max(6, t.r - age * 7); t.cr = r;
+    g.fillStyle = '#ff4f6d'; g.beginPath(); g.arc(t.x, t.y, r, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(t.x, t.y, r * 0.55, 0, 7); g.fill();
+    g.fillStyle = '#ff4f6d'; g.beginPath(); g.arc(t.x, t.y, r * 0.22, 0, 7); g.fill();
+  }
+  g.fillStyle = '#e9ecf5'; g.font = 'bold 16px sans-serif'; g.fillText(`${left.toFixed(1)} s · ${wu.hits} touchée(s) · précision ${wu.shots ? Math.round(wu.hits / wu.shots * 100) : 0} %`, 12, 22);
+  if (left <= 0) {
+    wu.run = false;
+    const score = Math.round(wu.hits * 100 * (wu.shots ? wu.hits / wu.shots : 0)), best = wuBest();
+    if (score > best) try { localStorage.setItem('eclipse_wu_best', String(score)); } catch { /* */ }
+    g.fillStyle = 'rgba(8,10,20,.8)'; g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = '#fff'; g.font = 'bold 28px sans-serif'; g.textAlign = 'center';
+    g.fillText(`SCORE : ${score}${score > best ? ' · NOUVEAU RECORD !' : ''}`, cv.width / 2, cv.height / 2 - 6);
+    g.font = '15px sans-serif'; g.fillText(`${wu.hits} cibles · précision ${wu.shots ? Math.round(wu.hits / wu.shots * 100) : 0} % · record ${Math.max(best, score)}`, cv.width / 2, cv.height / 2 + 22); g.textAlign = 'left';
+    wuInfo('Clique sur JOUER pour recommencer.'); return;
+  }
+  wu.raf = requestAnimationFrame(wuLoop);
+}
+$('wu-cv').addEventListener('mousedown', e => {
+  if (!wu.run) return;
+  const cv = $('wu-cv'), b = cv.getBoundingClientRect(), x = (e.clientX - b.left) * cv.width / b.width, y = (e.clientY - b.top) * cv.height / b.height;
+  wu.shots++;
+  const i = wu.targets.findIndex(t => Math.hypot(t.x - x, t.y - y) <= (t.cr || t.r));
+  if (i >= 0) { wu.hits++; wu.targets.splice(i, 1); wuSpawn(); SFX.playHit?.(false, false); } else SFX.playClick?.();
+});
+$('wu-open').onclick = () => { $('wu').classList.remove('hidden'); $('wu-open').classList.add('hidden'); wuInfo(`Clique sur les cibles le plus vite possible (30 s). Record : ${wuBest()}`); };
+$('wu-x').onclick = () => { wu.run = false; cancelAnimationFrame(wu.raf); $('wu').classList.add('hidden'); $('wu-open').classList.remove('hidden'); };
+$('wu-go').onclick = () => { wuInfo('C\'est parti !'); wuStart(); };
 function tickRoomAuto() {
   const el = $('room-auto'); const left = Math.max(0, Math.ceil((state.autoEnd - performance.now()) / 1000));
   if (!state.room || state.room.state !== 'lobby' || state.game) { clearInterval(state.autoTimer); state.autoTimer = null; el.classList.add('hidden'); return; }
@@ -514,7 +560,9 @@ const lobbyCfgNow = () => (lobbyParty() && !lobbyParty().lead && lobbyParty().cf
 function lobbyMembers() {
   const p = lobbyParty();
   if (p) return [...p.members.filter(m => m.me), ...p.members.filter(m => !m.me)];
-  return [{ name: profile.name || '—', me: true, leader: true, ready: true, agent: profile.agent, skin: profile.equipped?.lancer || 'default', level: profile.progress?.level || 1, title: null, solo: true }];
+  const pr = profile.progress;
+  return [{ name: profile.name || '—', me: true, leader: true, ready: true, agent: profile.agent, outfit: pr?.outfits?.[profile.agent] || null, skin: profile.equipped?.lancer || 'default', level: pr?.level || 1, title: null, solo: true,
+    banner: BANNERS[pr?.banner]?.css || null, rank: pr?.ranked ? pr.rank : null, rankColor: pr?.rankColor }];
 }
 // décor de la scène (créé une seule fois) : sol lumineux, anneaux, colonnes au loin, particules
 function lobbyEnv(pv) {
@@ -558,7 +606,7 @@ function buildLobbyStage(members) {
     const holder = new THREE.Group(); holder.position.set(...LB_POS[i]);
     let ch;
     if (m) {
-      ch = buildCharacter(m.agent || 'ignis', '#19e3c4');
+      ch = buildCharacter(m.agent || 'ignis', '#19e3c4', m.outfit);
       const w = buildWeapon('rifle', m.skin || 'default'); w.scale.setScalar(1.1); ch.hand.add(w);
     } else {
       // place libre : silhouette holographique
@@ -612,7 +660,7 @@ function renderLobby() {
   const p = lobbyParty(), cfg = lobbyCfgNow(), edit = lobbyCanEdit();
   const members = lobbyMembers();
   const me = members.find(m => m.me) || members[0];
-  const sig = members.map(m => [m.name, m.agent, m.skin, m.ready, m.leader].join(':')).join('|');
+  const sig = members.map(m => [m.name, m.agent, m.outfit, m.skin, m.ready, m.leader].join(':')).join('|');
   if (sig !== lobby.sig) { lobby.sig = sig; try { buildLobbyStage(members); } catch (e) { console.warn('Salon : aperçu 3D indisponible', e); } }
   // pseudos (un par place, dans le même ordre que la scène)
   let html = '';
@@ -621,7 +669,7 @@ function renderLobby() {
     if (m) {
       const st = m.leader ? (m.solo ? 'TOI' : '👑 CHEF') : m.busy ? '⏳ EN PARTIE' : m.ready ? '✔ PRÊT' : 'PAS PRÊT';
       const acts = p?.lead && !m.me ? `<div class="lb-acts"><button class="btn ghost small" data-lb="promote" data-n="${esc(m.name)}" title="Nommer chef">👑</button><button class="btn ghost small" data-lb="kick" data-n="${esc(m.name)}" title="Retirer du groupe">✕</button></div>` : '';
-      html += `<div class="lb-slot ${m.leader ? 'lead' : m.ready ? 'ready' : ''} ${m.me ? 'me' : ''}"><div class="lb-tag-top"><span class="lvl">${m.level || 1}</span>${esc(m.name)}</div><div class="lb-tag-sub">${m.title ? esc(m.title) : ''}${m.clan ? ' [' + esc(m.clan) + ']' : ''}</div><div class="lb-tag-st">${st}</div>${acts}</div>`;
+      html += `<div class="lb-slot ${m.leader ? 'lead' : m.ready ? 'ready' : ''} ${m.me ? 'me' : ''}"><div class="lb-tag-top" ${m.banner ? `style="background:${m.banner}"` : ''}><span class="lvl">${m.level || 1}</span>${esc(m.name)}</div><div class="lb-tag-sub">${m.rank && m.rank !== 'Non classé' ? `<b style="color:${m.rankColor}">${esc(m.rank)}</b> · ` : ''}${m.title ? esc(m.title) : ''}${m.clan ? ' [' + esc(m.clan) + ']' : ''}</div><div class="lb-tag-st">${st}</div>${acts}</div>`;
     } else if (state.guest) html += `<div class="lb-slot empty locked" title="Crée un compte pour jouer en groupe"><b>🔒</b>COMPTE REQUIS</div>`;
     else if (edit) html += `<button class="lb-slot empty" data-lb="invite"><b>＋</b>INVITER UN AMI</button>`;
     else html += `<div class="lb-slot empty locked"><b>·</b>PLACE LIBRE</div>`;
@@ -905,28 +953,41 @@ function renderAgents() {
       <div class="ag-ms" title="Points : éliminations + 4 par partie + 6 par victoire"><span>MAÎTRISE <b>${ms.level}</b>/10</span><div class="pf-bar"><i style="width:${ms.next ? Math.round((ms.pts - ms.prev) / (ms.next - ms.prev) * 100) : 100}%"></i></div><span class="muted small">${ms.next ? `${ms.pts} / ${ms.next} points` : 'maîtrise maximale !'}</span></div>
       <div class="ag-nums"><div><b>${st?.matches || 0}</b><span>parties</span></div><div><b>${st?.matches ? Math.round(st.wins / st.matches * 100) : 0} %</b><span>victoires</span></div><div><b>${st ? (st.kills / Math.max(1, st.deaths)).toFixed(2) : '0.00'}</b><span>K/D</span></div><div><b>${st?.kills || 0}</b><span>éliminations</span></div></div>
     </div>`}
+    ${state.guest || !profile.progress ? '' : `<div class="ag-k ag-k2">// TENUES (débloquées par la maîtrise)</div>
+    <div class="ag-outfits">${Object.entries(OUTFITS).map(([id, o]) => { const cur = (profile.progress.outfits?.[a.id] || 'base') === id, lock = ms.level < (o.mastery || 1) && !profile.progress.outfitsAll, prev = (state.agentOutfit ?? (profile.progress.outfits?.[a.id] || 'base')) === id;
+      return `<button class="ag-of ${cur ? 'cur' : ''} ${prev ? 'prev' : ''} ${lock ? 'lock' : ''}" data-of="${id}" title="${esc(o.name)}${lock ? ` · maîtrise ${o.mastery} requise` : ''}" style="--a:${o.armor || a.color};--g:${o.glow || a.color}"><i></i><span>${esc(o.name)}${lock ? ' 🔒' + o.mastery : cur ? ' ✔' : ''}</span></button>`; }).join('')}</div>`}
     <button class="ag-pick ${mine ? 'on' : ''}" id="ag-pick">${mine ? '✔ TON AGENT' : 'CHOISIR CET AGENT'}</button>`;
   if (!previews.agent) { previews.agent = new Preview($('ag-canvas')); previews.agent.noSpin = true; }
-  if (state.agentBuilt !== a.id + (profile.equipped.lancer || '')) {
-    state.agentBuilt = a.id + (profile.equipped.lancer || '');
-    const ch = buildCharacter(a.id, '#19e3c4');
+  const ofView = state.agentOutfit ?? (profile.progress?.outfits?.[a.id] || 'base');
+  if (state.agentBuilt !== a.id + (profile.equipped.lancer || '') + ofView) {
+    state.agentBuilt = a.id + (profile.equipped.lancer || '') + ofView;
+    const ch = buildCharacter(a.id, '#19e3c4', ofView);
     const w = buildWeapon('rifle', profile.equipped.lancer || 'default'); w.scale.setScalar(1.1); ch.hand.add(w);
     ch.root.rotation.y = Math.PI; // face à la caméra
     previews.agent.set(ch.root, [0, 1.15, 4.6], [0, 1.0, 0]);
     previews.agent.rotY = -0.35;
   }
 }
-function pickAgentView(id) { state.agentView = id; state.agentAbility = 'q'; renderAgents(); SFX.initAudio(); SFX.playUI?.('click'); }
+function pickAgentView(id) { state.agentView = id; state.agentAbility = 'q'; state.agentOutfit = null; renderAgents(); SFX.initAudio(); SFX.playUI?.('click'); }
 $('agents-list').onclick = e => { const r = e.target.closest('.ag-item'); if (r) pickAgentView(r.dataset.id); };
 $('ag-roles').onclick = e => { const b = e.target.closest('[data-role]'); if (b) { state.agentRole = b.dataset.role; renderAgents(); } };
 $('agent-detail').onclick = e => {
   const ab = e.target.closest('[data-ab]'); if (ab) { state.agentAbility = ab.dataset.ab; renderAgents(); return; }
+  const of = e.target.closest('[data-of]');
+  if (of) { // aperçu de la tenue ; si elle est débloquée, elle est équipée
+    state.agentOutfit = of.dataset.of; renderAgents();
+    if (!of.classList.contains('lock')) net.send('setOutfit', { agent: state.agentView, outfit: of.dataset.of });
+    else toast(`Tenue « ${OUTFITS[of.dataset.of].name} » : atteins la maîtrise ${OUTFITS[of.dataset.of].mastery} avec cet agent pour la débloquer.`);
+    return;
+  }
   if (e.target.closest('#ag-pick')) {
     profile.agent = state.agentView; save(); lobby.sig = '';
     net.send('setAgent', { agent: state.agentView });
     toast(`${AGENTS[state.agentView].name} est maintenant ton agent.`); renderAgents(); renderMeCard();
   }
 };
+net.on('achUnlocked', m => { notify({ kind: 'SUCCÈS', text: `🏆 ${m.label} : +${m.reward} Éclats${m.title ? ` · nouveau titre « ${m.title} »` : ''}`, ms: 10000 }); SFX.playNotify?.(); });
+net.on('outfits', m => { if (profile.progress) profile.progress.outfits = m.outfits; toast('Tenue équipée.'); lobby.sig = ''; if (state.tab === 'agents') renderAgents(); });
 // flèches haut / bas : agent précédent / suivant
 document.addEventListener('keydown', e => {
   if (state.tab !== 'agents' || state.game || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
@@ -963,6 +1024,8 @@ function renderCollection() {
   $('coll-filters').innerHTML = `<div class="seg small">${[['all', 'TOUS'], ['owned', 'POSSÉDÉS'], ['buy', 'À ACHETER'], ...RORDER.map(r => [r, RARITY[r].name.toUpperCase()])].map(([k, l]) => `<button data-cf="${k}" class="${f === k ? 'active' : ''}">${l}</button>`).join('')}</div>
     <select id="coll-set" title="Collection"><option value="">Toutes les collections</option><option value="classic" ${state.collSet === 'classic' ? 'selected' : ''}>Classiques</option>${sets.map(x => `<option value="${esc(x)}" ${state.collSet === x ? 'selected' : ''}>${esc(x)} (${SKINS.filter(s => s.set === x && profile.owned.includes(s.id)).length}/${SKINS.filter(s => s.set === x).length})</option>`).join('')}</select>
     <span class="grow"></span><span class="muted small">${ownedN}/${SKINS.length} possédés</span>
+    ${state.collSet && state.collSet !== 'classic' ? (() => { const all = SKINS.filter(s => s.set === state.collSet), have = all.filter(s => profile.owned.includes(s.id)).length, t = TITLES['set_' + setKey(state.collSet)];
+      return `<div class="set-goal ${have === all.length ? 'done' : ''}">${have === all.length ? `✔ COLLECTION ${esc(state.collSet.toUpperCase())} TERMINÉE · titre « ${esc(t)} »` : `🎁 COLLECTION ${esc(state.collSet.toUpperCase())} : ${have}/${all.length} · termine-la pour gagner <b>800 Éclats</b> et le titre « ${esc(t)} »`}<div class="set-bar"><i style="width:${have / all.length * 100}%"></i></div></div>`; })() : ''}
     <select id="coll-sort" title="Trier"><option value="">Ordre d'origine</option><option value="price" ${state.collSort === 'price' ? 'selected' : ''}>Prix croissant</option><option value="rarity" ${state.collSort === 'rarity' ? 'selected' : ''}>Rareté</option></select>`;
   $('coll-skins').innerHTML = list.map(s => {
     const owned = profile.owned.includes(s.id);

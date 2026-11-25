@@ -1,5 +1,5 @@
 // Social : amis, joueurs bloqués, messages privés, invitations, profils publics, classements, commandes de chat.
-import { publicCard, titlesOf, rerollQuest, ensureUser, weekKey, rankFor } from './progression.js';
+import { publicCard, titlesOf, rerollQuest, ensureUser, weekKey, rankFor, checkAchievements } from './progression.js';
 import { TITLES, levelOf, BANNERS, ENDORSE } from '../shared/progress.js';
 import { SKINS } from '../shared/data.js';
 // boutique du jour : 3 skins à -40 %, renouvelés chaque jour (même sélection pour tout le monde)
@@ -463,6 +463,8 @@ export class Social {
     this.ctx.admin.economy?.('spend', item.price); this.ctx.admin.economy?.('skin', item.id);
     this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
     this.info(c, `${item.name} ajouté à ta collection (-40 %) !`);
+    const got = checkAchievements(u);
+    if (got.length) { this.A.save(); for (const a of got) this.ctx.send(c.id, { type: 'achUnlocked', label: a.label, reward: a.reward, title: a.title }); this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); }
   }
   m_myProfile(c) { const u = this.userOf(c); if (u) this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); }
 

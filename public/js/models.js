@@ -1,6 +1,6 @@
 // Modèles procéduraux : textures, armes (avec skins), personnages.
 import * as THREE from 'three';
-import { SKINS, AGENTS } from '/shared/data.js';
+import { SKINS, AGENTS, OUTFITS } from '/shared/data.js';
 
 // ---------- utilitaires canvas ----------
 function canvasTex(size, draw, repeat = 1) {
@@ -480,13 +480,15 @@ export function buildWeapon(model, skinId) {
 }
 
 // ---------- personnages ----------
-export function buildCharacter(agentId, teamColor) {
+export function buildCharacter(agentId, teamColor, outfitId = null) {
   const agent = AGENTS[agentId] || AGENTS.ignis;
   const col = new THREE.Color(agent.color);
+  const of = OUTFITS[outfitId] && outfitId !== 'base' ? OUTFITS[outfitId] : null; // tenue (1.19)
+  const glowC = of?.glow || agent.color;
   const mats = {
-    suit: new THREE.MeshStandardMaterial({ color: '#4b5366', roughness: 0.7, metalness: 0.15 }),
-    armor: new THREE.MeshStandardMaterial({ color: col.clone().multiplyScalar(0.85), roughness: 0.45, metalness: 0.35 }),
-    glow: new THREE.MeshStandardMaterial({ color: agent.color, emissive: agent.color, emissiveIntensity: 1.4 }),
+    suit: new THREE.MeshStandardMaterial({ color: of?.suit || '#4b5366', roughness: 0.7, metalness: 0.15 }),
+    armor: new THREE.MeshStandardMaterial({ color: of?.armor ? new THREE.Color(of.armor) : col.clone().multiplyScalar(0.85), roughness: of ? 0.3 : 0.45, metalness: of ? 0.6 : 0.35 }),
+    glow: new THREE.MeshStandardMaterial({ color: glowC, emissive: glowC, emissiveIntensity: 1.4 }),
     skin: new THREE.MeshStandardMaterial({ color: '#59607a', roughness: 0.55 }),
     team: new THREE.MeshStandardMaterial({ color: teamColor, emissive: teamColor, emissiveIntensity: 0.9 }),
   };

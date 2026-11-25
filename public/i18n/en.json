@@ -1883,7 +1883,56 @@
 "Nova": "Nova",
 "Nébuleuse": "Nebula",
 "Quasar": "Quasar",
-"Trou noir": "Black Hole"
+"Trou noir": "Black Hole",
+"Drone éclaireur": "Scout Drone",
+"Envoie un drone vers l'endroit visé : il repère tous les ennemis à 14 m autour de lui pendant 6 s.": "Sends a drone to the targeted spot: it spots every enemy within 14 m for 6 s.",
+"Mur de glace": "Ice Wall",
+"Fait surgir un long mur de glace qui coupe le passage ; le sol gelé à ses pieds ralentit les ennemis.": "Raises a long ice wall that blocks the path; the frozen ground at its base slows enemies.",
+"Grappin": "Grappling Hook",
+"Lance un grappin vers l'endroit visé et te propulse jusqu'à lui, même sur une caisse en hauteur.": "Fires a hook at the targeted spot and pulls you to it, even onto a high crate.",
+"Piège à ressort": "Spring Trap",
+"Pose un piège caché à tes pieds : l'ennemi qui marche dessus est ralenti, révélé 5 s et perd 25 PV.": "Places a hidden trap at your feet: an enemy who steps on it is slowed, revealed for 5 s and loses 25 HP.",
+"Ombre": "Shadow",
+"Tenue équipée.": "Outfit equipped.",
+"// TENUES (débloquées par la maîtrise)": "// OUTFITS (unlocked by mastery)",
+"TU AS MARCHÉ SUR UN PIÈGE !": "YOU STEPPED ON A TRAP!",
+"DRONE : PERSONNE ICI": "DRONE: NOBODY HERE",
+"Piège": "Trap",
+"ÉCHAUFFEMENT": "WARM-UP",
+"ÉCHAUFFEMENT EN ATTENDANT": "WARM UP WHILE WAITING",
+"Clique sur JOUER pour recommencer.": "Click PLAY to try again.",
+"C'est parti !": "Go!",
+"MEILLEURE CARTE": "BEST MAP",
+"À TRAVAILLER": "NEEDS WORK",
+"Joue au moins 3 parties sur une carte pour voir ta meilleure et ta pire carte.": "Play at least 3 matches on a map to see your best and worst maps.",
+"Glisser 8 fois": "Slide 8 times",
+"Tirer 40 fois en visant au viseur": "Fire 40 shots while aiming down sights",
+"Désamorcer le Noyau une fois": "Defuse the Core once",
+"Utiliser 2 ultimes": "Use 2 ultimates",
+"Faire une manche à 3 éliminations ou plus": "Get a round with 3 or more kills",
+"Être MVP d'une partie": "Be MVP of a match",
+"Réaliser 30 éliminations": "Get 30 kills",
+"Gagner 2 parties": "Win 2 matches",
+"Glisser 60 fois": "Slide 60 times",
+"Tirer 300 fois au viseur": "Fire 300 shots while aiming down sights",
+"Utiliser 80 capacités": "Use 80 abilities",
+"150 éliminations en Mêlée": "150 kills in Free-for-all",
+"40 assistances": "40 assists",
+"Poser le Noyau 10 fois": "Plant the Core 10 times",
+"Être MVP de 5 parties": "Be MVP of 5 matches",
+"10 éliminations au couteau": "10 knife kills",
+"Grand collectionneur": "Grand Collector",
+"Compléter les 10 collections de skins": "Complete all 10 skin collections",
+"Seigneur des océans": "Lord of the Oceans",
+"Cœur de lave": "Lava Heart",
+"Gardien de la forêt": "Forest Keeper",
+"Roi des glaces": "Ice King",
+"Cyber-légende": "Cyber Legend",
+"Nomade des sables": "Sand Nomad",
+"Altesse": "Highness",
+"Bête sauvage": "Wild Beast",
+"Icône rétro": "Retro Icon",
+"Voyageur cosmique": "Cosmic Traveler"
 },
 "patterns": [
 [
@@ -2397,6 +2446,30 @@
 [
 "^(.+) \\((\\d+)/(\\d+)\\)$",
 "$t1 ($2/$3)"
+],
+[
+"^DRONE : (\\d+) ENNEMIS? REPÉRÉS?$",
+"DRONE: $1 ENEMY(IES) SPOTTED"
+],
+[
+"^PIÈGE DÉCLENCHÉ : (.+)$",
+"TRAP TRIGGERED: $1"
+],
+[
+"^Collection (.+)$",
+"$t1 collection"
+],
+[
+"^Posséder les 10 skins de la collection (.+)$",
+"Own all 10 skins of the $t1 collection"
+],
+[
+"^Tenue débloquée au niveau de maîtrise (\\d+) de cet agent\\.$",
+"Outfit unlocked at mastery level $1 for this agent."
+],
+[
+"^(.+) est désactivé pour le moment\\.$",
+"$1 is disabled for now."
 ],
 [
 "^★(\\d) (.+)$",
