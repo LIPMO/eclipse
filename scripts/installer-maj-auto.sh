@@ -43,9 +43,10 @@ done
 [ "$(id -u)" -eq 0 ] || die "Lance ce script avec sudo : sudo bash scripts/installer-maj-auto.sh"
 
 if [ "$UNINSTALL" = 1 ]; then
-  systemctl disable --now eclipse-maj-auto.timer 2>/dev/null || true
-  rm -f /etc/systemd/system/eclipse-maj-auto.service /etc/systemd/system/eclipse-maj-auto.timer
-  rm -f /usr/local/sbin/eclipse-maj /usr/local/sbin/eclipse-maj-auto
+  systemctl disable --now eclipse-maj-auto.timer eclipse-maj-demande.path 2>/dev/null || true
+  rm -f /etc/systemd/system/eclipse-maj-auto.service /etc/systemd/system/eclipse-maj-auto.timer /etc/systemd/system/eclipse-maj-demande.service /etc/systemd/system/eclipse-maj-demande.path
+  rm -f /usr/local/sbin/eclipse-maj /usr/local/sbin/eclipse-maj-auto /usr/local/sbin/eclipse-maj-demande
+  rm -rf /var/lib/eclipse-statut
   systemctl daemon-reload
   ok "Mise à jour automatique désactivée. Le jeu continue de tourner normalement."
   warn "Si tu avais enregistré un jeton GitHub, supprime /root/.git-credentials et révoque le jeton sur GitHub."
@@ -54,7 +55,7 @@ fi
 
 [ -f /etc/systemd/system/eclipse.service ] || die "Le jeu n'est pas installé en service : lance d'abord install-serveur.sh."
 for c in git node flock; do command -v "$c" >/dev/null 2>&1 || die "Commande manquante : $c (sudo apt install -y git util-linux)"; done
-[ -f "$SRC/mettre-a-jour.sh" ] && [ -f "$SRC/scripts/maj-auto.sh" ] || die "Lance ce script depuis le dossier du jeu."
+[ -f "$SRC/mettre-a-jour.sh" ] && [ -f "$SRC/scripts/maj-auto.sh" ] && [ -f "$SRC/scripts/maj-demande.sh" ] || die "Lance ce script depuis le dossier du jeu."
 export GIT_TERMINAL_PROMPT=0 # jamais de question bloquante : un accès refusé s'arrête avec un message clair
 
 # --- 1. accès au dépôt (HTTPS) --------------------------------------------------
@@ -87,7 +88,8 @@ ok "Dépôt prêt : $REPO_DIR"
 # --- 3. scripts figés (le code du dépôt n'est jamais lancé en root) --------------
 install -m 755 -o root -g root "$SRC/mettre-a-jour.sh" /usr/local/sbin/eclipse-maj
 install -m 755 -o root -g root "$SRC/scripts/maj-auto.sh" /usr/local/sbin/eclipse-maj-auto
-ok "Scripts installés : /usr/local/sbin/eclipse-maj et /usr/local/sbin/eclipse-maj-auto"
+install -m 755 -o root -g root "$SRC/scripts/maj-demande.sh" /usr/local/sbin/eclipse-maj-demande
+ok "Scripts installés : /usr/local/sbin/eclipse-maj, eclipse-maj-auto et eclipse-maj-demande"
 
 # la version déjà installée est-elle identique à GitHub ? (évite un redémarrage inutile)
 mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
@@ -126,9 +128,41 @@ RandomizedDelaySec=30s
 [Install]
 WantedBy=timers.target
 EOF
+# --- 5. mise à jour à distance depuis le panneau d'administration -----------------
+# le jeu (utilisateur sans droits) dépose <DATA_DIR>/maj/demande ; systemd lance alors la mise à jour en root.
+# l'état est publié dans /var/lib/eclipse-statut (root, lecture seule pour le jeu)
+DATA_DIR=$(sed -nE 's/^Environment=DATA_DIR=(.*)$/\1/p' /etc/systemd/system/eclipse.service | head -n1)
+APP_USER=$(sed -nE 's/^User=(.*)$/\1/p' /etc/systemd/system/eclipse.service | head -n1)
+DATA_DIR=${DATA_DIR:-/var/lib/eclipse}
+install -d -m 700 -o "${APP_USER:-eclipse}" -g "${APP_USER:-eclipse}" "$DATA_DIR/maj"
+install -d -m 755 -o root -g root /var/lib/eclipse-statut
+cat > /etc/systemd/system/eclipse-maj-demande.service <<'EOF'
+[Unit]
+Description=ECLIPSE - mise à jour demandée depuis l'administration
+After=network-online.target eclipse.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/eclipse-maj-demande
+Nice=10
+EOF
+cat > /etc/systemd/system/eclipse-maj-demande.path <<EOF
+[Unit]
+Description=ECLIPSE - surveille les demandes de mise à jour de l'administration
+
+[Path]
+PathExists=$DATA_DIR/maj/demande
+Unit=eclipse-maj-demande.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
 systemctl daemon-reload
 systemctl enable --now eclipse-maj-auto.timer >/dev/null
+systemctl enable --now eclipse-maj-demande.path >/dev/null
+systemctl start eclipse-maj-auto.service >/dev/null 2>&1 || true # publie l'état tout de suite
 ok "Minuteur activé : vérification toutes les 5 minutes."
+ok "Mise à jour à distance activée : bouton « Mettre à jour maintenant » dans l'administration (propriétaire)."
 
 echo
 ok "Mise à jour automatique en place."

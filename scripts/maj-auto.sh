@@ -23,6 +23,14 @@ UNIT_FILE=/etc/systemd/system/eclipse.service
 export GIT_TERMINAL_PROMPT=0
 
 log() { echo "[maj-auto] $*"; }
+# état publié pour le panneau d'administration (dossier root en lecture seule pour le jeu)
+STATUS_DIR=/var/lib/eclipse-statut
+status() { # status <état> <message>
+  [ -d "$STATUS_DIR" ] || return 0
+  local t; t=$(mktemp "$STATUS_DIR/.s.XXXXXX") || return 0
+  node -e 'const [s, m, d, l, ls] = process.argv.slice(1); console.log(JSON.stringify({ at: Date.now(), state: s, msg: m, deployed: d || null, latest: l || null, latestMsg: ls || null }))' \
+    "$1" "$2" "$(cat "$STATE_DIR/deployed" 2>/dev/null || true)" "${NEW:-}" "${NEWMSG:-}" > "$t" 2>/dev/null && chmod 644 "$t" && mv -f "$t" "$STATUS_DIR/status.json" || rm -f "$t"
+}
 
 mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
 # une seule mise à jour à la fois
@@ -33,12 +41,13 @@ flock -n 9 || { log "Une mise à jour est déjà en cours."; exit 0; }
 [ -x "$UPDATER" ] || { log "Programme de mise à jour $UPDATER absent."; exit 1; }
 
 # connexion à GitHub : HTTPS, le certificat est vérifié par git (aucune clé)
-git -C "$REPO_DIR" fetch --quiet origin "$BRANCH" || { log "Impossible de lire le dépôt sur GitHub (réseau, ou accès au dépôt privé refusé)."; exit 1; }
+git -C "$REPO_DIR" fetch --quiet origin "$BRANCH" || { log "Impossible de lire le dépôt sur GitHub (réseau, ou accès au dépôt privé refusé)."; status erreur "Impossible de lire le dépôt sur GitHub."; exit 1; }
 
 NEW=$(git -C "$REPO_DIR" rev-parse "origin/$BRANCH")
+NEWMSG=$(git -C "$REPO_DIR" log -1 --format=%s "$NEW" 2>/dev/null || true)
 CUR=$(cat "$STATE_DIR/deployed" 2>/dev/null || true)
-[ "$NEW" = "$CUR" ] && exit 0
-if [ "$(cat "$STATE_DIR/failed" 2>/dev/null || true)" = "$NEW" ]; then exit 0; fi
+[ "$NEW" = "$CUR" ] && { status a-jour "Déjà à jour."; exit 0; }
+if [ "$(cat "$STATE_DIR/failed" 2>/dev/null || true)" = "$NEW" ]; then status echec "Ce commit a déjà échoué : il ne sera pas réessayé (coche « forcer » pour réessayer)."; exit 0; fi
 
 # parties en cours : on attend qu'elles se terminent (au plus MAX_WAIT_MIN minutes)
 PORT=$(sed -nE 's/^Environment=PORT=([0-9]+).*/\1/p' "$UNIT_FILE" 2>/dev/null | head -n1)
@@ -48,21 +57,25 @@ if [ "${MATCHES:-0}" -gt 0 ] 2>/dev/null; then
   WAITED=$(( ( $(date +%s) - $(cat "$STATE_DIR/pending-$NEW") ) / 60 ))
   if [ "$WAITED" -lt "$MAX_WAIT_MIN" ]; then
     log "Nouveau commit ${NEW:0:7} : $MATCHES partie(s) en cours, mise à jour reportée (attente : $WAITED min)."
+    status attente "$MATCHES partie(s) en cours : mise à jour reportée (attente : $WAITED min)."
     exit 0
   fi
   log "Des parties sont toujours en cours après $MAX_WAIT_MIN min : mise à jour quand même."
 fi
 
 git -C "$REPO_DIR" checkout --quiet --force --detach "$NEW" && git -C "$REPO_DIR" clean -fdq || { log "Impossible de préparer le commit ${NEW:0:7}."; exit 1; }
-log "Déploiement du commit ${NEW:0:7} : $(git -C "$REPO_DIR" log -1 --format=%s "$NEW")"
+log "Déploiement du commit ${NEW:0:7} : $NEWMSG"
+status deploiement "Installation en cours…"
 
 if "$UPDATER" --source "$REPO_DIR" --auto; then
   echo "$NEW" > "$STATE_DIR/deployed"
   rm -f "$STATE_DIR"/pending-* "$STATE_DIR/failed"
   log "Commit ${NEW:0:7} en ligne."
+  status ok "Mise à jour installée."
 else
   echo "$NEW" > "$STATE_DIR/failed"
   rm -f "$STATE_DIR"/pending-*
   log "Échec du commit ${NEW:0:7} : l'ancienne version reste en place. Il ne sera pas réessayé ; pousse un correctif."
+  status echec "Échec de l'installation : l'ancienne version reste en place."
   exit 1
 fi

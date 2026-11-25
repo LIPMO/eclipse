@@ -357,6 +357,13 @@ export class Admin {
     if (this.state.configHistory.length > 200) this.state.configHistory.length = 200;
   }
   // sauvegarde automatique quotidienne (comptes, clans, administration) dans data/backups
+  updInfo() {
+    let status = null;
+    try { status = JSON.parse(fs.readFileSync(process.env.MAJ_STATUS_FILE || '/var/lib/eclipse-statut/status.json', 'utf8')); } catch { /* service absent */ }
+    let pending = null;
+    try { pending = JSON.parse(fs.readFileSync(path.join(this.ctx.dataDir, 'maj', 'demande'), 'utf8')); } catch { /* aucune demande */ }
+    return { installed: !!status, status, pending, version: this.ctx.version };
+  }
   backupDir() { return path.join(this.ctx.dataDir, 'backups'); }
   writeBackup(tag = '') {
     const dir = this.backupDir();
@@ -1494,6 +1501,20 @@ const ACTIONS = {
     add('Anti-triche', this.state.config.anticheat ? 'ok' : 'warn', this.state.config.anticheat ? 'actif' : 'désactivé');
     add('Démarré depuis', 'ok', `${Math.floor(process.uptime() / 3600)} h ${Math.floor(process.uptime() % 3600 / 60)} min (version ${this.ctx.version})`);
     return { checks, overall: checks.some(c => c.state === 'bad') ? 'bad' : checks.some(c => c.state === 'warn') ? 'warn' : 'ok' };
+  } },
+  // ---- mise à jour à distance (1.18) ----
+  // le jeu (sans droits) dépose une demande dans son dossier de données ; un service root sur le serveur
+  // (installé par scripts/installer-maj-auto.sh) la voit, lance la mise à jour et publie son état
+  updStatus: { level: 2, fn() { return this.updInfo(); } },
+  updRequest: { level: 3, post: true, label: 'Mise à jour à distance demandée', fn({ body, user }) {
+    const info = this.updInfo();
+    if (!info.installed) fail('Le service de mise à jour à distance n\'est pas installé sur le serveur (voir les instructions sous le bouton).');
+    if (info.pending) fail('Une demande de mise à jour est déjà en attente.');
+    const dir = path.join(this.ctx.dataDir, 'maj');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'demande'), JSON.stringify({ at: Date.now(), by: user.name, force: !!body.force }));
+    this.log('admin', `${user.name} demande une mise à jour à distance${body.force ? ' (forcée)' : ''}`);
+    return { ok: true, _detail: body.force ? 'forcée' : '' };
   } },
   backups: { level: 3, fn() { return { list: this.listBackups(), last: this.state.lastBackup || 0, keep: this.state.config.backupKeep, auto: this.state.config.autoBackup }; } },
   'backup/now': { level: 3, post: true, label: 'Sauvegarde manuelle', fn() {

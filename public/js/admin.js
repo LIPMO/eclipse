@@ -136,6 +136,22 @@ const bars = (items, empty = 'Aucune donnée pour le moment') => {
 };
 
 // ---------- vues ----------
+// mise à jour à distance (1.18) : état publié par le service du serveur, bouton pour lancer la mise à jour
+const UPD_STATE = { 'a-jour': ['ok', 'À jour'], attente: ['warn', 'En attente'], deploiement: ['warn', 'Installation en cours'], ok: ['ok', 'Installée'], echec: ['danger', 'Échec'], erreur: ['danger', 'Erreur'] };
+function updCard(u) {
+  const st = u.status, [cls, lab] = UPD_STATE[st?.state] || ['', st?.state || '?'];
+  return `<div class="card"><h3>Mise à jour à distance</h3>
+    ${!u.installed ? `<p class="muted">Le service de mise à jour à distance n'est pas encore installé sur le serveur. Dans le terminal du serveur, lance une seule fois :</p><pre class="code">sudo bash /opt/eclipse-git/scripts/installer-maj-auto.sh</pre>`
+    : `<dl class="kv"><dt>Version en ligne</dt><dd>${h(u.version || '')}</dd>
+      <dt>État</dt><dd><span class="badge ${cls}">${h(lab)}</span> ${h(st.msg || '')}</dd>
+      <dt>Dernière vérification</dt><dd>${fmtDate(st.at)}</dd>
+      <dt>Commit installé</dt><dd><code>${h((st.deployed || '—').slice(0, 7))}</code></dd>
+      <dt>Dernier commit GitHub</dt><dd><code>${h((st.latest || '—').slice(0, 7))}</code> ${h(st.latestMsg || '')}</dd></dl>
+      ${u.pending ? `<p><span class="badge warn">Demande envoyée</span> par ${h(u.pending.by)} ${fmtDate(u.pending.at)}${u.pending.force ? ' (forcée)' : ''} : le serveur va la traiter dans quelques secondes.</p>` : ''}
+      ${lvl() >= 3 ? `<div class="row" style="margin-top:10px"><button class="btn primary" data-act="updNow" ${u.pending ? 'disabled' : ''}>Mettre à jour maintenant</button><label class="check small"><input type="checkbox" id="upd-force"> Forcer (même si des parties sont en cours, ou réessayer un commit en échec)</label></div>
+      <p class="muted small">Sans « forcer », la mise à jour attend la fin des parties en cours. Le serveur vérifie aussi GitHub tout seul toutes les 5 minutes. Les comptes ne sont jamais touchés, et en cas d'échec l'ancienne version reste en place.</p>` : '<p class="muted small">Seul le propriétaire peut lancer une mise à jour.</p>'}`}
+  </div>`;
+}
 const VIEWS = {
   dashboard: {
     title: 'Tableau de bord', live: true,
@@ -679,8 +695,8 @@ const VIEWS = {
   system: {
     title: 'Système & métriques', live: true,
     async load() {
-      const [staff, metrics, health, perms, backups] = await Promise.all([lvl() >= 1 ? api('accounts?filter=staff&sort=role&dir=desc').then(r => r.rows) : [], api('metrics'), api('health'), S.perms ? Promise.resolve(S.perms) : api('permissions'), lvl() >= 3 ? api('backups') : Promise.resolve(null)]);
-      Object.assign(S, { staff, metrics, health, perms, backups });
+      const [staff, metrics, health, perms, backups, upd] = await Promise.all([lvl() >= 1 ? api('accounts?filter=staff&sort=role&dir=desc').then(r => r.rows) : [], api('metrics'), api('health'), S.perms ? Promise.resolve(S.perms) : api('permissions'), lvl() >= 3 ? api('backups') : Promise.resolve(null), lvl() >= 2 ? api('updStatus').catch(() => null) : null]);
+      Object.assign(S, { staff, metrics, health, perms, backups, upd });
     },
     after() {
       const m = S.metrics; if (!m) return;
@@ -723,6 +739,7 @@ const VIEWS = {
             <p class="muted small">Une par jour dans <code>data/backups</code>, les ${S.backups.keep} plus récentes sont gardées. Dernière : ${S.backups.last ? fmtDate(S.backups.last) : 'aucune'}.</p>
             <button class="btn small primary" data-act="backupNow">Sauvegarder maintenant</button>
             ${S.backups.list.length ? `<table style="margin-top:8px"><tbody>${S.backups.list.map(b => `<tr><td>${h(b.name)}</td><td class="muted small">${fmtBytes(b.size)}</td><td><button class="btn small ghost" data-act="backupGet" data-name="${h(b.name)}">⇩</button></td></tr>`).join('')}</tbody></table>` : ''}` : ''}</div>
+        ${S.upd ? updCard(S.upd) : ''}
         <div class="card danger-zone"><h3>Serveur</h3><dl class="kv"><dt>Version</dt><dd>${h(o.version || '')}</dd><dt>En ligne depuis</dt><dd>${o.uptime != null ? fmtDur(o.uptime) : ''}</dd><dt>Node.js</dt><dd>${h(o.node || '')}</dd><dt>Système</dt><dd>${h(o.platform || '')}</dd></dl>
           ${lvl() >= 3 ? `<div class="row" style="margin-top:12px">${o.pendingRestart ? '<button class="btn" data-act="restartCancel">Annuler le redémarrage programmé</button>' : '<button class="btn primary" data-act="restartWhenEmpty">Redémarrer quand plus personne ne joue</button>'}<button class="btn danger" data-act="restart">Redémarrer maintenant</button></div><p class="muted small">« Quand plus personne ne joue » attend la fin de toutes les parties (aucune nouvelle partie ne peut commencer d'ici là). Les joueurs sont déconnectés quelques secondes, puis le service systemd ou Docker relance le jeu.</p>` : ''}</div>
       </div>`;
@@ -1102,6 +1119,11 @@ const ACT = {
   },
   // système
   backup: () => download('backup', `eclipse-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`),
+  async updNow() {
+    const force = !!$('upd-force')?.checked;
+    if (!await confirmBox(force ? 'Lancer la mise à jour maintenant, même si des parties sont en cours ? Les joueurs seront déconnectés quelques secondes.' : 'Lancer la mise à jour maintenant ? (elle attend la fin des parties en cours)', { ok: 'Mettre à jour', danger: force })) return;
+    if (await act('updRequest', { force }, 'Demande envoyée au serveur')) { refresh(); setTimeout(refresh, 8000); setTimeout(() => location.reload(), 45000); }
+  },
   async restart() { if (await confirmBox('Redémarrer le serveur maintenant ? Tous les joueurs seront déconnectés quelques secondes.', { ok: 'Redémarrer' })) { await act('restart', {}, 'Redémarrage en cours…'); setTimeout(() => location.reload(), 6000); } },
 };
 function collectNews() {

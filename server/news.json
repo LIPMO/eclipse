@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.18.0",
+    "date": "2026-11-25",
+    "title": "Mise à jour à distance depuis l'administration",
+    "items": [
+      "Administration → Système : état de la mise à jour (version en ligne, dernier commit GitHub, dernière vérification) et bouton « Mettre à jour maintenant » pour le propriétaire, avec option pour forcer."
+    ]
+  },
+  {
     "version": "1.17.0",
     "date": "2026-11-25",
     "title": "Salle d'attente, page Agents, 4 agents et 100 skins",

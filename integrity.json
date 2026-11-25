@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-25T01:20:10.540Z",
+ "generated": "2026-11-25T07:31:16.702Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -17,7 +17,7 @@
   "public/admin.html": "a1c27163ebedf8349c723e422faa7afbbed3b495eb178f57df1d639d05c571c8",
   "public/cgu.html": "819ed5c08b6766230004f916c5f8fb6188e852637a73d4d8b944be5b3601e1ef",
   "public/confidentialite.html": "0f66d759e665334bb7d8fc4495037fd45859a8ef5dfa19b1450b0548ac5340c5",
-  "public/css/admin.css": "b394d1082c1f447564da2ffe6367973cdac5f6911d09a57758bf4108a6cb84ab",
+  "public/css/admin.css": "72a1887143ae3112ecf922f0c4974c783c486ada96aed4fe2b3943b9cb8dcd71",
   "public/css/legal.css": "6ef84d27dd1b87bc84b39d128efc7ae0f7e1b7403785c6add6fe8f512e18a681",
   "public/css/style.css": "b44284745a40f988e3947345a1305f0d24a1a50a59f1e9c2b90299220930acdd",
   "public/favicon.svg": "0aa105fb1a26438db6f11363385c79dd15ed5c77a50322f3cde8c8fb6883c0c0",
@@ -27,7 +27,7 @@
   "public/img/logo-512.png": "d4c707080b9c2a9235308356f34ceceae9041717c15d33a130d771fa78496e77",
   "public/img/og-image.png": "b6a1d70cb9decebc4029b6cceba08f459ab4b443f1823420b0d95288d3708599",
   "public/index.html": "7d97489e7bc28c7bfe9c2d99453ef8f11c39b6805bd86345368aca144abfbf7c",
-  "public/js/admin.js": "3eedf086844675bb4c2e813b1ee7851962c0793ae6f996f9b68213b024d54936",
+  "public/js/admin.js": "aacb09a375bae5e8e42d95df040e79c5862458cb5ff922be5363a3514dc56f96",
   "public/js/audio.js": "648bcfda28c8371d4fce451915e28a9aee9a565e35f64f5fb94001cea5c8dfc6",
   "public/js/clans.js": "d733b755b4d727f8b80aaa3dee74abbbb0c02912fa47e4af97e8f9ceae8d9832",
   "public/js/game.js": "9a49174a4b1c1223e9f06a8b1cdff60fcc372ec2114a0cdb3f1d7c43bcb94d1e",
