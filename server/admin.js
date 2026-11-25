@@ -125,6 +125,8 @@ export class Admin {
       configHistory: saved.configHistory || [], maintSchedule: saved.maintSchedule || null, lastBackup: saved.lastBackup || 0,
       // 1.15 : journal des blagues, retours des joueurs (bugs et idées), sondage du jour
       trollLog: saved.trollLog || [], feedback: saved.feedback || [], poll: saved.poll || null, pollsHistory: saved.pollsHistory || [],
+      // 1.22 : connecteur Claude (empreinte du jeton seulement)
+      mcp: saved.mcp || null,
     };
     this.clientErrors = []; this.slowSamples = 0; this.lastPerfAlert = 0; this.pendingRestart = null;
     this.logs = []; this.chat = []; this.seq = 1; this.errors = []; this.errCount = 0; this.chatStrikes = new Map();
@@ -1529,6 +1531,10 @@ const ACTIONS = {
   // le jeu (sans droits) dépose une demande dans son dossier de données ; un service root sur le serveur
   // (installé par scripts/installer-maj-auto.sh) la voit, lance la mise à jour et publie son état
   updStatus: { level: 2, fn() { return this.updInfo(); } },
+  // ---- connecteur Claude (MCP, 1.22) ----
+  'mcp/status': { level: 3, fn() { return this.mcp ? this.mcp.info() : { enabled: false }; } },
+  'mcp/generate': { level: 3, post: true, label: 'Adresse du connecteur Claude générée', fn({ user }) { if (!this.mcp) fail('Connecteur indisponible.'); return { token: this.mcp.generate(user.name) }; } },
+  'mcp/disable': { level: 3, post: true, label: 'Connecteur Claude désactivé', fn() { this.mcp?.disable(); return { ok: true }; } },
   updRequest: { level: 3, post: true, label: 'Mise à jour à distance demandée', fn({ body, user }) {
     const info = this.updInfo();
     if (!info.installed) fail('Le service de mise à jour à distance n\'est pas installé sur le serveur (voir les instructions sous le bouton).');

@@ -183,3 +183,4 @@ table.perms { width: 100%; } table.perms th:not(:first-child), table.perms td:no
 /* 1.15 */
 .gold { color: #ffcf5a; }
 .badge.warn { background: #4a3a10; color: #ffcf5a; }
+#mcp-url { white-space: pre-wrap; word-break: break-all; user-select: all; }

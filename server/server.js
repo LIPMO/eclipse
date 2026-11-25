@@ -8,6 +8,7 @@ import { WebSocketServer } from 'ws';
 import { Match } from './match.js';
 import { Accounts } from './accounts.js';
 import { Admin } from './admin.js';
+import { Mcp } from './mcp.js';
 import { seoRoute, SEO_CSP } from './seo.js';
 import { Parties } from './party.js';
 import { Bucket, Strikes, baseHeaders, gameCsp, originAllowed } from './security.js';
@@ -111,6 +112,8 @@ const server = http.createServer((req, res) => {
   const isApi = req.url === '/api/status' || req.url === '/api/news';
   if (req.method === 'OPTIONS' && isApi) { res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Max-Age': '86400' }); res.end(); return; }
   const isAdminApi = req.url.startsWith('/admin/api/');
+  // connecteur Claude (MCP) : /mcp/<jeton secret>
+  { const mm = req.url.match(/^\/mcp\/([A-Za-z0-9_-]{1,100})\/?$/); if (mm) { if (!httpLimit.take(Admin.ipOf(req))) { res.writeHead(429, { 'Retry-After': '10' }); res.end(); return; } mcp.handle(req, res, mm[1]).catch(e => { console.error('Erreur MCP', e); if (!res.headersSent) { res.writeHead(500); res.end('{}'); } }); return; } }
   if (!(req.method === 'GET' || req.method === 'HEAD' || (req.method === 'POST' && isAdminApi))) { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
   if (!isAdminApi && !httpLimit.take(Admin.ipOf(req))) { res.writeHead(429, { 'Retry-After': '10' }); res.end('Trop de requêtes'); return; }
   if (req.url.startsWith('/admin/api/')) { admin.handle(req, res).catch(e => { console.error('Erreur admin', e); if (!res.headersSent) { res.writeHead(500); res.end('{}'); } }); return; }
@@ -982,6 +985,8 @@ const social = new Social({ accounts, clients, rooms, send, joinRoom, admin, cha
 admin.ctx.social = social;
 const clans = new Clans({ accounts, clients, send, admin, chatLimit, social, onTagChange: c => { const r = c.roomId && rooms.get(c.roomId); const m = r && r.members.get(c.id); if (m) { m.clan = c.clanTag || null; pushRoom(r); r.match?.updateMember(m); } } });
 admin.ctx.clans = clans; social.clans = clans;
+const mcp = new Mcp({ admin, accounts, clients, rooms, social, version: PKG_VERSION, build: BUILD, integrityAlerts, newsPath: () => admin.newsPath() });
+admin.mcp = mcp;
 const parties = new Parties({ accounts, clients, rooms, send, joinRoom, pushRoom, social, admin, chatLimit, isFfa, memberInfo, cleanCfg: cleanLobbyCfg, launch: lobbyLaunch });
 social.parties = parties;
 // salon d'un match de tournoi : privé, sans bots, réservé aux deux joueurs du match

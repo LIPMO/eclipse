@@ -138,6 +138,19 @@ const bars = (items, empty = 'Aucune donnée pour le moment') => {
 // ---------- vues ----------
 // mise à jour à distance (1.18) : état publié par le service du serveur, bouton pour lancer la mise à jour
 const UPD_STATE = { 'a-jour': ['ok', 'À jour'], attente: ['warn', 'En attente'], deploiement: ['warn', 'Installation en cours'], ok: ['ok', 'Installée'], echec: ['danger', 'Échec'], erreur: ['danger', 'Erreur'] };
+// connecteur Claude (1.22) : adresse secrète à ajouter dans claude.ai → Connecteurs
+function mcpCard(m) {
+  return `<div class="card"><h3>Connecteur Claude (MCP)</h3>
+    <p class="muted small">Permet à Claude de voir la version, l'état du serveur, les joueurs, les journaux (IP masquées) et les signalements, et de lancer une mise à jour. Il ne peut ni modifier les comptes, ni bannir, ni lire les mots de passe.</p>
+    ${S.mcpToken ? `<p><b>Adresse du connecteur</b> (affichée une seule fois, garde-la secrète) :</p><pre class="code" id="mcp-url">${h(location.origin + '/mcp/' + S.mcpToken)}</pre>
+      <div class="row"><button class="btn small" data-act="mcpCopy">Copier l'adresse</button></div>
+      <ol class="small"><li>Ouvre <b>claude.ai/customize/connectors</b></li><li>« Ajouter un connecteur personnalisé » → nom : <b>ECLIPSE</b> → colle l'adresse → Ajouter</li><li>Démarre une nouvelle conversation ou session : Claude voit le serveur.</li></ol>` : ''}
+    <dl class="kv"><dt>État</dt><dd>${m.enabled ? '<span class="badge ok">actif</span>' : '<span class="badge">désactivé</span>'}</dd>
+      ${m.enabled ? `<dt>Créé</dt><dd>${fmtDate(m.created)}${m.by ? ' par ' + h(m.by) : ''}</dd><dt>Dernière utilisation</dt><dd>${m.lastUsed ? fmtDate(m.lastUsed) : 'jamais'}</dd><dt>Outils appelés</dt><dd>${m.calls || 0}</dd>` : ''}</dl>
+    <div class="row" style="margin-top:10px"><button class="btn primary" data-act="mcpGen">${m.enabled ? 'Générer une nouvelle adresse' : 'Activer et générer l\'adresse'}</button>${m.enabled ? '<button class="btn danger" data-act="mcpOff">Désactiver</button>' : ''}</div>
+    ${m.enabled ? '<p class="muted small">Générer une nouvelle adresse rend l\'ancienne inutilisable (à faire si elle a fuité).</p>' : ''}
+  </div>`;
+}
 function updCard(u) {
   const st = u.status, [cls, lab] = UPD_STATE[st?.state] || ['', st?.state || '?'];
   return `<div class="card"><h3>Mise à jour à distance</h3>
@@ -702,6 +715,7 @@ const VIEWS = {
     title: 'Système & métriques', live: true,
     async load() {
       const [staff, metrics, health, perms, backups, upd] = await Promise.all([lvl() >= 1 ? api('accounts?filter=staff&sort=role&dir=desc').then(r => r.rows) : [], api('metrics'), api('health'), S.perms ? Promise.resolve(S.perms) : api('permissions'), lvl() >= 3 ? api('backups') : Promise.resolve(null), lvl() >= 2 ? api('updStatus').catch(() => null) : null]);
+      S.mcp = lvl() >= 3 ? await api('mcp/status').catch(() => null) : null;
       Object.assign(S, { staff, metrics, health, perms, backups, upd });
     },
     after() {
@@ -746,6 +760,7 @@ const VIEWS = {
             <button class="btn small primary" data-act="backupNow">Sauvegarder maintenant</button>
             ${S.backups.list.length ? `<table style="margin-top:8px"><tbody>${S.backups.list.map(b => `<tr><td>${h(b.name)}</td><td class="muted small">${fmtBytes(b.size)}</td><td><button class="btn small ghost" data-act="backupGet" data-name="${h(b.name)}">⇩</button></td></tr>`).join('')}</tbody></table>` : ''}` : ''}</div>
         ${S.upd ? updCard(S.upd) : ''}
+        ${S.mcp ? mcpCard(S.mcp) : ''}
         <div class="card danger-zone"><h3>Serveur</h3><dl class="kv"><dt>Version</dt><dd>${h(o.version || '')}</dd><dt>En ligne depuis</dt><dd>${o.uptime != null ? fmtDur(o.uptime) : ''}</dd><dt>Node.js</dt><dd>${h(o.node || '')}</dd><dt>Système</dt><dd>${h(o.platform || '')}</dd></dl>
           ${lvl() >= 3 ? `<div class="row" style="margin-top:12px">${o.pendingRestart ? '<button class="btn" data-act="restartCancel">Annuler le redémarrage programmé</button>' : '<button class="btn primary" data-act="restartWhenEmpty">Redémarrer quand plus personne ne joue</button>'}<button class="btn danger" data-act="restart">Redémarrer maintenant</button></div><p class="muted small">« Quand plus personne ne joue » attend la fin de toutes les parties (aucune nouvelle partie ne peut commencer d'ici là). Les joueurs sont déconnectés quelques secondes, puis le service systemd ou Docker relance le jeu.</p>` : ''}</div>
       </div>`;
@@ -1133,6 +1148,13 @@ const ACT = {
   },
   // système
   backup: () => download('backup', `eclipse-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`),
+  async mcpGen() {
+    if (S.mcp?.enabled && !await confirmBox('Générer une nouvelle adresse ? L\'ancienne ne fonctionnera plus : il faudra la remplacer dans claude.ai.', { ok: 'Générer' })) return;
+    const r = await act('mcp/generate', {}, 'Adresse du connecteur générée');
+    if (r?.token) { S.mcpToken = r.token; render(); }
+  },
+  async mcpOff() { if (await confirmBox('Désactiver le connecteur Claude ?', { ok: 'Désactiver', danger: true })) { S.mcpToken = null; await act('mcp/disable', {}, 'Connecteur désactivé'); } },
+  mcpCopy() { const t = $('mcp-url')?.textContent || ''; (navigator.clipboard?.writeText(t) || Promise.reject()).then(() => toast('Adresse copiée'), () => toast('Copie impossible : sélectionne l\'adresse à la main', true)); },
   async updNow() {
     const force = !!$('upd-force')?.checked;
     if (!await confirmBox(force ? 'Lancer la mise à jour maintenant, même si des parties sont en cours ? Les joueurs seront déconnectés quelques secondes.' : 'Lancer la mise à jour maintenant ? (elle attend la fin des parties en cours)', { ok: 'Mettre à jour', danger: force })) return;

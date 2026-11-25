@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.22.0",
+    "date": "2026-11-25",
+    "title": "Suivi du serveur",
+    "items": [
+      "Administration : connecteur pour suivre l'état du serveur et lancer les mises à jour plus facilement."
+    ]
+  },
+  {
     "version": "1.21.0",
     "date": "2026-11-25",
     "title": "Prestige, statut, objectifs de clan",
