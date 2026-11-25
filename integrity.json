@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-25T08:18:22.532Z",
+ "generated": "2026-11-25T08:35:16.285Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -16,7 +16,7 @@
   "public/404.html": "a7080190a3ef486f9ffc41ed3d7d7c3ce172d18ee92e3529ee3893889eb7d04c",
   "public/admin.html": "a1c27163ebedf8349c723e422faa7afbbed3b495eb178f57df1d639d05c571c8",
   "public/cgu.html": "819ed5c08b6766230004f916c5f8fb6188e852637a73d4d8b944be5b3601e1ef",
-  "public/confidentialite.html": "0f66d759e665334bb7d8fc4495037fd45859a8ef5dfa19b1450b0548ac5340c5",
+  "public/confidentialite.html": "4eb952d5827298c7a92e87d4d08d1c181121b387b5a87666dee93f8d2e19ea49",
   "public/css/admin.css": "72a1887143ae3112ecf922f0c4974c783c486ada96aed4fe2b3943b9cb8dcd71",
   "public/css/legal.css": "6ef84d27dd1b87bc84b39d128efc7ae0f7e1b7403785c6add6fe8f512e18a681",
   "public/css/style.css": "1d4a8f2aad326217ac3a4214bde76fbf358398f3437fb4748c3371748824143b",
@@ -41,7 +41,7 @@
   "public/js/store.js": "cff5e0651ca03aa2f7a17a6b7623b7c7b8e1dd196f3c08052bc405e9f804bf70",
   "public/js/touch.js": "d255ec1b8d9308a7f72c4c497b2df19ac5fd7fd1d4ef6d6efd6340a06d638305",
   "public/js/tournaments.js": "7d9e9c5d7eb19385715673d8492b1bccd328531d4593d27b42134f3a71f10030",
-  "public/mentions-legales.html": "1a5a7897a3af7cf92a18848a93b928b251a3ea0f78bf06d6d832e40777fb41e8",
+  "public/mentions-legales.html": "3f8ccc41e036f42826c2c35d42c66539736802901be2471c35875cc742dddb89",
   "public/robots.txt": "46a7b87c779cefa66d2db8782ca3445a1ae4d0867563f4faaae95d8d83107e00",
   "shared/data.js": "73887382ec5ddd8a4d366404f20a10cc2cbe27b5d13c8d69008b17dd47bb26f5",
   "shared/maps.js": "e8a60b38a52dac51354105a559d46d2adbe57fb0e18b037c207783995f6fe2f2",
