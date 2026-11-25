@@ -8,6 +8,7 @@ import { WebSocketServer } from 'ws';
 import { Match } from './match.js';
 import { Accounts } from './accounts.js';
 import { Admin } from './admin.js';
+import { seoRoute, SEO_CSP } from './seo.js';
 import { Parties } from './party.js';
 import { Bucket, Strikes, baseHeaders, gameCsp, originAllowed } from './security.js';
 import crypto from 'node:crypto';
@@ -111,6 +112,8 @@ const server = http.createServer((req, res) => {
   }
   let url;
   try { url = decodeURIComponent(req.url.split('?')[0]); } catch { res.writeHead(400); res.end(); return; }
+  // pages de présentation pour les moteurs de recherche (1.20) et sitemap généré
+  { const seo = seoRoute(url, admin.newsPath()); if (seo) { res.writeHead(200, { 'Content-Type': seo.type, 'Cache-Control': 'public, max-age=600', ...(seo.type.startsWith('text/html') ? { 'Content-Security-Policy': SEO_CSP } : {}) }); res.end(req.method === 'HEAD' ? undefined : seo.body); return; } }
   if (url === '/') url = '/index.html';
   if (url === '/admin' || url === '/admin/') url = '/admin.html';
   if (url.includes('\0') || /(^|\/)\./.test(url)) { res.writeHead(404); res.end('Introuvable'); return; }

@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-25T08:15:15.128Z",
+ "generated": "2026-11-25T08:18:22.532Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -26,7 +26,7 @@
   "public/img/logo-32.png": "285e0debe8df5530c7b22f62c5001e665b475fb0c2795dd3c9e41cf271b4a17f",
   "public/img/logo-512.png": "d4c707080b9c2a9235308356f34ceceae9041717c15d33a130d771fa78496e77",
   "public/img/og-image.png": "b6a1d70cb9decebc4029b6cceba08f459ab4b443f1823420b0d95288d3708599",
-  "public/index.html": "860b23e662d467f3971793e080257abb4cb3926e8cd4a109538f0cb290d03a68",
+  "public/index.html": "532f1d401cc4b9950f28515d4f799154b9755a2a3c90893f02f4c077013129ab",
   "public/js/admin.js": "4b3b084caafc18dcdcd80c3c53c2c567211fa157bb008b931c82ffa8c54670e7",
   "public/js/audio.js": "648bcfda28c8371d4fce451915e28a9aee9a565e35f64f5fb94001cea5c8dfc6",
   "public/js/clans.js": "d733b755b4d727f8b80aaa3dee74abbbb0c02912fa47e4af97e8f9ceae8d9832",
@@ -43,7 +43,6 @@
   "public/js/tournaments.js": "7d9e9c5d7eb19385715673d8492b1bccd328531d4593d27b42134f3a71f10030",
   "public/mentions-legales.html": "1a5a7897a3af7cf92a18848a93b928b251a3ea0f78bf06d6d832e40777fb41e8",
   "public/robots.txt": "46a7b87c779cefa66d2db8782ca3445a1ae4d0867563f4faaae95d8d83107e00",
-  "public/sitemap.xml": "91c1a73d0c93e44e163329a18d6358467e68bb51126f16cdf71f6a0ec1170476",
   "shared/data.js": "73887382ec5ddd8a4d366404f20a10cc2cbe27b5d13c8d69008b17dd47bb26f5",
   "shared/maps.js": "e8a60b38a52dac51354105a559d46d2adbe57fb0e18b037c207783995f6fe2f2",
   "shared/physics.js": "4d74759f49e4abe6a9214440a5056e5391362030d32287f211ded744ef0050bd",

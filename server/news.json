@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.20.0",
+    "date": "2026-11-25",
+    "title": "Pages de présentation du jeu",
+    "items": [
+      "Nouvelles pages : Le jeu, Agents (une page par agent), Modes, Cartes, Guide du débutant et Nouveautés, accessibles en bas de l'écran d'accueil."
+    ]
+  },
+  {
     "version": "1.19.0",
     "date": "2026-11-25",
     "title": "Capacités uniques, tenues, collections et échauffement",
