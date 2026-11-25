@@ -35,7 +35,7 @@ function argPort() {
 const PORT = parseInt(argPort() || process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0'; // 127.0.0.1 derrière un tunnel ou un reverse proxy
 if (!(PORT > 0 && PORT < 65536)) { console.error('Port invalide. Exemple : npm start -- --port 8080'); process.exit(1); }
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.xml': 'application/xml; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json', '.webp': 'image/webp' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.xml': 'application/xml; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json', '.webp': 'image/webp', '.woff2': 'font/woff2' };
 // page 404 personnalisée (public/404.html) : même contrôle d'intégrité que le reste du site
 function notFound(req, res) {
   const headers = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Content-Security-Policy': "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'" };
