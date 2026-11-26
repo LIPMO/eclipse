@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-26T08:53:04.578Z",
+ "generated": "2026-11-26T09:42:46.892Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -53,7 +53,7 @@
   "public/js/tournaments.js": "7d9e9c5d7eb19385715673d8492b1bccd328531d4593d27b42134f3a71f10030",
   "public/mentions-legales.html": "4235787e732c23eb6f4d836ceab5c900883819dbd85e0d1e4afadd85e672e58a",
   "public/robots.txt": "46a7b87c779cefa66d2db8782ca3445a1ae4d0867563f4faaae95d8d83107e00",
-  "shared/data.js": "dfcf259c341608c49280eea5b06de5379db86695ed631f9aab56517485809b8e",
+  "shared/data.js": "78896845b4e6900a78389b8caa94a62e857227e90deaaf503bf2d094d5e085d8",
   "shared/maps.js": "e8a60b38a52dac51354105a559d46d2adbe57fb0e18b037c207783995f6fe2f2",
   "shared/physics.js": "4d74759f49e4abe6a9214440a5056e5391362030d32287f211ded744ef0050bd",
   "shared/progress.js": "2da361c5cff610f600e8d6c4c02462407001929579fa5834382be08b95bb1c7d"

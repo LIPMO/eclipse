@@ -621,7 +621,7 @@ export class Match {
       else if (T >= pr.fuse) { pr.done = true; owner.knifeOut = false; if (!owner.isBot) this.send(owner, { type: 'knifeBack', auto: 1 }); }
       return;
     }
-    pr.vel[1] -= K.gravity * dt;
+    if (K.gravity) pr.vel[1] -= K.gravity * dt;
     const step = pr.vel.map(v => v * dt), len = Math.hypot(...step);
     if (len <= 0) return;
     const dir = step.map(v => v / len);
@@ -641,7 +641,8 @@ export class Match {
     }
     if (wr.t < len) { const t = Math.max(0, wr.t - 0.05); pr.pos = pr.pos.map((v, i) => v + dir[i] * t); pr.stopped = true; pr.fuse = T + K.returnAfter; return; }
     pr.pos = pr.pos.map((v, i) => v + step[i]);
-    if (T >= pr.fuse || pr.pos[1] < -5) { pr.stopped = true; pr.pos[1] = Math.max(0.05, pr.pos[1]); pr.fuse = T + K.returnAfter; }
+    // portée atteinte sans rien toucher (lancé dans le vide) : il revient directement dans la main
+    if (T >= pr.fuse || pr.pos[1] < -5) { pr.done = true; owner.knifeOut = false; if (!owner.isBot) this.send(owner, { type: 'knifeBack', auto: 1 }); }
   }
 
   // ---------- revente pendant la phase d'achat ----------

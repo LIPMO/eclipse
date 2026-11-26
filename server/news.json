@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.25.1",
+    "date": "2026-11-26",
+    "title": "Couteau lancé en ligne droite",
+    "items": [
+      "Le couteau lancé vole maintenant tout droit, sans retomber, jusqu'à 64 m. S'il ne touche rien, il revient directement dans ta main."
+    ]
+  },
+  {
     "version": "1.25.0",
     "date": "2026-11-26",
     "title": "Couteau lancé, cadeaux d'armes et bonus de défaite",

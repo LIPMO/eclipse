@@ -11,7 +11,8 @@ export const ROUND = {
 };
 
 // couteau lancé (1.25) : clic droit avec le couteau ; il se ramasse en passant dessus (ou revient tout seul)
-export const KNIFE_THROW = { damage: 70, headMul: 2.2, legMul: 0.85, speed: 32, gravity: 6, cooldown: 1, flight: 3, returnAfter: 10, pickup: 1.7 };
+// vol en ligne droite (gravity 0) sur environ 64 m (speed × flight) ; s'il ne touche rien, il revient dans la main
+export const KNIFE_THROW = { damage: 70, headMul: 2.2, legMul: 0.85, speed: 32, gravity: 0, cooldown: 1, flight: 2, returnAfter: 10, pickup: 1.7 };
 // argent gagné en cas de défaite selon le nombre de défaites d'affilée (1 = première défaite)
 export const lossBonus = streak => Math.min(ROUND.lossMax, ROUND.lossMoney + ROUND.lossStep * Math.max(0, streak - 1));
 export const DUEL = { buyTime: 10, roundTime: 60, money: 9000 };
