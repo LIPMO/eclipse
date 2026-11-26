@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.27.3",
+    "date": "2026-11-26",
+    "title": "Réticule totalement fixe",
+    "items": [
+      "Le réticule ne bouge plus jamais : ni en marchant, ni en sautant, ni en rafale (l'option « viseur dynamique » est retirée)."
+    ]
+  },
+  {
     "version": "1.27.2",
     "date": "2026-11-26",
     "title": "Réticule stable en marchant",

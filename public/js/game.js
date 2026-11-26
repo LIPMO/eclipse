@@ -2414,9 +2414,7 @@ export class Game {
     if (this.chal) this.updateChallenge(now);
     // viseur dynamique
     const hs = Math.hypot(L.vel[0], L.vel[2]);
-    // réticule dynamique : s'écarte en sautant et en rafale, mais plus en marchant (1.27.2, il « descendait » à chaque pas)
-    const extra = Math.round(Math.min(36, def.type !== 'melee' ? (!L.onGround ? 12 : 0) + Math.min(L.burst, 10) * 1.2 : 0));
-    if (extra !== this.chExtra && ST().chDynamic) { this.chExtra = extra; applyCrosshair($('crosshair'), ST(), extra); }
+    // réticule fixe (1.27.3) : il ne s'écarte plus, ni en marchant, ni en sautant, ni en rafale
     // marqueur de touche
     if (this.hitT > 0) { this.hitT -= dt; $('hitmarker').style.opacity = Math.max(0, this.hitT / 0.18); }
     // aveuglement

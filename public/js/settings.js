@@ -35,7 +35,7 @@ export const ACTIONS = [
 export function applyCrosshair(el, s = S(), extraGap = 0) {
   const [t, b, l, r, d] = ['.c-t', '.c-b', '.c-l', '.c-r', '.c-d'].map(q => el.querySelector(q));
   const len = Math.round(s.chLen), th = Math.max(1, Math.round(s.chThick));
-  const gap = Math.round(s.chGap + (s.chDynamic ? extraGap : 0));
+  const gap = Math.round(s.chGap); // réticule fixe (1.27.3) : il ne bouge plus jamais
   const half = Math.floor(th / 2);
   const shadow = s.chOutline ? `0 0 0 ${s.chOutlineW}px rgba(0,0,0,${s.chOutlineOp})` : 'none';
   const show = s.chInner && len > 0;
@@ -114,7 +114,6 @@ const SECTIONS = [
     { k: 'chOutline', t: 'toggle', label: 'Contour' },
     { k: 'chOutlineW', t: 'range', label: 'Épaisseur du contour', min: 1, max: 3, step: 1, unit: ' px' },
     { k: 'chOutlineOp', t: 'range', label: 'Opacité du contour', min: 0.1, max: 1, step: 0.05, pct: true },
-    { k: 'chDynamic', t: 'toggle', label: 'Viseur dynamique (s\'écarte en mouvement et en rafale)' },
   ] },
   { id: 'video', title: 'Vidéo', items: [
     { k: 'gfxPreset', t: 'select', label: 'Préréglage graphique', opts: [['custom', 'Personnalisé'], ['low', 'PC faible (le plus fluide)'], ['medium', 'Moyen'], ['high', 'Haut'], ['ultra', 'Ultra']], hint: 'Règle d\'un coup la qualité, la résolution et les effets' },

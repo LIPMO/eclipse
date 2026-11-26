@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS = {
   vol: 0.6, hitSound: true, volWeapons: 1, volSteps: 1, volAbilities: 1, volUi: 1, volNotif: 1,
   // viseur
   chColor: '#6dfff0', chOp: 1, chOutline: true, chOutlineOp: 0.6, chOutlineW: 1, chDot: false, chDotSize: 2,
-  chInner: true, chLen: 7, chThick: 2, chGap: 4, chT: false, chDynamic: true,
+  chInner: true, chLen: 7, chThick: 2, chGap: 4, chT: false, chDynamic: false,
   keys: { ...DEFAULT_KEYS },
 };
 const defaults = () => ({
