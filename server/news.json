@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.27.2",
+    "date": "2026-11-26",
+    "title": "Réticule stable en marchant",
+    "items": [
+      "Le réticule ne s'écarte plus (et ne « descend » plus) quand on marche. Il s'écarte toujours en sautant et pendant une rafale."
+    ]
+  },
+  {
     "version": "1.27.1",
     "date": "2026-11-26",
     "title": "Correctif : image figée et ralentissements",
