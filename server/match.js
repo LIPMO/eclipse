@@ -1,5 +1,5 @@
 // Logique de partie autoritaire côté serveur
-import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts } from '../shared/data.js';
+import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, KNIFE_THROW, lossBonus } from '../shared/data.js';
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
@@ -27,6 +27,7 @@ export class Match {
     this.phaseEnd = 0;
     this.round = 0;
     this.half = 0;
+    this.lossStreak = { alpha: 0, beta: 0 }; // défaites d'affilée par équipe (bonus de défaite)
     this.score = { alpha: 0, beta: 0 };
     this.projectiles = []; this.smokes = []; this.fires = []; this.walls = []; this.drops = [];
     this.nextId = 1;
@@ -278,6 +279,7 @@ export class Match {
     const idx = { atk: 0, def: 0 };
     const reset = this.resetEconomy;
     this.resetEconomy = false;
+    if (reset) this.lossStreak = { alpha: 0, beta: 0 };
     const [mw, mh] = this.map.size;
     for (const p of this.players.values()) {
       const side = this.side(p);
@@ -291,7 +293,7 @@ export class Match {
       } else {
         for (const s of [1, 2]) if (p.weapons[s]) { const d = WEAPONS[p.weapons[s].id]; p.weapons[s].mag = d.mag; p.weapons[s].reserve = d.reserve; }
       }
-      p.alive = true; p.hp = 100; p.slot = p.weapons[1] ? 1 : 2; p.reloadEnd = 0;
+      p.alive = true; p.hp = 100; p.slot = p.weapons[1] ? 1 : 2; p.reloadEnd = 0; p.knifeOut = false;
       this.applyWeaponRule(p);
       p.healEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.invisEnd = 0; p.revealEnd = 0; p.blindEnd = 0;
       p.interact = false; p.prog = 0; p.damagedBy = new Map(); p.joinedMidRound = false; p.roundKills = 0; p.roundDmg = 0; p.ready = false; p.armorBought = null;
@@ -312,17 +314,19 @@ export class Match {
       const pool = humans.length && Math.random() < 0.7 ? humans : atk;
       this.core.carrier = pool[(Math.random() * pool.length) | 0].id;
     } else this.core.status = 'none';
-    this.broadcast({ type: 'roundStart', round: this.round, half: this.half, score: this.score });
+    this.broadcast({ type: 'roundStart', round: this.round, half: this.half, score: this.score, loss: { ...this.lossStreak } });
   }
 
   endRound(winSide, reason) {
     if (this.phase === 'end' || this.phase === 'over') return;
     const winTeam = winSide ? this.teamOfSide(winSide) : null;
     if (winTeam) this.score[winTeam]++;
+    if (winTeam) { const lose = winTeam === 'alpha' ? 'beta' : 'alpha'; this.lossStreak[winTeam] = 0; this.lossStreak[lose] = Math.min(5, this.lossStreak[lose] + 1); }
+    const bonus = { alpha: winTeam === 'alpha' ? ROUND.winMoney : lossBonus(this.lossStreak.alpha || 1), beta: winTeam === 'beta' ? ROUND.winMoney : lossBonus(this.lossStreak.beta || 1) };
     for (const p of this.players.values()) {
       const won = p.team === winTeam;
       if (won) p.roundsWon++;
-      p.money = Math.min(ROUND.maxMoney, p.money + (won ? ROUND.winMoney : ROUND.lossMoney));
+      p.money = Math.min(ROUND.maxMoney, p.money + (bonus[p.team] ?? ROUND.lossMoney));
       p.ult = Math.min(this.ultCost(p), p.ult + 1);
       p.interact = false; p.prog = 0;
     }
@@ -332,7 +336,7 @@ export class Match {
     this.roundHistory.push(winTeam || '');
     let mvp = null;
     for (const p of this.players.values()) if (p.roundKills > 0 || p.roundDmg > 0) if (!mvp || p.roundKills > mvp.roundKills || (p.roundKills === mvp.roundKills && p.roundDmg > mvp.roundDmg)) mvp = p;
-    this.broadcast({ type: 'roundEnd', winner: winTeam, side: winSide, reason, score: this.score, history: this.roundHistory, mvp: mvp ? { id: mvp.id, name: mvp.name, kills: mvp.roundKills, dmg: Math.round(mvp.roundDmg) } : null });
+    this.broadcast({ type: 'roundEnd', winner: winTeam, side: winSide, reason, score: this.score, history: this.roundHistory, loss: { ...this.lossStreak }, bonus, mvp: mvp ? { id: mvp.id, name: mvp.name, kills: mvp.roundKills, dmg: Math.round(mvp.roundDmg) } : null });
     if (winTeam && this.score[winTeam] >= this.target) this.pendingOver = winTeam;
     else if (this.half === 0 && this.round === this.target - 1) {
       this.half = 1; this.resetEconomy = true;
@@ -391,7 +395,8 @@ export class Match {
       for (const o of others) d = Math.min(d, Math.hypot(o.pos[0] - x, o.pos[2] - z));
       if (d > bestD) { bestD = d; best = [x, 0, z]; }
     }
-    p.alive = true; p.hp = 100; p.armor = 50; p.money = 9000; p.reloadEnd = 0;
+    p.alive = true; p.hp = 100; p.armor = 50; p.money = 9000; p.reloadEnd = 0; p.knifeOut = false;
+    this.projectiles = this.projectiles.filter(pr => !(pr.kind === 'knife' && pr.owner === p.id));
     if (this.mode === 'gungame') { this.gunLoadout(p); p.armor = 0; } // pas d'armure : le couteau final reste jouable
     else {
       const prim = p.weapons?.[1]?.id || 'lancer';
@@ -437,7 +442,8 @@ export class Match {
       case 'slide': return this.handleSlide(p);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
-      case 'buy': return this.handleBuy(p, msg.item);
+      case 'buy': return msg.for && msg.for !== p.id ? this.buyForMate(p, msg.item, msg.for) : this.handleBuy(p, msg.item);
+      case 'throwKnife': return this.handleThrowKnife(p, msg);
       case 'sell': return this.handleSell(p, msg);
       case 'drop': return this.handleDrop(p);
       case 'ready': return this.handleReady(p);
@@ -575,6 +581,69 @@ export class Match {
     }
   }
 
+  // ---------- acheter une arme pour un coéquipier (1.25, Assaut) ----------
+  buyForMate(p, item, forId) {
+    if (this.mode !== 'assault' || this.phase !== 'buy' || !p.alive) return;
+    const q = this.players.get(forId), d = WEAPONS[item];
+    if (!q || q === p || !q.alive || q.team !== p.team || !d || item === 'knife' || !d.cost) return;
+    const tell = text => { if (!p.isBot) this.send(p, { type: 'notice', text }); };
+    if (!this.weaponAllowed(item)) return tell(`${d.name.toUpperCase()} : ARME INTERDITE DANS CETTE PARTIE`);
+    if (this.weaponLocked(q, item)) return tell(`${q.name.toUpperCase()} N'A PAS ENCORE DÉBLOQUÉ ${d.name.toUpperCase()}`);
+    const cur = q.weapons[d.slot];
+    if (cur && !(d.slot === 2 && cur.id === 'spark')) return tell(`${q.name.toUpperCase()} A DÉJÀ UNE ARME DE CE TYPE`);
+    if (p.money < d.cost) return tell('PAS ASSEZ DE CRÉDITS');
+    p.money -= d.cost;
+    q.weapons[d.slot] = this.newWeapon(item);
+    q.weapons[d.slot].boughtRound = this.round; q.weapons[d.slot].buyer = p.id; // revendue par le coéquipier : moitié du prix seulement
+    q.slot = d.slot; q.reloadEnd = 0;
+    tell(`${d.name.toUpperCase()} OFFERT À ${q.name.toUpperCase()}`);
+    if (!q.isBot) this.send(q, { type: 'gift', from: p.name, fromId: p.id, item, slot: d.slot });
+    for (const m of this.players.values()) if (m !== p && m !== q && !m.isBot && m.team === p.team) this.send(m, { type: 'teamGift', from: p.name, to: q.name, item });
+  }
+
+  // ---------- couteau lancé (1.25) ----------
+  handleThrowKnife(p, msg) {
+    if (!p.alive || ['buy', 'warmup', 'over'].includes(this.phase)) return;
+    if (p.weapons[p.slot]?.id !== 'knife' || p.knifeOut || this.time < (p.knifeNext || 0)) return;
+    const raw = Array.isArray(msg.d) && msg.d.length === 3 && msg.d.every(finite) ? norm(msg.d) : null;
+    if (!raw) return;
+    const eye = this.eye(p), K = KNIFE_THROW;
+    p.knifeOut = true; p.knifeNext = this.time + K.cooldown; p.protEnd = 0; p.lastActive = this.time; p.invisEnd = Math.min(p.invisEnd, this.time);
+    this.projectiles.push({ id: this.nextId++, kind: 'knife', owner: p.id, team: p.team, pos: [eye[0] + raw[0] * 0.5, eye[1] + raw[1] * 0.5 - 0.05, eye[2] + raw[2] * 0.5], vel: raw.map(v => v * K.speed), fuse: this.time + K.flight, stopped: false });
+    this.broadcast({ type: 'knifeThrow', i: p.id });
+  }
+  // un pas de vol du couteau : touche un joueur, se plante dans un mur, ou se ramasse
+  tickKnife(pr, dt, boxes) {
+    const K = KNIFE_THROW, T = this.time, owner = this.players.get(pr.owner);
+    if (!owner) { pr.done = true; return; }
+    if (pr.stopped) {
+      if (owner.alive && Math.hypot(owner.pos[0] - pr.pos[0], owner.pos[1] + 0.9 - pr.pos[1], owner.pos[2] - pr.pos[2]) < K.pickup) { pr.done = true; owner.knifeOut = false; if (!owner.isBot) this.send(owner, { type: 'knifeBack' }); }
+      else if (T >= pr.fuse) { pr.done = true; owner.knifeOut = false; if (!owner.isBot) this.send(owner, { type: 'knifeBack', auto: 1 }); }
+      return;
+    }
+    pr.vel[1] -= K.gravity * dt;
+    const step = pr.vel.map(v => v * dt), len = Math.hypot(...step);
+    if (len <= 0) return;
+    const dir = step.map(v => v / len);
+    const wr = raycastBoxes(pr.pos, dir, len, boxes);
+    let bestT = wr.t, target = null, zone = null;
+    for (const q of this.players.values()) {
+      if (!q.alive || q === owner || (!this.isEnemy(owner, q) && !this.opts.friendlyFire)) continue;
+      if (Math.hypot(q.pos[0] - pr.pos[0], q.pos[2] - pr.pos[2]) > len + 3) continue;
+      for (const hb of hitboxes(q.pos, q.crouch)) { const t = rayAABB(pr.pos, dir, hb.min, hb.max); if (t < bestT) { bestT = t; target = q; zone = hb.zone; } }
+    }
+    if (target) {
+      const dmg = K.damage * (zone === 'head' ? K.headMul : zone === 'legs' ? K.legMul : 1) * (this.isEnemy(owner, target) ? 1 : 0.5);
+      owner.hits++;
+      this.damage(target, dmg, owner, 'knife', zone === 'head');
+      pr.pos = [target.pos[0], target.pos[1] + 0.05, target.pos[2]]; pr.stopped = true; pr.fuse = T + K.returnAfter;
+      return;
+    }
+    if (wr.t < len) { const t = Math.max(0, wr.t - 0.05); pr.pos = pr.pos.map((v, i) => v + dir[i] * t); pr.stopped = true; pr.fuse = T + K.returnAfter; return; }
+    pr.pos = pr.pos.map((v, i) => v + step[i]);
+    if (T >= pr.fuse || pr.pos[1] < -5) { pr.stopped = true; pr.pos[1] = Math.max(0.05, pr.pos[1]); pr.fuse = T + K.returnAfter; }
+  }
+
   // ---------- revente pendant la phase d'achat ----------
   // prix complet pour ce que le joueur a acheté lui-même pendant la manche, moitié du prix sinon (arme gardée ou ramassée)
   sellValue(p, w) {
@@ -681,6 +750,7 @@ export class Match {
     const d = WEAPONS[w.id];
     const interval = 1 / (d.rate * p.rateMul);
     if (this.time - p.lastShot < interval * 0.7) return;
+    if (d.type === 'melee' && p.knifeOut) return; // couteau lancé : il faut d'abord le ramasser
     if (d.type !== 'melee') {
       if (p.reloadEnd > this.time || w.mag <= 0) return;
       if (!this.opts.infAmmo) w.mag--;
@@ -744,7 +814,7 @@ export class Match {
     if (q.armor > 0) { const a = Math.min(q.armor, rest); q.armor -= a; rest -= a; }
     q.hp -= rest;
     const killed = q.hp <= 0;
-    if (attacker && attacker !== q && !silent) this.send(attacker, { type: 'hit', d: Math.round(amount), h: head ? 1 : 0, k: killed ? 1 : 0 });
+    if (attacker && attacker !== q && !silent) this.send(attacker, { type: 'hit', d: Math.round(amount), h: head ? 1 : 0, k: killed ? 1 : 0, t: q.id });
     if (!silent || killed) this.send(q, { type: 'hurt', d: Math.round(amount), from: attacker ? attacker.pos.map(r2) : null });
     if (killed) this.kill(q, attacker, wpn, head);
   }
@@ -1087,6 +1157,7 @@ export class Match {
     // projectiles
     const boxes = this.allBoxes();
     for (const pr of this.projectiles) {
+      if (pr.kind === 'knife') { this.tickKnife(pr, dt, boxes); continue; }
       if (!pr.stopped) {
         pr.vel[1] -= 18 * dt;
         const step = pr.vel.map(v => v * dt);
@@ -1294,7 +1365,7 @@ export class Match {
     }
     const common = {
       t: Date.now(), ph: this.phase, tm: Math.max(0, r2(this.phaseEnd - T)), rd: this.round, hf: this.half, sc: this.score,
-      proj: this.projectiles.map(p => ({ i: p.id, k: p.kind, p: p.pos.map(r2) })),
+      proj: this.projectiles.map(p => ({ i: p.id, k: p.kind, p: p.pos.map(r2), ...(p.kind === 'knife' ? { s: p.stopped ? 1 : 0, o: p.owner } : {}) })),
       smokes: this.smokes.map(s => ({ i: s.id, p: s.pos.map(r2), r: s.r, u: r2(s.end - T) })),
       fires: this.fires.map(f => ({ i: f.id, p: f.pos.map(r2), r: f.r, k: f.kind, u: r2(f.end - T) })),
       walls: this.walls.map(w => ({ i: w.wallId, min: w.min.map(r2), max: w.max.map(r2), hp: w.hp })),
@@ -1322,7 +1393,7 @@ export class Match {
       for (const s of [1, 2, 3]) { const w = p.weapons[s]; wp[s] = w ? [w.id, w.mag, w.reserve] : null; }
       const me = {
         hp: Math.ceil(p.hp), ar: Math.ceil(p.armor), $: p.money, sl: p.slot, wp, al: p.alive ? 1 : 0,
-        rl: p.reloadEnd > T ? r2(p.reloadEnd - T) : 0, ab: p.charges, ult: p.ult, side,
+        rl: p.reloadEnd > T ? r2(p.reloadEnd - T) : 0, ko: p.knifeOut ? 1 : 0, ab: p.charges, ult: p.ult, side,
         pr: p.prog > 0 ? [p.progKind, r2(p.prog / (p.progKind === 'plant' ? ROUND.plantTime : (p.kit ? KIT.defuseTime : ROUND.defuseTime)))] : null, kt: p.kit ? 1 : 0,
         sm: p.speedMul, rm: p.rateMul, rs: p.respawnAt ? r2(Math.max(0, p.respawnAt - T)) : 0,
         rc: { q: p.recharge.q ? r2(p.recharge.q - T) : 0, e: p.recharge.e ? r2(p.recharge.e - T) : 0 },

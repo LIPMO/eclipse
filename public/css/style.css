@@ -1319,3 +1319,12 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 /* bouton Télécharger du pied de page (1.24) */
 .site-legal a.dl-btn { display: inline-block; color: #fff; background: linear-gradient(90deg, var(--accent), #6d3df0); padding: 2px 10px; font-weight: 700; letter-spacing: .04em; }
 .site-legal a.dl-btn:hover { text-decoration: none; filter: brightness(1.15); }
+
+/* 1.25 : chiffres de dégâts au-dessus de la cible, achat pour un coéquipier */
+.dmg-num3d { position: fixed; transform: translate(-50%, -50%); font: 800 20px var(--head); color: #fff; text-shadow: 0 2px 4px #000, 0 0 2px #000; pointer-events: none; z-index: 6; transition: transform .12s ease-out; white-space: nowrap; }
+.dmg-num3d.head { color: #ffcf5a; font-size: 24px; }
+.dmg-num3d.kill { color: #ff4f6d; font-size: 26px; }
+.bt-row[data-bfor] { cursor: pointer; }
+.bt-row[data-bfor]:hover { background: rgba(255,207,90,.08); }
+.bt-row.sel { outline: 1px solid #ffcf5a; background: rgba(255,207,90,.12); }
+.bt-for { margin: 4px 0 6px; padding: 6px 8px; background: rgba(255,207,90,.1); border-left: 3px solid #ffcf5a; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

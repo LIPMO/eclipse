@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS = {
   fov: 100, vmFov: 62, renderScale: 1, brightness: 1.05, quality: 'high', gfxPreset: 'custom', fpsCap: 0, lowFpsTip: true, bloom: true, relief: true, particles: true,
   // interface
   fps: false, minimap: true, hitmarker: true, killcam: true, bob: true, leftHand: false, enemyColor: '#ff4f6d', allyColor: '#19e3c4',
-  netGraph: false, damageNumbers: true, chatMode: 'all', chatSize: 1, hudScale: 1, confirmQuit: true,
+  netGraph: false, damageNumbers: true, dmgNumPos: 'target', chatMode: 'all', chatSize: 1, hudScale: 1, confirmQuit: true,
   minimapRotate: false, minimapZoom: 1, heardOnMap: true, chEnemy: false, lowAmmoWarn: true, roundBeeps: true, dmgReport: true,
   // commandes
   crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true, slide: true,

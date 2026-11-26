@@ -2001,7 +2001,20 @@
 "Son 3D (devant, derrière, hauteur, murs)": "3D sound (front, back, height, walls)",
 "Idéal au casque. Désactive-le si ton ordinateur rame pendant les grosses fusillades.": "Best with headphones. Turn it off if your computer slows down during big firefights.",
 "Pas de pack aujourd'hui.": "No bundle today.",
-"Tu possèdes déjà toute cette collection.": "You already own this whole collection."
+"Tu possèdes déjà toute cette collection.": "You already own this whole collection.",
+"Position des chiffres de dégâts": "Damage numbers position",
+"Au-dessus de la cible": "Above the target",
+"Près du viseur": "Near the crosshair",
+"VA RAMASSER TON COUTEAU": "GO PICK UP YOUR KNIFE",
+"TON COUTEAU EST REVENU": "YOUR KNIFE CAME BACK",
+"COUTEAU RAMASSÉ": "KNIFE PICKED UP",
+"PAS ASSEZ DE CRÉDITS": "NOT ENOUGH CREDITS",
+"(clique sur un coéquipier pour lui acheter une arme)": "(click a teammate to buy them a weapon)",
+"Clic droit avec le couteau en main : tu le lances ! Va le ramasser ensuite (il revient tout seul après 10 s).": "Right-click with the knife in hand: you throw it! Then go pick it up (it comes back by itself after 10 s).",
+"En Assaut, clique sur un coéquipier dans le menu d'achat pour lui offrir une arme.": "In Assault, click a teammate in the buy menu to give them a weapon.",
+"rapide": "fast",
+"moyenne": "medium",
+"lente": "slow"
 },
 "patterns": [
 [
@@ -2539,6 +2552,30 @@
 [
 "^(.+) est désactivé pour le moment\\.$",
 "$1 is disabled for now."
+],
+[
+"^(.+) T'OFFRE : (.+)$",
+"$1 GIVES YOU: $2"
+],
+[
+"^(.+) OFFERT À (.+)$",
+"$1 GIVEN TO $2"
+],
+[
+"^(.+) A DÉJÀ UNE ARME DE CE TYPE$",
+"$1 ALREADY HAS A WEAPON OF THIS TYPE"
+],
+[
+"^(.+) N'A PAS ENCORE DÉBLOQUÉ (.+)$",
+"$1 HAS NOT UNLOCKED $2 YET"
+],
+[
+"^Bonus de défaite : \\+(\\d+)$",
+"Loss bonus: +$1"
+],
+[
+"^Tu achètes pour (.+) : choisis une arme$",
+"Buying for $1: pick a weapon"
 ],
 [
 "^★(\\d) (.+)$",

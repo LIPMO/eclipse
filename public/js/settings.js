@@ -140,6 +140,7 @@ const SECTIONS = [
     { k: 'allyColor', t: 'select', label: 'Couleur des alliés', opts: [['#19e3c4', 'Turquoise'], ['#3d8bff', 'Bleu'], ['#7dff6b', 'Vert'], ['#ffffff', 'Blanc']], hint: 'Appliquée à la prochaine partie' },
     { k: 'hudScale', t: 'range', label: 'Taille de l\'interface en partie', min: 0.7, max: 1.3, step: 0.05, pct: true },
     { k: 'damageNumbers', t: 'toggle', label: 'Afficher les dégâts infligés (chiffres)' },
+    { k: 'dmgNumPos', t: 'select', label: 'Position des chiffres de dégâts', opts: [['target', 'Au-dessus de la cible'], ['crosshair', 'Près du viseur']] },
     { k: 'netGraph', t: 'toggle', label: 'Graphique réseau (ping et FPS)' },
     { k: 'confirmQuit', t: 'toggle', label: 'Demander confirmation avant de quitter une partie' },
     { k: 'minimapRotate', t: 'toggle', label: 'Mini-carte qui tourne avec toi' },

@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.25.0",
+    "date": "2026-11-26",
+    "title": "Couteau lancé, cadeaux d'armes et bonus de défaite",
+    "items": [
+      "Couteau lancé : clic droit avec le couteau en main (70 dégâts, 154 à la tête). Va le ramasser en passant dessus, ou il revient tout seul après 10 secondes.",
+      "Assaut : clique sur un coéquipier dans le menu d'achat pour lui offrir une arme.",
+      "Assaut : bonus de défaite. Chaque défaite d'affilée rapporte 500 crédits de plus (1 900, 2 400, 2 900 puis 3 400 au maximum) ; une victoire remet le compteur à zéro.",
+      "Les armes lourdes visent plus lentement (Viper rapide, Lancer et Tempest moyennes, Longbow lente) ; la lunette du Longbow se met en place progressivement et on avance plus lentement en visant.",
+      "Les chiffres de dégâts s'affichent au-dessus de la cible touchée et s'additionnent (réglable dans Paramètres)."
+    ]
+  },
+  {
     "version": "1.24.1",
     "date": "2026-11-26",
     "title": "ECLIPSE devient un logiciel libre",

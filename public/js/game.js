@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
-import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary } from '/shared/data.js';
+import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus } from '/shared/data.js';
 import { tr } from './i18n.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm } from '/shared/physics.js';
 import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
@@ -215,7 +215,7 @@ export class Game {
   updateFov() {
     const hfov = profile.settings.fov * Math.PI / 180;
     let v = 2 * Math.atan(Math.tan(hfov / 2) / (this.aspect || 1.7)) * 180 / Math.PI;
-    if (this.scoped) v /= WEAPONS.longbow.scope;
+    if (this.scoped) v /= 1 + (WEAPONS.longbow.scope - 1) * (this.scopeK ?? 1);
     else v *= this.fovKick || 1; // léger élargissement du champ de vision pendant une glissade
     if (this.adsK > 0) v /= 1 + (this.adsZoom() - 1) * this.adsK; // zoom du viseur
     this.camera.fov = v;
@@ -576,13 +576,14 @@ export class Game {
       const w = WEAPONS[id], a = ARMOR[id] || (id === KIT.id ? KIT : null);
       const name = w ? w.name : a.name;
       const cost = w ? w.cost : a.cost;
-      const stat = w ? `${w.damage}${w.pellets > 1 ? '×' + w.pellets : ''} dég · ${w.mag} balles · ${w.auto ? 'auto' : 'semi'}${w.ads ? ' · viseur' : w.scope ? ' · lunette' : ''}` : id === KIT.id ? `désamorçage en ${KIT.defuseTime} s (défense)` : `+${a.value} armure`;
+      const stat = w ? `${w.damage}${w.pellets > 1 ? '×' + w.pellets : ''} dég · ${w.mag} balles · ${w.auto ? 'auto' : 'semi'}${w.ads ? ' · viseur' : w.scope ? ' · lunette' : ''}${w.aim ? ` · visée ${w.aim < 0.16 ? 'rapide' : w.aim < 0.25 ? 'moyenne' : 'lente'}` : ''}` : id === KIT.id ? `désamorçage en ${KIT.defuseTime} s (défense)` : `+${a.value} armure`;
       const lock = w && this.unlocks && (WEAPON_UNLOCK[id] || 1) > this.level;
       return `<div class="buy-item ${lock ? 'locked' : ''}" data-item="${id}"><div class="bn">${name}${lock ? ` <span class="lock">🔒 NIV. ${WEAPON_UNLOCK[id]}</span>` : ''}</div><div class="bp">${cost ? cost : 'GRATUIT'}</div><div class="bs">${stat}</div></div>`;
     }).join('')}</div>`).join('');
     $('buy-cols').onclick = e => {
       const it = e.target.closest('.buy-item');
       if (!it || it.classList.contains('locked')) return;
+      if (this.buyFor && WEAPONS[it.dataset.item]) { this.net.send('buy', { item: it.dataset.item, for: this.buyFor }); this.buyFor = null; this.buyCache = {}; SFX.playUI('buy'); return; }
       this.net.send('buy', { item: it.dataset.item });
       SFX.playUI('buy');
     };
@@ -601,12 +602,18 @@ export class Game {
         </div>
       </div>
       <div class="buy-row"><div class="buy-eco muted" id="buy-eco"></div><div class="buy-team" id="buy-team"></div></div>`;
+    // sélection d'un coéquipier dès l'appui (la liste est redessinée quand l'argent des autres change)
+    extra.onpointerdown = e => {
+      const row = e.target.closest('.bt-row[data-bfor]');
+      if (row && !e.target.closest('button') && e.button === 0) { this.buyFor = this.buyFor === row.dataset.bfor ? null : row.dataset.bfor; this.buyCache = {}; if (this.snap && this.me) this.updateBuyExtra(this.snap, this.me); }
+    };
     extra.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.bact === 'rebuy') this.rebuy();
       else if (b.dataset.bact === 'request') this.requestWeapon();
       else if (b.dataset.bact === 'ready') this.sendReady();
       else if (b.dataset.sell) this.sellItem(b.dataset.sell);
+      else if (b.dataset.bfor !== undefined) { this.buyFor = b.dataset.bfor || null; this.buyCache = {}; }
       else if (b.dataset.fav !== undefined) { const l = this.favs()[+b.dataset.fav]; if (l) this.buyLoadout(l); else this.centerMsg('FAVORI VIDE : CLIQUE SUR 💾 POUR L\'ENREGISTRER', 2); }
       else if (b.dataset.favsave !== undefined) { const l = this.currentLoadout(); if (!l) { this.centerMsg('ACHÈTE D\'ABORD UNE ARME OU UN GILET', 2); return; } this.favs()[+b.dataset.favsave] = l; save(); if (!this.isGuest) this.net.send('saveLoadouts', { loadouts: this.favs() }); this.renderFavs(); this.centerMsg(`FAVORI ${+b.dataset.favsave + 1} ENREGISTRÉ`, 1.5); }
     };
@@ -664,11 +671,13 @@ export class Game {
       set('buy-gear', rows.join('') || '<span class="muted small">Rien à revendre : le pistolet Spark et le couteau sont gratuits.</span>');
     }
     if (this.mode === 'assault') {
-      const loss = Math.min(ROUND.maxMoney, me.$ + ROUND.lossMoney), win = Math.min(ROUND.maxMoney, me.$ + ROUND.winMoney);
-      set('buy-eco', `Manche suivante, si tu gardes tes crédits : <b>${loss}</b> en cas de défaite · <b>${win}</b> en cas de victoire <span class="muted">(+${ROUND.killMoney} par élimination)</span>`);
       const myTeam = this.roster.get(this.myId)?.team;
+      const streak = this.lossStreak?.[myTeam] || 0, lb = lossBonus(streak + 1);
+      const loss = Math.min(ROUND.maxMoney, me.$ + lb), win = Math.min(ROUND.maxMoney, me.$ + ROUND.winMoney);
+      set('buy-eco', `Manche suivante, si tu gardes tes crédits : <b>${loss}</b> en cas de défaite (bonus de défaite <b>+${lb}</b>${streak ? `, ${streak} défaite(s) d'affilée` : ''}) · <b>${win}</b> en cas de victoire <span class="muted">(+${ROUND.killMoney} par élimination)</span>`);
       const mates = s.players.filter(p => p.i !== this.myId && this.roster.get(p.i)?.team === myTeam);
-      set('buy-team', mates.length ? `<h4>TON ÉQUIPE</h4>${mates.map(p => `<div class="bt-row ${p.al ? '' : 'dead'}"><span>${esc(this.nameOf(p.i))}${p.rd ? ' <b class="ok">✔</b>' : ''}</span><span class="gold">${p.$ ?? '—'}</span><span>${esc(WEAPONS[p.pw]?.name || '—')}</span><span class="muted">${p.ar ? '⛉ ' + p.ar : ''}</span></div>`).join('')}` : '');
+      if (this.buyFor && !mates.some(p => p.i === this.buyFor && p.al)) this.buyFor = null;
+      set('buy-team', mates.length ? `<h4>TON ÉQUIPE <span class="muted">(clique sur un coéquipier pour lui acheter une arme)</span></h4>${this.buyFor ? `<div class="bt-for">🎁 Tu achètes pour <b>${esc(this.nameOf(this.buyFor))}</b> : choisis une arme · <button class="btn small ghost" data-bfor="">ANNULER</button></div>` : ''}${mates.map(p => `<div class="bt-row ${p.al ? '' : 'dead'} ${this.buyFor === p.i ? 'sel' : ''}" ${p.al && s.ph === 'buy' ? `data-bfor="${esc(p.i)}" title="Acheter une arme pour ${esc(this.nameOf(p.i))}"` : ''}><span>${esc(this.nameOf(p.i))}${p.rd ? ' <b class="ok">✔</b>' : ''}</span><span class="gold">${p.$ ?? '—'}</span><span>${esc(WEAPONS[p.pw]?.name || '—')}</span><span class="muted">${p.ar ? '⛉ ' + p.ar : ''}</span></div>`).join('')}` : '');
     }
     const rb = document.querySelector('#buy-extra [data-bact="ready"]');
     if (rb) { rb.disabled = s.ph !== 'buy' || !!this.self?.rd; rb.innerHTML = `✔ PRÊT${this.readyN ? ` ${this.readyN.n}/${this.readyN.total}` : ''} <kbd>${esc(KB('ready'))}</kbd>`; }
@@ -921,7 +930,7 @@ export class Game {
       case 'ult': this.useAbility('x'); break;
       case 'interact': this.net.send('interact', { on: true }); this.interacting = true; break;
       case 'scoreboard': this.showScoreboard(true); break;
-      case 'scope': ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
+      case 'scope': if (this.curWeaponId() === 'knife') { this.throwKnife(); break; } ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
       case 'drop': if (this.me?.al && !this.ended) this.net.send('drop'); break;
       case 'lastWeapon': if (this.prevSlot && this.me?.wp?.[this.prevSlot]) this.switchSlot(this.prevSlot); break;
       case 'bigMap': $('minimap').classList.add('big'); break;
@@ -1245,6 +1254,13 @@ export class Game {
     SFX.playReload();
   }
 
+  // couteau lancé (1.25) : clic droit avec le couteau en main ; il se ramasse en passant dessus
+  throwKnife() {
+    if (!this.canAct() || this.me?.ko || ['buy', 'warmup', 'over'].includes(this.snap?.ph)) { if (this.me?.ko) this.centerMsg('VA RAMASSER TON COUTEAU', 1.2); return; }
+    const now = performance.now() / 1000; if (now < (this.knifeNext || 0)) return; this.knifeNext = now + 1;
+    this.net.send('throwKnife', { d: this.aimDir().map(v => Math.round(v * 10000) / 10000) });
+    SFX.playWhoosh?.(); this.vmKick = 1;
+  }
   toggleScope(force) {
     const def = WEAPONS[this.curWeaponId()];
     if (force === false) this.ads = false;
@@ -1287,6 +1303,7 @@ export class Game {
     const wid = this.curWeaponId();
     const def = WEAPONS[wid];
     if (!def.auto && L.triggerHeld) return;
+    if (def.type === 'melee' && this.me?.ko) { if (now - (this.koMsgT || 0) > 1.5) { this.koMsgT = now; this.centerMsg('VA RAMASSER TON COUTEAU', 1.2); } return; }
     if (def.type !== 'melee') {
       if (L.reloadEnd > now) return;
       if (L.mag <= 0) { SFX.playEmpty(); L.nextFire = now + 0.3; L.triggerHeld = true; this.reload(); return; }
@@ -1294,7 +1311,8 @@ export class Game {
     L.triggerHeld = true;
     L.nextFire = now + 1 / (def.rate * (this.me.rm || 1));
     const hs = Math.hypot(L.vel[0], L.vel[2]);
-    let spread = def.type === 'sniper' ? (this.scoped ? def.scopedSpread : def.spread) : (def.spread || 0);
+    // lunette pas encore en place : précision intermédiaire entre la hanche et la lunette
+    let spread = def.type === 'sniper' ? (this.scoped ? def.scopedSpread + (def.spread - def.scopedSpread) * (1 - (this.scopeK ?? 1)) ** 2 : def.spread) : (def.spread || 0);
     // viseur : dispersion de base et rafale réduites (pas les pénalités de mouvement ni de saut)
     const adsM = def.ads ? 1 - (1 - def.ads.spread) * (this.adsK || 0) : 1;
     if (def.type !== 'melee') {
@@ -1408,7 +1426,7 @@ export class Game {
     on('hit', m => {
       if (m.d > 0) this.roundDmg = (this.roundDmg || 0) + m.d;
       if (this.chal) this.chal.hits++;
-      if (ST().damageNumbers && m.d > 0) this.damageNumber(m.d, m.h, m.k);
+      if (ST().damageNumbers && m.d > 0) this.damageNumber(m.d, m.h, m.k, m.t);
       if (ST().hitmarker) {
         const hm = $('hitmarker');
         hm.className = m.k ? 'kill' : m.h ? 'head' : '';
@@ -1444,6 +1462,8 @@ export class Game {
       if (o) o.deadT = 0.001;
     });
     on('roundStart', m => {
+      if (m.loss) this.lossStreak = m.loss;
+      this.buyFor = null;
       this.banner(`MANCHE ${m.round}`, m.half ? 'SECONDE MI-TEMPS · PHASE D\'ACHAT' : `PHASE D'ACHAT — ${KB('buy')} POUR ACHETER`, '', 3);
       SFX.playUI('roundStart');
       for (const o of this.others.values()) { o.deadT = 0; o.ch.root.rotation.x = 0; }
@@ -1458,10 +1478,12 @@ export class Game {
       const me = this.roster.get(this.myId);
       const win = me && m.winner === me.team;
       if (m.history) this.roundHistory = m.history;
+      if (m.loss) this.lossStreak = m.loss;
       const mvpTxt = m.mvp ? ` · MVP de la manche : ${this.nameOf(m.mvp.id)} (${m.mvp.kills} élim., ${m.mvp.dmg} dégâts)` : '';
       this.roundSummary(m, win);
       if (!m.winner) { this.banner('ÉGALITÉ', (REASONS[m.reason] || '') + mvpTxt, '', 4); return; }
-      this.banner(win ? 'MANCHE GAGNÉE' : 'MANCHE PERDUE', (REASONS[m.reason] || '') + mvpTxt, win ? 'win' : 'lose', 4);
+      const lossTxt = !win && me && m.bonus?.[me.team] && this.mode === 'assault' ? ` · Bonus de défaite : +${m.bonus[me.team]}${(m.loss?.[me.team] || 0) > 1 ? ` (${m.loss[me.team]} défaites d'affilée)` : ''}` : '';
+      this.banner(win ? 'MANCHE GAGNÉE' : 'MANCHE PERDUE', (REASONS[m.reason] || '') + lossTxt + mvpTxt, win ? 'win' : 'lose', 4);
       SFX.playUI(win ? 'win' : 'lose');
       if (win) { this.roundWins = (this.roundWins || 0) + 1; }
     });
@@ -1486,6 +1508,10 @@ export class Game {
     on('notice', m => this.centerMsg(m.text, 2.5));
     on('troll', m => this.onTroll(m));
     on('trollFx', m => { if (m.kind === 'stop') { this.trollFx.delete(m.i); return; } const e = this.trollFx.get(m.i) || {}; e[m.kind] = performance.now() / 1000 + m.s; this.trollFx.set(m.i, e); if (m.kind === 'confetti') this.confettiAt(m.i); });
+    on('knifeThrow', m => { if (m.i !== this.myId) { const o = this.others.get(m.i); if (o) SFX.playWhoosh?.(); } });
+    on('knifeBack', m => { this.centerMsg(m.auto ? 'TON COUTEAU EST REVENU' : 'COUTEAU RAMASSÉ', 1); SFX.playSwitch(); });
+    on('gift', m => { const n = WEAPONS[m.item]?.name || ''; this.centerMsg(`${m.from.toUpperCase()} T'OFFRE : ${n.toUpperCase()}`, 2.5); this.pendingSwitch = m.slot; SFX.playUI('buy'); });
+    on('teamGift', m => this.addChat({ from: 'SYSTÈME', system: true, text: `🎁 ${m.from} offre ${WEAPONS[m.item]?.name || ''} à ${m.to}` }));
     on('bought', m => { if (m.slot) { this.pendingSwitch = m.slot; this.bought['s' + m.slot] = m.item; } else if (ARMOR[m.item]) this.bought.armor = m.item; });
     on('sold', m => { const n = WEAPONS[m.item]?.name || ARMOR[m.item]?.name || ''; this.centerMsg(`${n.toUpperCase()} REVENDU · +${m.refund}`, 1.5); SFX.playUI('buy'); if (m.slot) delete this.bought['s' + m.slot]; else delete this.bought.armor; this.buyCache = {}; });
     on('dropped', m => { this.centerMsg(`${(WEAPONS[m.item]?.name || '').toUpperCase()} LÂCHÉ`, 1.2); SFX.playSwitch(); });
@@ -1649,12 +1675,21 @@ export class Game {
     for (const pr of s.proj) {
       let m = this.projMeshes.get(pr.i);
       if (!m) {
-        const col = pr.k === 'smoke' ? '#c9d0ff' : pr.k === 'flash' ? '#ffffff' : pr.k === 'cryo' ? '#9ee7ff' : '#ff8a3d';
-        m = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.2 }));
+        if (pr.k === 'knife') {
+          // couteau lancé : le modèle du couteau (avec le skin de son propriétaire), qui tourne en vol
+          m = new THREE.Group();
+          const owner = this.roster.get(pr.o), w = buildWeapon('knife', pr.o === this.myId ? profile.equipped.knife || 'default' : owner?.skins?.knife || 'default');
+          w.scale.setScalar(1.6); m.add(w); m.userData.knife = true;
+          const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 24), new THREE.MeshBasicMaterial({ color: pr.o === this.myId ? '#19e3c4' : '#ff4f6d', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+          ring.rotation.x = -Math.PI / 2; m.add(ring); m.userData.ring = ring;
+        } else {
+          const col = pr.k === 'smoke' ? '#c9d0ff' : pr.k === 'flash' ? '#ffffff' : pr.k === 'cryo' ? '#9ee7ff' : '#ff8a3d';
+          m = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.2 }));
+        }
         m.position.set(...pr.p);
         this.scene.add(m); this.projMeshes.set(pr.i, m);
       }
-      m.userData.target = pr.p;
+      m.userData.target = pr.p; m.userData.stopped = !!pr.s;
     }
     for (const [id, m] of this.projMeshes) if (!projIds.has(id)) { this.scene.remove(m); this.projMeshes.delete(id); }
     // armes au sol
@@ -1797,7 +1832,7 @@ export class Game {
     L.crouchPrev = L.crouch;
     if (walking) speed *= MOVE.walkMul;
     if (L.crouch) speed *= MOVE.crouchMul;
-    if (this.scoped) speed *= 0.6;
+    if (this.scoped) speed *= 0.5; // fusil de précision lourd : on avance lentement à la lunette
     if (def.ads && this.adsK > 0) speed *= 1 - (1 - def.ads.move) * this.adsK;
     if (L.dashT > 0) L.dashT -= dt;
     else if (L.slideT > 0) {
@@ -2018,6 +2053,10 @@ export class Game {
     for (const m of this.projMeshes.values()) {
       const tg = m.userData.target;
       if (tg) m.position.lerp(new THREE.Vector3(...tg), Math.min(1, dt * 15));
+      if (m.userData.knife) {
+        if (!m.userData.stopped) m.rotation.x -= dt * 22; // tourne en vol
+        else { m.rotation.x = -Math.PI / 2.4; m.userData.ring.material.opacity = 0.35 + Math.sin(now * 5) * 0.2; m.userData.ring.position.y = -m.position.y + 0.04; }
+      }
     }
     if (this.coreMesh.visible) {
       this.coreOct.rotation.y += dt * 2;
@@ -2040,8 +2079,16 @@ export class Game {
     let shake = 0;
     if (this.shake > 0) { this.shake -= dt; shake = ST().reduceMotion ? 0 : this.shake * 0.08 * (ST().shakeAmount ?? 1); }
     // mise en joue au viseur (≈ 0,15 s) : zoom progressif, réticule normal masqué ; retombe à 0 à la mort
-    this.adsK += ((this.ads && this.me?.al && !this.spec ? 1 : 0) - this.adsK) * Math.min(1, dt * 14);
+    // mise en joue (1.25) : durée propre à chaque arme (WEAPONS[…].aim) ; on baisse l'arme un peu plus vite qu'on ne vise
+    const aimDef = WEAPONS[this.curWeaponId()] || {};
+    const aimOn = this.ads && this.me?.al && !this.spec;
+    this.adsK = aimOn ? Math.min(1, this.adsK + dt / (aimDef.aim || 0.15)) : Math.max(0, this.adsK - dt / ((aimDef.aim || 0.15) * 0.6));
     if (this.adsK < 0.002) this.adsK = 0;
+    // lunette : le zoom et la précision arrivent progressivement (tirer trop tôt est moins précis)
+    const scTarget = this.scoped && this.me?.al ? 1 : 0;
+    const prevSc = this.scopeK || 0;
+    this.scopeK = scTarget ? Math.min(1, prevSc + dt / (aimDef.aim || 0.3)) : 0;
+    if (Math.abs(this.scopeK - prevSc) > 0.001) { this.updateFov(); const so = $('scope-overlay'); if (so) so.style.opacity = String(0.35 + 0.65 * this.scopeK); }
     if (Math.abs(this.adsK - (this.adsFovK || 0)) > 0.002 || (this.adsK === 0 && this.adsFovK)) { this.adsFovK = this.adsK; this.updateFov(); }
     $('crosshair').classList.toggle('ads', this.adsK > 0.6);
     // blagues : arc-en-ciel, écran pixelisé, pastille
@@ -2117,6 +2164,8 @@ export class Game {
       hip[2] + (aim[2] - hip[2]) * ak + this.vmKick * (melee ? -0.15 : 0.06));
     let insp = 0;
     if (this.inspectT > 0) { this.inspectT -= dt; if (this.local.lastShot > now - 0.2 || L.reloadEnd > now) this.inspectT = 0; insp = Math.sin(Math.min(1, (1.8 - this.inspectT) / 1.8) * Math.PI); }
+    this.vm.visible = !(melee && this.me?.ko);
+    this.updateDmgNums(dt); // couteau lancé : la main est vide
     this.vm.rotation.set(this.vmKick * (melee ? -0.6 : 0.12) - reloadK * 0.6 + sw * 0.6 + insp * 0.35, this.vmSwayX * 2 + (melee ? this.vmKick * 0.8 : 0) + insp * 1.1, reloadK * 0.4 + insp * 0.5 + (L.slideRoll || 0) * 2.5);
   }
 
@@ -2252,7 +2301,7 @@ export class Game {
     $('combat').style.display = !me.al && !this.spec && $('combat').textContent ? 'block' : 'none';
     // alerte de grenade proche
     let nade = null, nd = 7;
-    for (const m of this.projMeshes.values()) { const d = Math.hypot(m.position.x - L.pos[0], m.position.z - L.pos[2]); if (d < nd) { nd = d; nade = m; } }
+    for (const m of this.projMeshes.values()) { if (m.userData.knife) continue; const d = Math.hypot(m.position.x - L.pos[0], m.position.z - L.pos[2]); if (d < nd) { nd = d; nade = m; } }
     const nw = $('nade-warn');
     if (nade && me.al) { const ang = Math.atan2(nade.position.x - L.pos[0], -(nade.position.z - L.pos[2])) + L.yaw; nw.style.display = 'block'; nw.style.transform = `translate(-50%, -50%) rotate(${ang}rad) translateY(-90px) rotate(${-ang}rad)`; }
     else nw.style.display = 'none';
@@ -2416,13 +2465,42 @@ export class Game {
   }
 
   // ---- chiffres de dégâts ----
-  damageNumber(d, head, kill) {
+  damageNumber(d, head, kill, targetId) {
+    // au-dessus de la cible (1.25) : les touches rapprochées sur le même joueur s'additionnent
+    const o = targetId && ST().dmgNumPos !== 'crosshair' ? this.others.get(targetId) : null;
+    if (o?.ch?.root) {
+      this.dmgNums ||= [];
+      const now = performance.now() / 1000;
+      let n = this.dmgNums.find(x => x.id === targetId && now - x.t < 0.9 && !x.kill);
+      if (!n) { n = { id: targetId, sum: 0, el: document.createElement('div') }; n.el.className = 'dmg-num3d'; $('hud').appendChild(n.el); this.dmgNums.push(n); }
+      n.sum += d; n.t = now; n.head = n.head || head; n.kill = kill;
+      n.el.textContent = Math.round(n.sum);
+      n.el.className = 'dmg-num3d' + (n.head ? ' head' : '') + (kill ? ' kill' : '');
+      n.el.style.transform = 'translate(-50%, -50%) scale(1.25)'; n.pop = 0.12;
+      return;
+    }
     const el = document.createElement('div');
     el.className = 'dmg-num' + (head ? ' head' : '') + (kill ? ' kill' : '');
     el.textContent = Math.round(d);
     el.style.left = `calc(50% + ${Math.round((Math.random() - 0.5) * 60)}px)`;
     $('hud').appendChild(el);
     setTimeout(() => el.remove(), 800);
+  }
+  updateDmgNums(dt) {
+    if (!this.dmgNums?.length) return;
+    const now = performance.now() / 1000, v = new THREE.Vector3(), W = innerWidth, H = innerHeight;
+    this.dmgNums = this.dmgNums.filter(n => {
+      const age = now - n.t, o = this.others.get(n.id);
+      if (age > 1 || !o?.ch?.root) { n.el.remove(); return false; }
+      v.copy(o.ch.root.position); v.y += 2.15 + age * 0.6;
+      v.project(this.camera);
+      if (v.z > 1) { n.el.style.display = 'none'; return true; }
+      n.el.style.display = 'block';
+      n.el.style.left = ((v.x + 1) / 2 * W) + 'px'; n.el.style.top = ((1 - v.y) / 2 * H) + 'px';
+      n.el.style.opacity = String(age < 0.6 ? 1 : 1 - (age - 0.6) / 0.4);
+      if (n.pop > 0) { n.pop -= dt; if (n.pop <= 0) n.el.style.transform = 'translate(-50%, -50%) scale(1)'; }
+      return true;
+    });
   }
   // ---- graphique réseau ----
   drawNetGraph(fps) {
