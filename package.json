@@ -1,6 +1,6 @@
 {
   "name": "eclipse-tactics",
-  "version": "1.24.0",
+  "version": "1.24.1",
   "description": "Shooter tactique multijoueur web original (5v5, agents, capacités)",
   "type": "module",
   "main": "server/server.js",
@@ -14,5 +14,10 @@
   "dependencies": {
     "three": "^0.170.0",
     "ws": "^8.23.0"
+  },
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LIPMO/eclipse.git"
   }
 }

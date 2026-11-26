@@ -2,6 +2,14 @@
 
 Jeu de tir tactique original, jouable dans le navigateur : agents à capacités, manches avec phase d'achat, pose et désamorçage du Noyau, skins d'armes, comptes joueurs. Serveur Node.js autoritaire (WebSocket) et rendu Three.js.
 
+## Licence
+
+Copyright (C) 2026 Charles BAERT.
+
+ECLIPSE est un logiciel libre : tu peux le redistribuer et le modifier selon les termes de la **GNU Affero General Public License version 3** (AGPL-3.0-only), publiée par la Free Software Foundation. Voir le fichier [LICENSE](LICENSE). Si tu héberges une version modifiée du jeu, tu dois proposer son code source à ses joueurs (article 13 de la licence).
+
+Le nom « ECLIPSE » et son logo ne sont pas couverts par la licence : une version modifiée doit porter un autre nom. Composants tiers : Three.js (MIT), polices Chakra Petch et Rajdhani (SIL Open Font License, voir `public/fonts/LICENCE-OFL.txt`).
+
 ## Contenu
 
 - **5 modes**
@@ -62,7 +70,13 @@ Le dossier `launcher/` contient l'application de bureau (Electron). Elle se conn
 
 **Publier une nouvelle version :** change `version` dans `launcher/package.json` (par exemple 2.0.1) et envoie le code sur `main`. GitHub Actions (`.github/workflows/launcher.yml`) voit que cette version n'est pas encore publiée et compile alors Windows (installateur en un clic + portable) et Linux (AppImage), calcule les empreintes SHA-256, ajoute une **attestation de provenance signée** (Sigstore) et publie le tout sur GitHub Releases. Les launchers installés se mettent à jour tout seuls.
 
-**Signature Windows (Authenticode)** : sans certificat de signature de code, Windows affiche l'écran SmartScreen la première fois (« Informations complémentaires » → « Exécuter quand même »). Pour le supprimer, achète un certificat de signature de code et ajoute dans les secrets du dépôt `WIN_CSC_LINK` (fichier .pfx encodé en base64) et `WIN_CSC_KEY_PASSWORD` : la compilation signera alors automatiquement les fichiers Windows.
+**Signature Windows (Authenticode), gratuite avec SignPath Foundation** (voir [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)). Tant qu'elle n'est pas configurée, l'installateur est publié non signé : Windows affiche l'écran SmartScreen (« Informations complémentaires » → « Exécuter quand même »). Pour l'activer :
+
+1. Active la double authentification sur ton compte GitHub.
+2. Fais la demande sur https://signpath.org (projet open source « ECLIPSE », dépôt `https://github.com/LIPMO/eclipse`, licence AGPL-3.0, page de politique `CODE_SIGNING_POLICY.md`).
+3. Une fois accepté, dans SignPath : crée le projet `eclipse`, la configuration d'artefact `launcher-windows` (contenu de `launcher/signpath/artifact-configuration.xml`), la politique de signature `release-signing`, relie le dépôt GitHub (« Trusted build system » GitHub.com) et crée un jeton d'API pour un utilisateur CI.
+4. Dans GitHub → Settings → Secrets and variables → Actions : le secret `SIGNPATH_API_TOKEN` (le jeton) et la variable `SIGNPATH_ORGANIZATION_ID` (l'identifiant de ton organisation SignPath).
+5. Change la version du launcher : la prochaine publication sera signée après ton approbation sur signpath.io.
 
 Pour tester en local, depuis le dossier `launcher` : `npm install` puis `npm start`.
 

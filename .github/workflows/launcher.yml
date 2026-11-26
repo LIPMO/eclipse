@@ -5,9 +5,9 @@
 # Signature :
 #  - Toujours : attestation de provenance signée par GitHub (Sigstore) + empreintes SHA-256 (SHA256SUMS.txt).
 #    Vérification : gh attestation verify ECLIPSE-Launcher-Setup.exe -R LIPMO/eclipse
-#  - Signature Windows (Authenticode, supprime l'écran SmartScreen « éditeur inconnu ») : seulement si un certificat
-#    de signature de code est enregistré dans les secrets du dépôt WIN_CSC_LINK (fichier .pfx en base64)
-#    et WIN_CSC_KEY_PASSWORD. Sans eux, l'installateur est publié non signé (Windows affiche alors SmartScreen).
+#  - Signature Windows (Authenticode) gratuite par SignPath Foundation (voir CODE_SIGNING_POLICY.md), active dès que
+#    le secret SIGNPATH_API_TOKEN et la variable SIGNPATH_ORGANIZATION_ID existent dans le dépôt. Chaque demande de
+#    signature attend l'approbation manuelle sur signpath.io (jusqu'à 1 h). Sans eux : publication non signée.
 name: Launcher
 on:
   push:
@@ -49,7 +49,9 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 90
+    env:
+      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
     defaults:
       run:
         working-directory: launcher
@@ -67,11 +69,38 @@ jobs:
       - name: Compilation Windows (installateur + portable)
         if: runner.os == 'Windows'
         env:
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --publish never
+      - name: Fichiers Windows à signer
+        id: unsigned
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: non-signe-windows
+          if-no-files-found: error
+          path: |
+            launcher/dist/ECLIPSE-Launcher-Setup.exe
+            launcher/dist/ECLIPSE-Launcher-Portable.exe
+      - name: Signature Windows gratuite (SignPath Foundation)
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          connector-url: https://githubactions.signpath.io
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: eclipse
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: launcher-windows
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: launcher/dist-signed
+      - name: Fichiers signés à la place des fichiers non signés
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
         run: |
-          if [ -z "$CSC_LINK" ]; then unset CSC_LINK CSC_KEY_PASSWORD; export CSC_IDENTITY_AUTO_DISCOVERY=false; echo "Pas de certificat Windows : installateur non signé (Authenticode)."; fi
-          npx electron-builder --win --publish never
+          cp -f dist-signed/*.exe dist/
+          node scripts/update-latest-yml.cjs dist
+          rm -f dist/*.blockmap
       - name: Compilation Linux (AppImage)
         if: runner.os == 'Linux'
         run: npx electron-builder --linux --publish never
@@ -94,6 +123,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: out
+          pattern: launcher-*
           merge-multiple: true
       - name: Empreintes SHA-256
         working-directory: out
@@ -110,9 +140,10 @@ jobs:
       - name: Publication sur GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
-          SIGNED: ${{ secrets.WIN_CSC_LINK != '' && 'oui' || 'non' }}
+          SIGNED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && 'oui' || 'non' }}
         run: |
           VERSION="${{ needs.check.outputs.version }}"
+          ATTR=""; if [ "$SIGNED" = "oui" ]; then ATTR="Free code signing provided by SignPath.io, certificate by SignPath Foundation (CODE_SIGNING_POLICY.md)"; fi
           TAG="launcher-v$VERSION"
           NOTES="ECLIPSE Launcher $VERSION
 
@@ -123,6 +154,7 @@ jobs:
 
           Compilé par GitHub Actions à partir de ce dépôt. Attestation de provenance signée : gh attestation verify <fichier> -R ${{ github.repository }}
           Signature Windows (Authenticode) : $SIGNED
+          $ATTR
           Empreintes : SHA256SUMS.txt"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" out/* --clobber

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Configuration d'artefact SignPath (à copier dans SignPath : projet « eclipse » → Artifact configurations → « launcher-windows »).
+     L'artefact envoyé par GitHub Actions est un zip contenant les deux fichiers Windows à signer (Authenticode). -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="ECLIPSE-Launcher-Setup.exe">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="ECLIPSE-Launcher-Portable.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

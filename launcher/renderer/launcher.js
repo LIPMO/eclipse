@@ -25,8 +25,9 @@ $('btn-min').onclick = () => L.minimize();
 $('btn-close').onclick = () => L.close();
 document.querySelectorAll('[data-link]').forEach(b => {
   b.onclick = () => {
+    if (b.dataset.link === 'source') { L.openLink('https://github.com/LIPMO/eclipse'); return; }
     const site = settings?.site || 'https://eclipseee.online';
-    L.openLink(site + { download: '/telecharger', site: '/', cgu: '/cgu.html', privacy: '/confidentialite.html', legal: '/mentions-legales.html' }[b.dataset.link]);
+    L.openLink(site + { download: '/telecharger', site: '/', cgu: '/cgu.html', privacy: '/confidentialite.html', legal: '/mentions-legales.html' }[b.dataset.link] || '/');
   };
 });
 

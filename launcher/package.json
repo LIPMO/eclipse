@@ -1,7 +1,7 @@
 {
   "name": "eclipse-launcher",
   "productName": "ECLIPSE Launcher",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Launcher du jeu ECLIPSE",
   "main": "main.js",
   "private": true,
@@ -77,12 +77,23 @@
       "artifactName": "ECLIPSE-Launcher.${ext}",
       "syncDesktopName": true,
       "maintainer": "ECLIPSE"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.txt"
+      }
+    ]
   },
   "dependencies": {
     "electron-updater": "6.8.12"
   },
   "author": "ECLIPSE",
   "homepage": "https://eclipseee.online",
-  "desktopName": "eclipse-launcher.desktop"
+  "desktopName": "eclipse-launcher.desktop",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LIPMO/eclipse.git"
+  }
 }

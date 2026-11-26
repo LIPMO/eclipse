@@ -47,7 +47,7 @@ footer{border-top:1px solid #1d2338;color:#8d93ab;font-size:13px;margin-top:30px
 <header><a class="logo" href="/">ECLIPSE</a><nav><a href="/jeu">Le jeu</a><a href="/agents">Agents</a><a href="/modes">Modes</a><a href="/cartes">Cartes</a><a href="/guide">Guide</a><a href="/nouveautes">Nouveautés</a></nav><a class="play" href="/">JOUER</a></header>
 <main><h1>${esc(h1)}</h1>${body}
 <a class="cta" href="/">JOUER GRATUITEMENT</a></main>
-<footer>ECLIPSE — shooter tactique gratuit dans le navigateur · <a href="/mentions-legales.html">Mentions légales</a> · <a href="/cgu.html">CGU</a> · <a href="/confidentialite.html">Confidentialité</a> · <a href="/telecharger"><b>⬇ Télécharger le launcher</b></a></footer>
+<footer>ECLIPSE — shooter tactique gratuit dans le navigateur · <a href="/mentions-legales.html">Mentions légales</a> · <a href="/cgu.html">CGU</a> · <a href="/confidentialite.html">Confidentialité</a> · <a href="https://github.com/LIPMO/eclipse">Code source (AGPL-3.0)</a> · <a href="/telecharger"><b>⬇ Télécharger le launcher</b></a></footer>
 </body></html>`;
 }
 
@@ -137,7 +137,7 @@ ${win ? `<a class="cta" href="${esc(win.url)}">⬇ TÉLÉCHARGER POUR WINDOWS</a
 <h2>Signature et authenticité</h2>
 <div class="ab" style="--c:#19e3c4"><div class="ic">✔</div><div><b>Compilé et signé par GitHub.</b> Chaque version est fabriquée automatiquement par les serveurs de GitHub à partir du code public du jeu, puis accompagnée d'une <a href="${esc(rel.attestations)}">attestation de provenance signée</a> (Sigstore) : elle prouve que le fichier vient bien de ce code et n'a pas été modifié.</div></div>
 ${rel.signedWindows
-    ? '<div class="ab" style="--c:#19e3c4"><div class="ic">✔</div><div><b>Signé numériquement pour Windows</b> (certificat Authenticode) : Windows affiche l\'éditeur et lance le fichier directement.</div></div>'
+    ? '<div class="ab" style="--c:#19e3c4"><div class="ic">✔</div><div><b>Signé numériquement pour Windows</b> (certificat Authenticode, éditeur « SignPath Foundation »). Free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a> — <a href="https://github.com/LIPMO/eclipse/blob/main/CODE_SIGNING_POLICY.md">politique de signature</a>.</div></div>'
     : `<div class="ab" style="--c:#ffcf5a"><div class="ic">ℹ</div><div><b>Si Windows affiche « Windows a protégé votre ordinateur »</b> : c'est l'écran SmartScreen, normal pour un petit jeu indépendant qui n'a pas encore de certificat payant. Clique sur <b>Informations complémentaires</b>, puis sur <b>Exécuter quand même</b>. Tu peux vérifier le fichier ci-dessous avant de le lancer.</div></div>`}
 <h3>Vérifier un fichier (facultatif)</h3>
 <p class="muted">Empreintes SHA-256 : elles doivent être identiques à celles calculées sur ton ordinateur.</p>

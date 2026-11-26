@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.24.1",
+    "date": "2026-11-26",
+    "title": "ECLIPSE devient un logiciel libre",
+    "items": [
+      "Le code du jeu est maintenant public sous licence libre GNU AGPL-3.0 : lien « Code source » en bas du site. Le nom et le logo ECLIPSE restent réservés.",
+      "Launcher 2.0.1 : la licence est jointe et la signature Windows gratuite (SignPath Foundation) est prête à être activée."
+    ]
+  },
+  {
     "version": "1.24.0",
     "date": "2026-11-26",
     "title": "Nouveau launcher à télécharger",
