@@ -20,6 +20,16 @@ export const knifePower = (heldSeconds) => Math.max(KNIFE_THROW.minPower, Math.m
 export const lossBonus = streak => Math.min(ROUND.lossMax, ROUND.lossMoney + ROUND.lossStep * Math.max(0, streak - 1));
 // temps mort tactique (1.26, Assaut) : une fois par équipe et par mi-temps, prolonge la phase d'achat
 export const TIMEOUT = { extra: 30, maxBuy: 75 };
+// recul apprenable (1.26) : décalage horizontal de chaque balle d'une rafale (× recul de l'arme), toujours le même
+// → on peut apprendre à le compenser. La montée verticale reste celle de l'arme.
+export const RECOIL_PATTERNS = {
+  lancer: [0, 0, 0, 0.2, 0.4, 0.6, 0.5, 0.2, -0.2, -0.6, -0.9, -0.8, -0.4, 0, 0.4, 0.8, 1, 0.8, 0.4, 0, -0.4, -0.8, -0.8, -0.5, -0.2],
+  viper: [0, 0.1, -0.1, 0.25, -0.25, 0.35, -0.35, 0.4, -0.4, 0.45, -0.45, 0.4, -0.4, 0.35, -0.35],
+  tempest: [0, 0.1, 0.2, 0.1, -0.1, -0.2, -0.1, 0.1, 0.2, 0.1],
+  hornet: [0, 0.2, -0.2, 0.3, -0.3, 0.2, -0.2],
+  spark: [0, 0.15, -0.15, 0.2, -0.2],
+};
+export const recoilX = (id, n) => { const p = RECOIL_PATTERNS[id]; return p ? p[n % p.length] : 0; };
 export const DUEL = { buyTime: 10, roundTime: 60, money: 9000 };
 
 export const FFA = { respawn: 3, timeLimit: 600, gunTimeLimit: 480, abilityRecharge: 18 };

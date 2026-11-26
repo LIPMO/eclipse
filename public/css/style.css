@@ -1349,3 +1349,16 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 .member .bot-set { display: flex; gap: 4px; margin-top: 3px; }
 .member .bot-set select { font-size: 11px; padding: 1px 3px; background: #0d1220; border: 1px solid var(--line2); color: var(--text); max-width: 110px; }
 #dmg-report small { color: var(--muted); font-size: 11px; }
+
+/* 1.26 lot C : motif de recul, anneau des sons, conseil d'entraînement */
+.buy-item { position: relative; }
+.buy-pat { position: absolute; right: 6px; top: 6px; width: 34px; height: 38px; opacity: .8; pointer-events: none; }
+#snd-ring { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; z-index: 4; }
+.snd-arc { position: absolute; left: 0; top: 0; width: 46px; height: 7px; border-radius: 6px; opacity: var(--o, 1); animation: sndFade 1.1s ease-out forwards; }
+.snd-arc.step { background: rgba(233,236,245,.9); box-shadow: 0 0 6px rgba(255,255,255,.6); }
+.snd-arc.shot { background: #ff4f6d; box-shadow: 0 0 8px #ff4f6d; width: 58px; }
+.snd-arc.ab { background: #b48cff; box-shadow: 0 0 8px #b48cff; }
+.snd-arc.ping { background: #ffcf5a; box-shadow: 0 0 8px #ffcf5a; }
+@keyframes sndFade { from { opacity: var(--o, 1); } to { opacity: 0; } }
+.end-drill { margin: 10px auto; max-width: 520px; }
+.end-drill p { margin: 6px 0 10px; }

@@ -2032,7 +2032,23 @@
 "TU COMMENCES EN DÉFENSE": "YOU START ON DEFENSE",
 "MANCHE AU COUTEAU : LE GAGNANT CHOISIT SON CÔTÉ": "KNIFE ROUND: THE WINNER PICKS THEIR SIDE",
 "TON ÉQUIPE A DÉJÀ UTILISÉ SON TEMPS MORT CETTE MI-TEMPS": "YOUR TEAM ALREADY USED ITS TIMEOUT THIS HALF",
-"Manche au couteau : le gagnant choisit son côté (Assaut)": "Knife round: the winner picks their side (Assault)"
+"Manche au couteau : le gagnant choisit son côté (Assaut)": "Knife round: the winner picks their side (Assault)",
+"TÊTES UNIQUEMENT": "HEADSHOTS ONLY",
+"Ta précision n'était que de": "Your accuracy was only",
+"Entraîne-toi sur des cibles fixes : vise avant de tirer, en rafales courtes.": "Practise on static targets: aim before you shoot, in short bursts.",
+"Seulement": "Only",
+"de tes éliminations à la tête. Exercice « têtes uniquement » : garde ton viseur à hauteur de tête.": "of your kills were headshots. \"Headshots only\" drill: keep your crosshair at head height.",
+"Tu perds beaucoup de duels (": "You lose a lot of duels (",
+"éliminations pour": "kills for",
+"morts). Quelques minutes de défi de visée pour gagner en vitesse.": "deaths). A few minutes of aim challenge to get faster.",
+"CONSEIL D'ENTRAÎNEMENT": "TRAINING TIP",
+"🎯 M'ENTRAÎNER APRÈS LA PARTIE": "🎯 TRAIN AFTER THE MATCH",
+"M'ENTRAÎNER APRÈS LA PARTIE": "TRAIN AFTER THE MATCH",
+"✔ CHAMP DE TIR AU RETOUR AU MENU": "✔ SHOOTING RANGE WHEN BACK TO MENU",
+"CHAMP DE TIR AU RETOUR AU MENU": "SHOOTING RANGE WHEN BACK TO MENU",
+"Visualisation des sons": "Sound visualisation",
+"Un arc autour du viseur montre d'où viennent les pas (blanc), les tirs (rouge), les capacités (violet) et les marqueurs (jaune)": "An arc around the crosshair shows where footsteps (white), shots (red), abilities (purple) and pings (yellow) come from",
+"Motif de recul : toujours le même, apprends à le compenser": "Recoil pattern: always the same, learn to control it"
 },
 "patterns": [
 [

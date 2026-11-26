@@ -253,7 +253,10 @@ $('pb-friends-all').onclick = () => showTab('friends');
 net.on('friends', m => { state.friendsList = m.friends || []; if (state.tab === 'play') renderFriendsPlaying(state.friendsList); });
 
 // ======================= SALON =======================
-net.on('room', m => { state.room = m.room; renderRoom(); if (state.tab !== 'room' && !state.game) showTab('room'); });
+net.on('room', m => {
+  state.room = m.room; renderRoom(); if (state.tab !== 'room' && !state.game) showTab('room');
+  if (state.autoStartRange && Date.now() - state.autoStartRange < 15000 && m.room?.hostId === state.myId && m.room.state === 'lobby' && m.room.difficulty === 'cible') { state.autoStartRange = 0; net.send('start'); }
+});
 net.on('left', () => { state.room = null; if (!state.game) showTab('play'); });
 net.on('chat', m => {
   if (state.game) return;
@@ -546,6 +549,16 @@ function exitGame() {
   $('menu').classList.add('active');
   refreshProfileUI();
   showTab(state.room ? 'room' : 'play');
+  // conseil d'entraînement accepté en fin de partie : direction le champ de tir (1.26)
+  let go = false; try { go = localStorage.getItem('eclipse_go_range') === '1'; localStorage.removeItem('eclipse_go_range'); } catch { /* */ }
+  if (go && (!hub.party || hub.party.lead)) {
+    setTimeout(() => {
+      if (state.room) net.send('leaveRoom');
+      state.autoStartRange = Date.now();
+      net.send('lobbyPlay', { cfg: { mode: 'ffa', diff: 'cible', fill: false, map: 'random' } });
+      toast('Direction le champ de tir : appuie sur P pour lancer l\'exercice.', 4000);
+    }, 600);
+  }
 }
 net.on('backToRoom', () => { if (state.game) { state.game.destroy(); exitGame(); } });
 

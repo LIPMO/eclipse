@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS = {
   // langue
   lang: 'fr',
   // accessibilité et confidentialité
-  colorblind: 'none', reduceMotion: false, streamer: false, readableFont: false, menuTheme: 'dark', uiFont: 1, highContrast: false, subtitles: false, shakeAmount: 1, noFlash: false,
+  colorblind: 'none', reduceMotion: false, streamer: false, readableFont: false, menuTheme: 'dark', uiFont: 1, highContrast: false, soundRing: false, subtitles: false, shakeAmount: 1, noFlash: false,
   // notifications
   notifFriends: true, notifClan: true, notifTour: true, notifInvite: true, notifSound: true, notifFriendOnline: true,
   syncAccount: true,

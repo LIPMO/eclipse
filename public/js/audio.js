@@ -107,11 +107,20 @@ export function playShot(type, pos) {
   noise(o, t, s.d * 0.4, 5000, 0.5, 'highpass', s.g * 0.5);
   if (s.thump) tone(o, t, s.d * 0.7, s.thump * 2, s.thump * 0.5, 'triangle', s.g * 0.8);
 }
-export function playStep(pos, self = false) {
+// pas (1.26) : le son dépend de la surface (sable, neige, mousse, métal, caisse en bois, pierre)
+export function playStep(pos, self = false, surface = 'stone') {
   if (!ctx) return;
   const t = ctx.currentTime;
   const o = out(pos, 32, 'steps');
-  noise(o, t, 0.09, self ? 500 : 650, 1.5, 'lowpass', self ? 0.18 : 0.6);
+  const g = self ? 0.18 : 0.6;
+  switch (surface) {
+    case 'sand': noise(o, t, 0.13, 380, 1, 'lowpass', g * 0.9); noise(o, t, 0.08, 4200, 0.7, 'highpass', g * 0.12); break;
+    case 'snow': noise(o, t, 0.11, 1700, 0.9, 'bandpass', g * 0.75); noise(o, t + 0.015, 0.06, 5200, 0.7, 'highpass', g * 0.18); break;
+    case 'moss': noise(o, t, 0.1, 300, 1.2, 'lowpass', g * 0.7); break;
+    case 'metal': noise(o, t, 0.06, 2600, 6, 'bandpass', g * 0.55); tone(o, t, 0.09, 950, 720, 'triangle', g * 0.06); break;
+    case 'wood': noise(o, t, 0.08, 720, 1.4, 'lowpass', g * 0.85); tone(o, t, 0.07, 150, 90, 'sine', g * 0.25); break;
+    default: noise(o, t, 0.09, self ? 500 : 650, 1.5, 'lowpass', g);
+  }
 }
 export function playHit(head, kill) {
   if (!ctx) return;

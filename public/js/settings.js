@@ -166,6 +166,7 @@ const SECTIONS = [
     { k: 'readableFont', t: 'toggle', label: 'Lecture simple', hint: 'Police plus lisible, lettres et lignes plus espacées (aide à la lecture, dyslexie)' },
     { k: 'menuTheme', t: 'select', label: 'Thème du menu', opts: [['dark', 'Sombre'], ['light', 'Clair']], hint: 'Le jeu lui-même reste sombre' },
     { k: 'highContrast', t: 'toggle', label: 'Contraste élevé', hint: 'Textes plus clairs, bordures plus visibles et image de jeu plus contrastée' },
+    { k: 'soundRing', t: 'toggle', label: 'Visualisation des sons', hint: 'Un arc autour du viseur montre d\'où viennent les pas (blanc), les tirs (rouge), les capacités (violet) et les marqueurs (jaune)' },
     { k: 'subtitles', t: 'toggle', label: 'Sous-titres des sons importants', hint: 'Affiche « Pas ennemis → », « Tir ennemi ← », explosions, capacités… avec leur direction' },
     { k: 'shakeAmount', t: 'range', label: 'Intensité des secousses de caméra', min: 0, max: 1, step: 0.05, pct: true, hint: '0 % = aucune secousse' },
     { k: 'noFlash', t: 'toggle', label: 'Atténuer les flashs lumineux', hint: 'Les aveuglements deviennent un voile sombre au lieu d\'un écran blanc' },

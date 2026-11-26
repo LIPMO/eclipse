@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
-import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower } from '/shared/data.js';
+import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower, recoilX, RECOIL_PATTERNS } from '/shared/data.js';
 import { tr } from './i18n.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm, groundHeight } from '/shared/physics.js';
 import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
@@ -459,7 +459,34 @@ export class Game {
   }
 
   // sous-titres des sons importants, avec la direction de la source (option d'accessibilité)
+  // matière sous les pieds : caisses en bois, sinon le sol de la carte (sable, neige, mousse, métal)
+  surfaceAt(pos) {
+    if (pos && pos[1] > 0.3) {
+      const b = this.map.boxes.find(x => pos[0] > x.min[0] - 0.1 && pos[0] < x.max[0] + 0.1 && pos[2] > x.min[2] - 0.1 && pos[2] < x.max[2] + 0.1 && Math.abs(x.max[1] - pos[1]) < 0.4);
+      if (b && (b.kind === 'crate' || b.kind === 'crateHigh')) return 'wood';
+      if (b) return 'stone';
+    }
+    return { sandfloor: 'sand', snow: 'snow', moss: 'moss', neonfloor: 'metal' }[this.map.theme?.floor] || 'stone';
+  }
+  // visualisation des sons (accessibilité) : un arc autour du viseur dans la direction du son
+  soundRing(pos, key, maxDist) {
+    const L = this.local; if (!L || !pos) return;
+    const dx = pos[0] - L.pos[0], dz = pos[2] - L.pos[2], d = Math.hypot(dx, dz);
+    if (d < 1.5 || (maxDist && d > maxDist * 1.2)) return;
+    const now = performance.now() / 1000; this.ringLast ||= {};
+    if (now - (this.ringLast[key] || 0) < 0.35) return; this.ringLast[key] = now;
+    const f = -dx * Math.sin(L.yaw) - dz * Math.cos(L.yaw), r = dx * Math.cos(L.yaw) - dz * Math.sin(L.yaw);
+    const ang = Math.atan2(r, f);
+    const kind = /shot|boom|flash/.test(key) ? 'shot' : /ab/.test(key) ? 'ab' : /ping/.test(key) ? 'ping' : 'step';
+    const el = document.createElement('div');
+    el.className = 'snd-arc ' + kind;
+    el.style.transform = `translate(-50%, -50%) rotate(${ang}rad) translateY(-86px)`;
+    el.style.setProperty('--o', String(Math.max(0.35, 1 - d / 45)));
+    $('snd-ring').appendChild(el);
+    setTimeout(() => el.remove(), 1100);
+  }
   caption(text, pos, key, maxDist = 0, every = 1.6) {
+    if (ST().soundRing && pos) this.soundRing(pos, key, maxDist);
     if (!ST().subtitles || !this.local) return;
     const now = performance.now() / 1000;
     this.capLast ||= {};
@@ -561,6 +588,15 @@ export class Game {
     }).join('');
   }
 
+  // dessin du motif de recul : où partiraient les balles d'une rafale si on ne compense pas
+  recoilSvg(id) {
+    const w = WEAPONS[id], n = Math.min(w.mag || 20, RECOIL_PATTERNS[id].length + 5);
+    let x = 0, y = 0; const pts = [];
+    for (let i = 0; i < n; i++) { pts.push([x, y]); x += recoilX(id, i) * 2.2; y += (i < 3 ? 0.6 : 1); }
+    const maxY = Math.max(...pts.map(p => p[1])) || 1, maxX = Math.max(1, ...pts.map(p => Math.abs(p[0])));
+    const sx = 16 / maxX, sy = 38 / maxY;
+    return `<svg class="buy-pat" viewBox="-22 -44 44 48" title="Motif de recul : toujours le même, apprends à le compenser">${pts.map(([px, py], i) => `<circle cx="${(px * sx).toFixed(1)}" cy="${(-py * sy).toFixed(1)}" r="${i === 0 ? 2.4 : 1.6}" fill="${i === 0 ? '#ffcf5a' : '#e9ecf5'}" opacity="${(1 - i / n * 0.6).toFixed(2)}"/>`).join('')}</svg>`;
+  }
   buildBuyMenu() {
     const cols = [
       ['PISTOLETS', ['spark', 'hornet']],
@@ -578,7 +614,8 @@ export class Game {
       const cost = w ? w.cost : a.cost;
       const stat = w ? `${w.damage}${w.pellets > 1 ? '×' + w.pellets : ''} dég · ${w.mag} balles · ${w.auto ? 'auto' : 'semi'}${w.ads ? ' · viseur' : w.scope ? ' · lunette' : ''}${w.aim ? ` · visée ${w.aim < 0.16 ? 'rapide' : w.aim < 0.25 ? 'moyenne' : 'lente'}` : ''}` : id === KIT.id ? `désamorçage en ${KIT.defuseTime} s (défense)` : `+${a.value} armure`;
       const lock = w && this.unlocks && (WEAPON_UNLOCK[id] || 1) > this.level;
-      return `<div class="buy-item ${lock ? 'locked' : ''}" data-item="${id}"><div class="bn">${name}${lock ? ` <span class="lock">🔒 NIV. ${WEAPON_UNLOCK[id]}</span>` : ''}</div><div class="bp">${cost ? cost : 'GRATUIT'}</div><div class="bs">${stat}</div></div>`;
+      const pat = w && RECOIL_PATTERNS[id] ? this.recoilSvg(id) : '';
+      return `<div class="buy-item ${lock ? 'locked' : ''}" data-item="${id}">${pat}<div class="bn">${name}${lock ? ` <span class="lock">🔒 NIV. ${WEAPON_UNLOCK[id]}</span>` : ''}</div><div class="bp">${cost ? cost : 'GRATUIT'}</div><div class="bs">${stat}</div></div>`;
     }).join('')}</div>`).join('');
     $('buy-cols').onclick = e => {
       const it = e.target.closest('.buy-item');
@@ -1355,7 +1392,8 @@ export class Game {
       if (!this.opts.infAmmo) L.mag--;
       const rec = def.recoil * (L.burst < 3 ? 0.6 : 1) * (1 - 0.25 * (this.adsK || 0));
       L.recoil = Math.min(0.32, L.recoil + rec);
-      L.yaw += (Math.random() - 0.5) * def.recoil * (L.burst > 5 ? 1.2 : 0.4);
+      // motif fixe propre à l'arme (apprenable) + très légère variation
+      L.yaw -= recoilX(wid, L.burst) * def.recoil * 0.9 * (1 - 0.25 * (this.adsK || 0)) + (Math.random() - 0.5) * def.recoil * 0.06;
       L.burst++;
     }
     // effets locaux
@@ -1916,7 +1954,7 @@ export class Game {
     const hs = Math.hypot(L.vel[0], L.vel[2]);
     if (L.onGround && hs > 4 && !walking && !L.crouch) {
       L.stepT -= dt;
-      if (L.stepT <= 0) { SFX.playStep(null, true); L.stepT = 0.36; }
+      if (L.stepT <= 0) { SFX.playStep(null, true, this.surfaceAt(L.pos)); L.stepT = 0.36; }
     }
     // fin de rechargement : traitée AVANT le tir et la recharge automatique, sinon celle-ci voyait
     // « chargeur vide, pas de recharge en cours » et relançait une recharge qui effaçait la précédente (boucle)
@@ -1985,7 +2023,7 @@ export class Game {
         ch.root.visible = false;
         const sp = o.lastPos ? Math.hypot(st.p[0] - o.lastPos[0], st.p[2] - o.lastPos[2]) / Math.max(dt, 1e-3) : 0;
         o.lastPos = st.p.slice(); o.speedS = (o.speedS || 0) * 0.85 + sp * 0.15;
-        if (o.speedS > 4.3) { o.stepT -= dt; if (o.stepT <= 0) { SFX.playStep(st.p); o.stepT = 0.36; if (this.isEnemyId(o.id)) this.caption('Pas ennemis', st.p, 'step', 22); } }
+        if (o.speedS > 4.3) { o.stepT -= dt; if (o.stepT <= 0) { SFX.playStep(st.p, false, this.surfaceAt(st.p)); o.stepT = 0.36; if (this.isEnemyId(o.id)) this.caption('Pas ennemis', st.p, 'step', 22); } }
         continue;
       }
       ch.root.visible = true;
@@ -2022,7 +2060,7 @@ export class Game {
       } else { ch.legs[0].rotation.x *= 0.8; ch.legs[1].rotation.x *= 0.8; }
       if (st.al && !slid && o.speedS > 4.3 && Math.abs(st.p[1] - (o.prevY ?? st.p[1])) < 0.02) {
         o.stepT -= dt;
-        if (o.stepT <= 0) { SFX.playStep(st.p); o.stepT = 0.36; if (this.isEnemyId(o.id)) this.caption('Pas ennemis', st.p, 'step', 22); }
+        if (o.stepT <= 0) { SFX.playStep(st.p, false, this.surfaceAt(st.p)); o.stepT = 0.36; if (this.isEnemyId(o.id)) this.caption('Pas ennemis', st.p, 'step', 22); }
       }
       o.prevY = st.p[1];
       // mort
@@ -2476,7 +2514,8 @@ export class Game {
   startChallenge() {
     if (!this.range || this.chal) return;
     const now = performance.now() / 1000;
-    this.chal = { end: now + 63, start: now + 3, shots: 0, hits: 0, kills: 0, hs: 0, cd: 3 };
+    let drill = null; try { drill = localStorage.getItem('eclipse_drill'); } catch { /* */ }
+    this.chal = { end: now + 63, start: now + 3, shots: 0, hits: 0, kills: 0, hs: 0, cd: 3, mode: drill === 'hs' ? 'hs' : 'aim' };
     this.centerMsg('DÉFI DE VISÉE : 3…', 1);
     SFX.playTick();
   }
@@ -2489,12 +2528,14 @@ export class Game {
     const left = c.end - now;
     if (left <= 0) { this.endChallenge(); return; }
     const acc = c.shots ? Math.round(c.hits / c.shots * 100) : 0;
-    el.innerHTML = `<div class="ch-t">${Math.ceil(left)} s</div><div><b>${c.kills}</b> cibles · <b>${c.hs}</b> à la tête · <b>${acc} %</b> de précision</div>`;
+    el.innerHTML = `<div class="ch-t">${Math.ceil(left)} s${c.mode === 'hs' ? ' · TÊTES UNIQUEMENT' : ''}</div><div><b>${c.kills}</b> cibles · <b>${c.hs}</b> à la tête · <b>${acc} %</b> de précision</div>`;
   }
   endChallenge() {
     const c = this.chal; this.chal = null;
     const acc = c.shots ? c.hits / c.shots : 0;
-    const score = c.kills * 100 + c.hs * 50 + Math.round(acc * 300);
+    // « têtes uniquement » : seules les éliminations à la tête rapportent
+    const score = c.mode === 'hs' ? c.hs * 150 + Math.round(acc * 300) : c.kills * 100 + c.hs * 50 + Math.round(acc * 300);
+    if (c.mode === 'hs') { try { localStorage.removeItem('eclipse_drill'); } catch { /* */ } }
     let best = profile.progress?.aimBest || 0; try { best = Math.max(best, +localStorage.getItem('eclipse_aim_best') || 0); } catch { /* stockage indisponible */ }
     const rec = score > best;
     if (rec) { try { localStorage.setItem('eclipse_aim_best', String(score)); } catch { /* stockage indisponible */ } if (!this.isGuest) { this.net.send('aimRecord', { score }); if (profile.progress) profile.progress.aimBest = score; } }
@@ -2876,8 +2917,20 @@ export class Game {
     void me;
   }
 
+  // conseil d'entraînement selon tes chiffres de la partie (1.26)
+  drillAdvice() {
+    const me = this.snap?.players?.find(p => p.i === this.myId);
+    if (!me || this.range) return null;
+    if (me.ac != null && me.ac < 25) return { drill: 'aim', text: `Ta précision n'était que de <b>${me.ac} %</b>. Entraîne-toi sur des cibles fixes : vise avant de tirer, en rafales courtes.` };
+    if ((me.k || 0) >= 3 && me.hs != null && me.hs < 20) return { drill: 'hs', text: `Seulement <b>${me.hs} %</b> de tes éliminations à la tête. Exercice « têtes uniquement » : garde ton viseur à hauteur de tête.` };
+    if ((me.d || 0) >= 6 && (me.d || 0) > (me.k || 0) * 1.6) return { drill: 'aim', text: `Tu perds beaucoup de duels (<b>${me.k}</b> éliminations pour <b>${me.d}</b> morts). Quelques minutes de défi de visée pour gagner en vitesse.` };
+    return null;
+  }
   onMatchEnd(m) {
     this.ended = true;
+    { const adv = this.drillAdvice(), box = $('end-drill');
+      if (box) { box.innerHTML = adv ? `<div class="ev-title">CONSEIL D'ENTRAÎNEMENT</div><p>${adv.text}</p><button class="btn small primary" data-drill="${adv.drill}">🎯 M'ENTRAÎNER APRÈS LA PARTIE</button>` : '';
+        box.onclick = e => { const b = e.target.closest('[data-drill]'); if (!b) return; try { localStorage.setItem('eclipse_drill', b.dataset.drill); localStorage.setItem('eclipse_go_range', '1'); } catch { /* */ } b.disabled = true; b.textContent = '✔ CHAMP DE TIR AU RETOUR AU MENU'; }; } }
     $('click-to-play').style.display = 'none';
     this.unlock();
     this.toggleBuy(false);

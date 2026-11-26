@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.27.0",
+    "date": "2026-11-26",
+    "title": "Recul apprenable, sons des pas, entraînement",
+    "items": [
+      "Chaque arme automatique a un motif de recul fixe (toujours le même) : il est dessiné dans le menu d'achat, apprends à le compenser.",
+      "Le bruit des pas dépend du sol : sable, neige, mousse, métal, caisses en bois ou pierre.",
+      "Nouveau réglage d'accessibilité « Visualisation des sons » : un arc autour du viseur montre d'où viennent les pas, les tirs, les capacités et les marqueurs.",
+      "En fin de partie, un conseil d'entraînement selon tes chiffres (précision, tirs à la tête) ; un clic t'envoie au champ de tir avec le bon exercice, dont le nouveau « têtes uniquement »."
+    ]
+  },
+  {
     "version": "1.26.0",
     "date": "2026-11-26",
     "title": "Caisses traversables, temps mort, manche au couteau",
