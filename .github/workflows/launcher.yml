@@ -1,0 +1,106 @@
+# Compile le launcher ECLIPSE (Windows + Linux), le signe et le publie sur GitHub Releases.
+# Se lance quand on envoie une étiquette « launcher-v<version> » (ex. launcher-v2.0.0), ou à la main (onglet Actions).
+#
+# Signature :
+#  - Toujours : attestation de provenance signée par GitHub (Sigstore) + empreintes SHA-256 (SHA256SUMS.txt).
+#    Vérification : gh attestation verify ECLIPSE-Launcher-Setup.exe -R LIPMO/eclipse
+#  - Signature Windows (Authenticode, supprime l'écran SmartScreen « éditeur inconnu ») : seulement si un certificat
+#    de signature de code est enregistré dans les secrets du dépôt WIN_CSC_LINK (fichier .pfx en base64)
+#    et WIN_CSC_KEY_PASSWORD. Sans eux, l'installateur est publié non signé (Windows affiche alors SmartScreen).
+name: Launcher
+on:
+  push:
+    tags: ['launcher-v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+concurrency: launcher-release
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: launcher
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - name: Syntaxe
+        run: for f in main.js preload.js renderer/*.js; do node --check "$f"; done
+      - name: Compilation Windows (installateur + portable)
+        if: runner.os == 'Windows'
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if [ -z "$CSC_LINK" ]; then unset CSC_LINK CSC_KEY_PASSWORD; export CSC_IDENTITY_AUTO_DISCOVERY=false; echo "Pas de certificat Windows : installateur non signé (Authenticode)."; fi
+          npx electron-builder --win --publish never
+      - name: Compilation Linux (AppImage)
+        if: runner.os == 'Linux'
+        run: npx electron-builder --linux --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            launcher/dist/*.exe
+            launcher/dist/*.AppImage
+            launcher/dist/*.yml
+            launcher/dist/*.blockmap
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Empreintes SHA-256
+        working-directory: out
+        run: |
+          rm -f builder-debug.yml
+          sha256sum *.exe *.AppImage > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Attestation de provenance signée (Sigstore)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            out/*.exe
+            out/*.AppImage
+      - name: Publication sur GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNED: ${{ secrets.WIN_CSC_LINK != '' && 'oui' || 'non' }}
+        run: |
+          VERSION=$(node -p "require('./launcher/package.json').version")
+          TAG="launcher-v$VERSION"
+          NOTES="ECLIPSE Launcher $VERSION
+
+          Télécharger : https://eclipseee.online/telecharger
+
+          - Windows : ECLIPSE-Launcher-Setup.exe (installation en un clic, mises à jour automatiques) ou ECLIPSE-Launcher-Portable.exe
+          - Linux : ECLIPSE-Launcher.AppImage
+
+          Compilé par GitHub Actions à partir de ce dépôt. Attestation de provenance signée : gh attestation verify <fichier> -R ${{ github.repository }}
+          Signature Windows (Authenticode) : $SIGNED
+          Empreintes : SHA256SUMS.txt"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+          else
+            gh release create "$TAG" out/* --target "$GITHUB_SHA" --title "ECLIPSE Launcher $VERSION" --notes "$NOTES" --latest
+          fi

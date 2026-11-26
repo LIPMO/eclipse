@@ -1,10 +1,15 @@
+/* polices du jeu, incluses dans le launcher (licence libre OFL, voir fonts/LICENCE-OFL.txt) */
+@font-face { font-family: 'Chakra Petch'; font-weight: 600; font-display: swap; src: url(fonts/chakra-petch-latin-600-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Chakra Petch'; font-weight: 700; font-display: swap; src: url(fonts/chakra-petch-latin-700-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Rajdhani'; font-weight: 500; font-display: swap; src: url(fonts/rajdhani-latin-500-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Rajdhani'; font-weight: 600; font-display: swap; src: url(fonts/rajdhani-latin-600-normal.woff2) format('woff2'); }
 :root {
   --bg: #090c15; --panel: rgba(18, 23, 38, .82); --line: #262e45; --line2: #343e5c;
   --text: #e9ecf5; --muted: #8a93ad; --accent: #8b5cff; --accent2: #c4b0ff; --teal: #19e3c4; --red: #ff4f6d; --gold: #ffcf5a;
-  --head: 'Bahnschrift', 'Segoe UI Semibold', 'Segoe UI', system-ui, sans-serif; --body: 'Segoe UI', system-ui, sans-serif;
+  --head: 'Chakra Petch', 'Bahnschrift', 'Segoe UI Semibold', system-ui, sans-serif; --body: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--body); overflow: hidden; user-select: none; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--body); font-weight: 500; font-size: 15px; overflow: hidden; user-select: none; }
 button, input, select { font: inherit; color: inherit; }
 h1, h2 { font-family: var(--head); letter-spacing: .1em; margin: 0; }
 
@@ -113,3 +118,37 @@ select { background: #0d1220; border: 1px solid var(--line2); padding: 8px 10px;
 .offline-box { text-align: center; max-width: 520px; padding: 20px; }
 .offline-box h1 { font-size: 30px; margin-bottom: 10px; }
 .offline-box p { color: #c3c9da; }
+
+/* ---------- launcher 2 ---------- */
+.hero-text { max-width: 440px; }
+.shop-card { position: absolute; right: 28px; bottom: 18px; width: 300px; background: rgba(12,16,28,.88); border: 1px solid rgba(255,207,90,.45); padding: 14px 16px; backdrop-filter: blur(6px); }
+.sc-k { font-family: var(--head); font-size: 11px; letter-spacing: .28em; color: var(--gold); }
+.sc-t { font-family: var(--head); font-size: 20px; letter-spacing: .1em; margin: 2px 0 10px; }
+.sc-items { display: flex; flex-direction: column; gap: 6px; }
+.sc-i { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.sc-i i { width: 34px; height: 22px; background: linear-gradient(135deg, var(--c1) 0 55%, var(--c2) 55%); flex: none; }
+.sc-i.pack i { background: conic-gradient(var(--gold), var(--accent), var(--teal), var(--gold)); }
+.sc-i span { flex: 1; }
+.sc-i b { color: #ff6b85; font-size: 13px; }
+.sc-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 13px; color: var(--muted); gap: 8px; }
+.sc-foot b { color: var(--text); font-family: var(--head); font-variant-numeric: tabular-nums; }
+.btn.small { padding: 6px 10px; font-size: 12px; }
+.upd-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 20px; background: linear-gradient(90deg, rgba(139,92,255,.95), rgba(25,227,196,.85)); font-weight: 600; }
+.upd-bar[hidden] { display: none; }
+.tog { display: flex; align-items: center; gap: 12px; margin: 10px 0; cursor: pointer; }
+.tog em { color: var(--muted); font-style: normal; font-size: 13px; }
+.tog input { position: absolute; opacity: 0; pointer-events: none; }
+.tog span { position: relative; width: 40px; height: 22px; background: #1c2236; border: 1px solid var(--line2); border-radius: 12px; flex: none; transition: .15s; }
+.tog span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: .15s; }
+.tog input:checked + span { background: rgba(139,92,255,.5); border-color: var(--accent); }
+.tog input:checked + span::after { left: 20px; background: #fff; }
+.tog input:focus-visible + span { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.tog[hidden], .row[hidden] { display: none; }
+.row.wrap { flex-wrap: wrap; }
+#view-about { padding: 28px 34px; }
+#view-about h2 { font-size: 20px; margin-bottom: 18px; }
+.about-ver { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; font-size: 18px; }
+.about-ver span { color: var(--muted); font-size: 14px; }
+.trust { margin: 0; padding-left: 20px; line-height: 1.6; color: #c3c9da; }
+.trust b { color: var(--text); }
+@media (max-width: 1100px) { .shop-card { width: 260px; } .eclipse { width: 220px; height: 220px; right: 4%; } }

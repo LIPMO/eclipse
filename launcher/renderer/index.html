@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'">
 <title>ECLIPSE Launcher</title>
 <link rel="stylesheet" href="launcher.css">
 </head>
@@ -19,6 +19,7 @@
     <button class="nav active" data-view="home"><span class="ico">&#x25C9;</span>ACCUEIL</button>
     <button class="nav" data-view="news"><span class="ico">&#x2630;</span>NOTES DE MISE À JOUR</button>
     <button class="nav" data-view="settings"><span class="ico">&#x2699;</span>PARAMÈTRES</button>
+    <button class="nav" data-view="about"><span class="ico">&#x2714;</span>À PROPOS</button>
     <div class="side-foot">
       <div class="srv-mini"><span class="dot" id="dot-mini"></span><span id="srv-mini">Vérification…</span></div>
       <div class="ver" id="ver">Launcher</div>
@@ -26,15 +27,24 @@
   </nav>
 
   <main>
+    <!-- bandeau de mise à jour du launcher -->
+    <div class="upd-bar" id="upd-bar" hidden><span id="upd-text"></span><button class="btn primary" id="upd-go">REDÉMARRER ET METTRE À JOUR</button></div>
+
     <!-- ACCUEIL -->
     <section class="view active" id="view-home">
       <div class="hero">
         <div class="eclipse"><div class="corona"></div><div class="moon"></div></div>
         <div class="stars"></div>
         <div class="hero-text">
-          <div class="kicker">SHOOTER TACTIQUE 5v5</div>
+          <div class="kicker">SHOOTER TACTIQUE GRATUIT</div>
           <h1>ECLIPSE</h1>
-          <p>Agents, capacités, Assaut, Duel 1v1 et Mêlée. Sept cartes, six agents, un seul objectif : gagner la manche.</p>
+          <p>17 agents à capacités, 7 cartes, Assaut 5v5, Duel classé, Gun Game, Mêlée et parties perso entre amis.</p>
+        </div>
+        <div class="shop-card" id="shop-card" hidden>
+          <div class="sc-k">BOUTIQUE DU JOUR</div>
+          <div class="sc-t" id="sc-theme">—</div>
+          <div class="sc-items" id="sc-items"></div>
+          <div class="sc-foot"><span>Nouvelle boutique dans <b id="sc-timer">—</b></span><button class="btn small" id="sc-go">VOIR EN JEU</button></div>
         </div>
       </div>
       <div class="home-bottom">
@@ -42,7 +52,7 @@
           <div class="card"><div class="c-num" id="st-players">—</div><div class="c-lbl">joueurs en ligne</div></div>
           <div class="card"><div class="c-num" id="st-matches">—</div><div class="c-lbl">parties en cours</div></div>
           <div class="card"><div class="c-num" id="st-ping">—</div><div class="c-lbl">ping</div></div>
-          <div class="card news-card" id="latest-news"><div class="c-lbl">Dernière mise à jour</div><div class="ln-title">—</div></div>
+          <div class="card news-card" id="latest-news"><div class="c-lbl">Dernière mise à jour du jeu</div><div class="ln-title">—</div></div>
         </div>
         <div class="play-zone">
           <div class="srv-state"><span class="dot" id="dot"></span><span id="srv-text">Vérification du serveur…</span></div>
@@ -62,15 +72,6 @@
     <section class="view" id="view-settings">
       <h2>PARAMÈTRES DU LAUNCHER</h2>
       <div class="set-block">
-        <label class="lbl">Adresse du serveur</label>
-        <div class="row">
-          <input id="s-server" spellcheck="false" placeholder="https://eclipse.charlesvibe.xyz">
-          <button class="btn" id="s-test">TESTER</button>
-          <button class="btn primary" id="s-save">ENREGISTRER</button>
-        </div>
-        <div class="help" id="s-server-msg">L'adresse de ton serveur ECLIPSE.</div>
-      </div>
-      <div class="set-block">
         <label class="lbl">Affichage du jeu</label>
         <div class="seg" id="s-display">
           <button data-v="full">PLEIN ÉCRAN</button>
@@ -80,7 +81,13 @@
           <label class="lbl small" for="s-size">Taille de la fenêtre</label>
           <select id="s-size"></select>
         </div>
-        <div class="help">F11 bascule entre plein écran et fenêtré pendant la partie.</div>
+        <div class="help">F11 bascule entre plein écran et fenêtré pendant la partie, F5 recharge le jeu. En fenêtré, la position et la taille de la fenêtre sont retenues.</div>
+      </div>
+      <div class="set-block">
+        <label class="lbl">Performances</label>
+        <label class="tog"><input type="checkbox" id="s-fps"><span></span>Images par seconde illimitées <em>(plus fluide sur les écrans 120-240 Hz, chauffe un peu plus)</em></label>
+        <label class="tog"><input type="checkbox" id="s-gpu"><span></span>Utiliser la carte graphique la plus puissante <em>(ordinateurs portables)</em></label>
+        <div class="row gap" id="restart-row" hidden><span class="help ok">Redémarre le launcher pour appliquer.</span><button class="btn primary" id="s-restart">REDÉMARRER</button></div>
       </div>
       <div class="set-block">
         <label class="lbl">Quand le jeu se lance</label>
@@ -89,6 +96,21 @@
           <button data-v="minimize">RÉDUIRE</button>
           <button data-v="keep">LAISSER OUVERT</button>
         </div>
+        <label class="tog" id="autostart-wrap"><input type="checkbox" id="s-autostart"><span></span>Ouvrir le launcher au démarrage de l'ordinateur <em>(réduit, en arrière-plan)</em></label>
+      </div>
+      <div class="set-block">
+        <label class="lbl">Mises à jour du launcher</label>
+        <label class="tog"><input type="checkbox" id="s-autoupd"><span></span>Mettre à jour automatiquement</label>
+        <div class="row gap"><button class="btn" id="s-checkupd">RECHERCHER UNE MISE À JOUR</button><span class="help" id="upd-state"></span></div>
+      </div>
+      <div class="set-block">
+        <label class="lbl">Serveur</label>
+        <div class="row">
+          <input id="s-server" spellcheck="false" placeholder="https://eclipseee.online">
+          <button class="btn" id="s-test">TESTER</button>
+          <button class="btn primary" id="s-save">ENREGISTRER</button>
+        </div>
+        <div class="help" id="s-server-msg">Laisse l'adresse officielle, sauf si tu héberges ton propre serveur ECLIPSE.</div>
       </div>
       <div class="set-block">
         <label class="lbl">Maintenance</label>
@@ -96,7 +118,34 @@
           <button class="btn" id="s-cache">VIDER LE CACHE DU JEU</button>
           <button class="btn ghost" id="s-reset">RÉINITIALISER</button>
         </div>
-        <div class="help">Vider le cache force le téléchargement de la dernière version du jeu. Tes réglages en jeu et ta connexion sont conservés.</div>
+        <div class="help">Le jeu se met déjà à jour tout seul ; vider le cache ne sert qu'en cas de problème d'affichage. Tes réglages en jeu et ta connexion sont conservés.</div>
+      </div>
+    </section>
+
+    <!-- À PROPOS -->
+    <section class="view" id="view-about">
+      <h2>À PROPOS</h2>
+      <div class="set-block">
+        <div class="about-ver"><b id="ab-ver">ECLIPSE Launcher</b><span id="ab-upd"></span></div>
+        <p class="help">Le launcher ouvre le jeu dans sa propre fenêtre, sans barre de navigateur, avec les réglages de performance ci-dessus. Tout ton compte (skins, niveau, amis) est sur le serveur : rien n'est perdu si tu désinstalles le launcher.</p>
+      </div>
+      <div class="set-block">
+        <label class="lbl">Authenticité et sécurité</label>
+        <ul class="trust">
+          <li>Chaque version est <b>compilée automatiquement par GitHub</b> à partir du code public du jeu, puis accompagnée d'une <b>attestation signée</b> (preuve d'origine vérifiable) et de son empreinte SHA-256.</li>
+          <li>Les mises à jour du launcher sont téléchargées depuis la page officielle et <b>vérifiées (empreinte SHA-512)</b> avant d'être installées.</li>
+          <li>Le launcher n'accède qu'au serveur du jeu ; il ne lit aucun autre fichier de ton ordinateur.</li>
+        </ul>
+        <div class="row gap"><button class="btn" data-link="download">PAGE DE TÉLÉCHARGEMENT ET VÉRIFICATION</button></div>
+      </div>
+      <div class="set-block">
+        <label class="lbl">Liens</label>
+        <div class="row wrap">
+          <button class="btn ghost" data-link="site">SITE DU JEU</button>
+          <button class="btn ghost" data-link="cgu">CGU</button>
+          <button class="btn ghost" data-link="privacy">CONFIDENTIALITÉ</button>
+          <button class="btn ghost" data-link="legal">MENTIONS LÉGALES</button>
+        </div>
       </div>
     </section>
   </main>

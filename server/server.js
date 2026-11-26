@@ -9,7 +9,9 @@ import { Match } from './match.js';
 import { Accounts } from './accounts.js';
 import { Admin } from './admin.js';
 import { Mcp } from './mcp.js';
-import { seoRoute, SEO_CSP } from './seo.js';
+import { seoRoute, SEO_CSP, pDownload } from './seo.js';
+import { launcherInfo, launcherInfoFresh } from './launcher.js';
+import { dailyShop } from './social.js';
 import { Parties } from './party.js';
 import { Bucket, Strikes, baseHeaders, gameCsp, originAllowed } from './security.js';
 import crypto from 'node:crypto';
@@ -109,7 +111,7 @@ const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '').split(',').map
 const server = http.createServer((req, res) => {
   for (const [k, v] of Object.entries(baseHeaders(req))) res.setHeader(k, v);
   if (req.url.length > 2048) { res.writeHead(414); res.end(); return; }
-  const isApi = req.url === '/api/status' || req.url === '/api/news';
+  const isApi = req.url === '/api/status' || req.url === '/api/news' || req.url === '/api/shop' || req.url === '/api/launcher';
   if (req.method === 'OPTIONS' && isApi) { res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Max-Age': '86400' }); res.end(); return; }
   const isAdminApi = req.url.startsWith('/admin/api/');
   // connecteur Claude (MCP) : /mcp/<jeton secret>
@@ -119,6 +121,23 @@ const server = http.createServer((req, res) => {
   if (req.url.startsWith('/admin/api/')) { admin.handle(req, res).catch(e => { console.error('Erreur admin', e); if (!res.headersSent) { res.writeHead(500); res.end('{}'); } }); return; }
   // vide le cache HTTP du navigateur (demandé par la page quand elle détecte une ancienne version) ; garde la connexion et les réglages
   if (req.url === '/vider-cache') { res.writeHead(204, { 'Clear-Site-Data': '"cache"', 'Cache-Control': 'no-store' }); res.end(); return; }
+  // lus par le launcher (1.24) : boutique du jour et dernière version du launcher (CORS ouvert, aucune donnée personnelle)
+  if (req.url === '/api/shop' || req.url === '/api/launcher') {
+    const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
+    let out;
+    if (req.url === '/api/shop') {
+      const d = dailyShop(), col = id => { const s = SKINS.find(x => x.id === id); return s ? { body: s.body, accent: s.accent } : {}; };
+      out = { theme: d.theme, day: d.day, resetAt: new Date(d.day + 'T00:00:00Z').getTime() + 86400000, featured: d.featured.map(i => ({ ...i, ...col(i.id) })), daily: d.daily.map(i => ({ ...i, ...col(i.id) })), bundle: d.bundle };
+    } else out = launcherInfo() || { available: false, reason: 'chargement' };
+    res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : JSON.stringify(out)); return;
+  }
+  if (req.url === '/telecharger' || req.url === '/telecharger/' || req.url === '/download') {
+    launcherInfoFresh().then(info => {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'Content-Security-Policy': SEO_CSP });
+      res.end(req.method === 'HEAD' ? undefined : pDownload(info));
+    }).catch(() => { if (!res.headersSent) { res.writeHead(500); res.end(); } });
+    return;
+  }
   if (req.url === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); return; }
   if (req.url === '/api/status' || req.url === '/api/news') {
     // lu par le launcher : CORS ouvert, aucune donnée personnelle

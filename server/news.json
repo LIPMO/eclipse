@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.24.0",
+    "date": "2026-11-26",
+    "title": "Nouveau launcher à télécharger",
+    "items": [
+      "Le launcher ECLIPSE 2 est disponible : bouton « Télécharger » en bas du site. Installation en un clic, mises à jour automatiques, boutique du jour sur l'accueil, images par seconde illimitées et choix de la carte graphique.",
+      "Chaque version du launcher est compilée par GitHub à partir du code du jeu et accompagnée d'une attestation signée et de ses empreintes SHA-256."
+    ]
+  },
+  {
     "version": "1.23.0",
     "date": "2026-11-26",
     "title": "Boutique du jour et son 3D",

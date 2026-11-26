@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'">
 <title>ECLIPSE — serveur injoignable</title>
 <link rel="stylesheet" href="launcher.css">
 </head>
@@ -12,6 +12,7 @@
     <h1>SERVEUR INJOIGNABLE</h1>
     <p id="msg">Impossible de se connecter au serveur du jeu.</p>
     <p class="help" id="err"></p>
+    <p class="help" id="auto">Nouvel essai automatique dans 10 s…</p>
     <button class="play small" id="retry"><span>RÉESSAYER</span></button>
   </div>
 <script src="offline.js"></script>

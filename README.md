@@ -48,27 +48,35 @@ Tu peux aussi utiliser la variable d'environnement `PORT` et choisir le dossier 
 
 Sous Windows, accepte la demande du pare-feu au premier lancement, sinon tes amis ne pourront pas se connecter.
 
-## Launcher Windows (ECLIPSE Launcher)
+## Launcher (ECLIPSE Launcher 2)
 
-Le dossier `launcher/` contient une application de bureau Electron. Elle affiche l'état du serveur, le nombre de joueurs en ligne et les notes de mise à jour, et un bouton **JOUER** ouvre le jeu dans sa propre fenêtre, en plein écran ou fenêtré (F11 pour basculer). Par défaut, elle se connecte à **https://eclipse.charlesvibe.xyz** ; l'adresse se change dans ses paramètres.
+Le dossier `launcher/` contient l'application de bureau (Electron). Elle se connecte par défaut à **https://eclipseee.online** et propose :
 
-Pour la tester puis créer l'installateur, depuis le dossier `launcher` :
+- l'état du serveur, les joueurs en ligne, les notes de mise à jour et la **boutique du jour** (bouton « Voir en jeu ») ;
+- un bouton **JOUER** (ou Entrée) qui ouvre le jeu dans sa propre fenêtre, en plein écran ou fenêtré (F11), position et taille retenues ;
+- des réglages de performance : images par seconde illimitées, carte graphique la plus puissante ;
+- l'ouverture au démarrage de l'ordinateur (facultative) ;
+- la **mise à jour automatique** du launcher (version installée), avec vérification de l'empreinte SHA-512.
+
+**Téléchargement pour les joueurs :** https://eclipseee.online/telecharger (bouton « Télécharger » en bas du site, à côté des CGU).
+
+**Publier une nouvelle version :** change `version` dans `launcher/package.json`, envoie le code, puis l'étiquette correspondante :
 
 ```bash
-npm install
+git tag launcher-v2.0.1
 ```
 
 ```bash
-npm start
+git push origin launcher-v2.0.1
 ```
 
-```bash
-npm run dist
-```
+GitHub Actions (`.github/workflows/launcher.yml`) compile alors Windows (installateur en un clic + portable) et Linux (AppImage), calcule les empreintes SHA-256, ajoute une **attestation de provenance signée** (Sigstore) et publie le tout sur GitHub Releases. Les launchers installés se mettent à jour tout seuls.
 
-`npm run dist` crée dans `launcher/dist/` un installateur (`ECLIPSE-Launcher-Setup-1.2.0.exe`) et une version portable sans installation. Ce sont les fichiers à envoyer à tes amis.
+**Signature Windows (Authenticode)** : sans certificat de signature de code, Windows affiche l'écran SmartScreen la première fois (« Informations complémentaires » → « Exécuter quand même »). Pour le supprimer, achète un certificat de signature de code et ajoute dans les secrets du dépôt `WIN_CSC_LINK` (fichier .pfx encodé en base64) et `WIN_CSC_KEY_PASSWORD` : la compilation signera alors automatiquement les fichiers Windows.
 
-Les notes de mise à jour affichées par le launcher viennent de `server/news.json` sur ton serveur : modifie ce fichier puis redéploie. Le nombre de joueurs et les notes demandent la version 1.2 du serveur (adresses `/api/status` et `/api/news`).
+Pour tester en local, depuis le dossier `launcher` : `npm install` puis `npm start`.
+
+Les notes de mise à jour affichées par le launcher viennent de `server/news.json` sur ton serveur (adresses `/api/status`, `/api/news`, `/api/shop` et `/api/launcher`).
 
 ## Lancer avec Visual Studio Code
 

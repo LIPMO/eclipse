@@ -1,7 +1,7 @@
 {
   "name": "eclipse-launcher",
   "productName": "ECLIPSE Launcher",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Launcher du jeu ECLIPSE",
   "main": "main.js",
   "private": true,
@@ -9,34 +9,80 @@
     "start": "electron .",
     "dist": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "dist:all": "electron-builder --win --linux"
   },
   "devDependencies": {
     "electron": "45.2.3",
     "electron-builder": "26.18.1"
   },
   "build": {
-    "appId": "xyz.charlesvibe.eclipse.launcher",
+    "appId": "online.eclipseee.launcher",
     "productName": "ECLIPSE Launcher",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js", "preload.js", "renderer/**", "build/icon.png"],
+    "copyright": "ECLIPSE",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "build/icon.png"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/LIPMO/eclipse/releases/latest/download"
+      }
+    ],
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "ECLIPSE",
-      "artifactName": "ECLIPSE-Launcher-Setup-${version}.${ext}"
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "ECLIPSE-Launcher-Setup.${ext}"
     },
-    "portable": { "artifactName": "ECLIPSE-Launcher-${version}-portable.${ext}" },
-    "mac": { "icon": "build/icon.png", "target": "dmg" },
-    "linux": { "icon": "build/icon.png", "target": "AppImage", "category": "Game" }
-  }
+    "portable": {
+      "artifactName": "ECLIPSE-Launcher-Portable.${ext}"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "target": "dmg"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": "AppImage",
+      "category": "Game",
+      "artifactName": "ECLIPSE-Launcher.${ext}",
+      "syncDesktopName": true,
+      "maintainer": "ECLIPSE"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "6.8.12"
+  },
+  "author": "ECLIPSE",
+  "homepage": "https://eclipseee.online",
+  "desktopName": "eclipse-launcher.desktop"
 }

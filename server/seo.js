@@ -47,7 +47,7 @@ footer{border-top:1px solid #1d2338;color:#8d93ab;font-size:13px;margin-top:30px
 <header><a class="logo" href="/">ECLIPSE</a><nav><a href="/jeu">Le jeu</a><a href="/agents">Agents</a><a href="/modes">Modes</a><a href="/cartes">Cartes</a><a href="/guide">Guide</a><a href="/nouveautes">Nouveautés</a></nav><a class="play" href="/">JOUER</a></header>
 <main><h1>${esc(h1)}</h1>${body}
 <a class="cta" href="/">JOUER GRATUITEMENT</a></main>
-<footer>ECLIPSE — shooter tactique gratuit dans le navigateur · <a href="/mentions-legales.html">Mentions légales</a> · <a href="/cgu.html">CGU</a> · <a href="/confidentialite.html">Confidentialité</a></footer>
+<footer>ECLIPSE — shooter tactique gratuit dans le navigateur · <a href="/mentions-legales.html">Mentions légales</a> · <a href="/cgu.html">CGU</a> · <a href="/confidentialite.html">Confidentialité</a> · <a href="/telecharger"><b>⬇ Télécharger le launcher</b></a></footer>
 </body></html>`;
 }
 
@@ -114,9 +114,40 @@ function pNews(newsPath) {
 function sitemap(newsPath) {
   let last = new Date().toISOString().slice(0, 10);
   try { const n = JSON.parse(fs.readFileSync(newsPath, 'utf8')); if (n[0]?.date) last = n[0].date; } catch { /* */ }
-  const urls = [['/', '1.0', 'weekly'], ['/jeu', '0.9', 'weekly'], ['/agents', '0.8', 'weekly'], ...AGENT_ORDER.map(id => ['/agents/' + slug(id), '0.6', 'monthly']), ['/modes', '0.7', 'monthly'], ['/cartes', '0.7', 'monthly'], ['/guide', '0.7', 'monthly'], ['/nouveautes', '0.6', 'weekly'],
+  const urls = [['/', '1.0', 'weekly'], ['/jeu', '0.9', 'weekly'], ['/agents', '0.8', 'weekly'], ...AGENT_ORDER.map(id => ['/agents/' + slug(id), '0.6', 'monthly']), ['/modes', '0.7', 'monthly'], ['/cartes', '0.7', 'monthly'], ['/guide', '0.7', 'monthly'], ['/nouveautes', '0.6', 'weekly'], ['/telecharger', '0.7', 'weekly'],
     ['/mentions-legales.html', '0.2', 'yearly'], ['/cgu.html', '0.2', 'yearly'], ['/confidentialite.html', '0.2', 'yearly']];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(([p, pr, f]) => `  <url><loc>${SITE}${p}</loc><lastmod>${last}</lastmod><changefreq>${f}</changefreq><priority>${pr}</priority></url>`).join('\n')}\n</urlset>\n`;
+}
+
+// ---------- page de téléchargement du launcher (1.24) ----------
+const mo = n => (n ? (n / 1048576).toFixed(0) + ' Mo' : 'dernière version');
+const KIND_LABEL = { windows: ['Windows — installateur', 'Recommandé : s\'installe en un clic, sans droits administrateur, et se met à jour tout seul.'], portable: ['Windows — version portable', 'Sans installation (clé USB…). Pas de mise à jour automatique.'], linux: ['Linux — AppImage', 'Rendre le fichier exécutable, puis l\'ouvrir.'], mac: ['macOS', ''] };
+export function pDownload(info) {
+  const rel = info && info.available ? info : null;
+  const win = rel?.files.find(f => f.kind === 'windows');
+  const date = rel?.published ? new Date(rel.published).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  const body = rel ? `
+<p class="lead">Le launcher ouvre ECLIPSE dans sa propre fenêtre, sans barre de navigateur, avec des réglages de performance (images par seconde illimitées, carte graphique la plus puissante) et la boutique du jour sur l'accueil. Ton compte reste le même que sur le site.</p>
+${win ? `<a class="cta" href="${esc(win.url)}">⬇ TÉLÉCHARGER POUR WINDOWS</a><div class="muted">${rel.version ? `Version ${esc(rel.version)} · ${mo(win.size)} · publiée le ${esc(date)}` : 'Dernière version publiée'}</div>` : ''}
+<h2>Installation en 1 clic</h2>
+<ol><li>Ouvre le fichier téléchargé <b>${esc(win?.name || 'ECLIPSE-Launcher-Setup.exe')}</b>.</li><li>Le launcher s'installe tout seul (aucune question, pas besoin d'être administrateur) et se lance.</li><li>Un raccourci <b>ECLIPSE</b> est créé sur le bureau. Clique sur <b>JOUER</b>.</li></ol>
+<p class="muted">Les mises à jour du launcher s'installent ensuite toutes seules ; celles du jeu sont instantanées.</p>
+<h2>Toutes les versions</h2>
+<div class="grid">${rel.files.map(f => `<div class="card"><h3>${esc((KIND_LABEL[f.kind] || [f.name])[0])}</h3><p class="muted">${esc((KIND_LABEL[f.kind] || ['', ''])[1])}</p><a href="${esc(f.url)}">⬇ ${esc(f.name)}</a> <span class="muted">(${mo(f.size)})</span></div>`).join('')}</div>
+<h2>Signature et authenticité</h2>
+<div class="ab" style="--c:#19e3c4"><div class="ic">✔</div><div><b>Compilé et signé par GitHub.</b> Chaque version est fabriquée automatiquement par les serveurs de GitHub à partir du code public du jeu, puis accompagnée d'une <a href="${esc(rel.attestations)}">attestation de provenance signée</a> (Sigstore) : elle prouve que le fichier vient bien de ce code et n'a pas été modifié.</div></div>
+${rel.signedWindows
+    ? '<div class="ab" style="--c:#19e3c4"><div class="ic">✔</div><div><b>Signé numériquement pour Windows</b> (certificat Authenticode) : Windows affiche l\'éditeur et lance le fichier directement.</div></div>'
+    : `<div class="ab" style="--c:#ffcf5a"><div class="ic">ℹ</div><div><b>Si Windows affiche « Windows a protégé votre ordinateur »</b> : c'est l'écran SmartScreen, normal pour un petit jeu indépendant qui n'a pas encore de certificat payant. Clique sur <b>Informations complémentaires</b>, puis sur <b>Exécuter quand même</b>. Tu peux vérifier le fichier ci-dessous avant de le lancer.</div></div>`}
+<h3>Vérifier un fichier (facultatif)</h3>
+<p class="muted">Empreintes SHA-256 : elles doivent être identiques à celles calculées sur ton ordinateur.</p>
+<ul>${rel.files.filter(f => f.sha256).map(f => `<li><b>${esc(f.name)}</b><br><code style="word-break:break-all">${esc(f.sha256)}</code></li>`).join('') || `<li class="muted">Elles sont dans le fichier <a href="https://github.com/${esc(rel.repo)}/releases/latest/download/SHA256SUMS.txt">SHA256SUMS.txt</a> de la publication.</li>`}</ul>
+<p class="muted">Windows (PowerShell) : <code>Get-FileHash .\${esc(win?.name || 'ECLIPSE-Launcher-Setup.exe')}</code> · Attestation (avec l'outil GitHub) : <code>gh attestation verify ${esc(win?.name || 'ECLIPSE-Launcher-Setup.exe')} -R ${esc(rel.repo)}</code></p>
+<p class="muted">Toutes les versions : <a href="${esc(rel.page)}">page de la publication sur GitHub</a>.</p>`
+    : `<p class="lead">Le launcher ECLIPSE arrive très bientôt. En attendant, le jeu se joue directement dans ton navigateur, sans rien installer.</p>
+<p class="muted">${info?.repo ? `Les versions publiées apparaîtront ici et sur <a href="https://github.com/${esc(info.repo)}/releases">GitHub</a>.` : ''}</p>`;
+  return page({ path: '/telecharger', title: 'Télécharger le launcher ECLIPSE (Windows, gratuit)', desc: 'Télécharge gratuitement le launcher ECLIPSE pour Windows : installation en un clic, mises à jour automatiques, fichiers compilés et signés par GitHub.', h1: 'Télécharger le launcher ECLIPSE', body, crumbs: [['Télécharger', '/telecharger']],
+    ld: rel ? { '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'ECLIPSE Launcher', operatingSystem: 'Windows, Linux', applicationCategory: 'GameApplication', softwareVersion: rel.version, offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' }, downloadUrl: win?.url } : null });
 }
 
 // renvoie { type, body } pour une adresse de présentation, sinon null

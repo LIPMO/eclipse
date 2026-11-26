@@ -505,6 +505,7 @@ net.on('matchStart', m => {
 });
 // observation staff : lien /?observer=<id> ouvert depuis le panneau d'administration
 // lien de profil partageable : https://…/#profil=Pseudo
+net.on('welcome', () => { if (location.hash === '#boutique') { setTimeout(() => showTab('shop'), 500); try { history.replaceState(null, '', location.pathname + location.search); } catch { /* */ } } });
 net.on('welcome', () => { const mm = location.hash.match(/^#profil=([A-Za-z0-9_\-]{3,16})$/); if (mm) { setTimeout(() => viewProfile(decodeURIComponent(mm[1])), 600); try { history.replaceState(null, '', location.pathname + location.search); } catch { /* */ } } });
 const specParam = (() => { try { return new URLSearchParams(location.search).get('observer'); } catch { return null; } })();
 net.on('welcome', m => {

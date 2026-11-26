@@ -20,3 +20,4 @@ credentials*.json
 *.log
 *.tmp
 .DS_Store
+launcher/dist/
