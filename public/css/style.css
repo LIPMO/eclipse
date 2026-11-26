@@ -1328,3 +1328,12 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 .bt-row[data-bfor]:hover { background: rgba(255,207,90,.08); }
 .bt-row.sel { outline: 1px solid #ffcf5a; background: rgba(255,207,90,.12); }
 .bt-for { margin: 4px 0 6px; padding: 6px 8px; background: rgba(255,207,90,.1); border-left: 3px solid #ffcf5a; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* barre de force du couteau lancé (1.25.2) */
+#knife-charge { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); display: none; flex-direction: column; align-items: center; gap: 3px; pointer-events: none; z-index: 5; }
+#knife-charge.on { display: flex; }
+#knife-charge span { font: 700 10px var(--head); letter-spacing: .25em; color: #fff; text-shadow: 0 1px 2px #000; }
+#knife-charge b { display: block; width: 120px; height: 7px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.45); overflow: hidden; }
+#knife-charge i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #19e3c4, #ffcf5a 60%, #ff4f6d); }
+#knife-charge.full b { border-color: #ff4f6d; box-shadow: 0 0 10px rgba(255,79,109,.8); animation: kcPulse .4s ease-in-out infinite alternate; }
+@keyframes kcPulse { from { transform: scale(1); } to { transform: scale(1.06); } }

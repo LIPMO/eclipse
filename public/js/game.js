@@ -3,9 +3,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
-import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus } from '/shared/data.js';
+import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower } from '/shared/data.js';
 import { tr } from './i18n.js';
-import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm } from '/shared/physics.js';
+import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm, groundHeight } from '/shared/physics.js';
 import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
 import * as SFX from './audio.js';
 import { TouchControls, isTouchDevice } from './touch.js';
@@ -930,7 +930,7 @@ export class Game {
       case 'ult': this.useAbility('x'); break;
       case 'interact': this.net.send('interact', { on: true }); this.interacting = true; break;
       case 'scoreboard': this.showScoreboard(true); break;
-      case 'scope': if (this.curWeaponId() === 'knife') { this.throwKnife(); break; } ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
+      case 'scope': if (this.curWeaponId() === 'knife') { this.chargeKnife(); break; } ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
       case 'drop': if (this.me?.al && !this.ended) this.net.send('drop'); break;
       case 'lastWeapon': if (this.prevSlot && this.me?.wp?.[this.prevSlot]) this.switchSlot(this.prevSlot); break;
       case 'bigMap': $('minimap').classList.add('big'); break;
@@ -949,6 +949,7 @@ export class Game {
     if (!a) return;
     if ((a === 'crouch' && ST().crouchToggle) || (a === 'walk' && ST().walkToggle)) { this.held.delete(a + '_k'); return; }
     this.held.delete(a);
+    if (a === 'scope' && this.knifeChargeT0) { this.throwKnife(); return; }
     if (a === 'scope' && ST().scopeHold) this.toggleScope(false);
     if (a === 'bigMap') $('minimap').classList.remove('big');
     if (a === 'fire') this.local.triggerHeld = false;
@@ -1221,6 +1222,7 @@ export class Game {
     if (!this.me?.wp?.[s] || L.slot === s) return;
     if (L.slot && this.me.wp[L.slot]) this.prevSlot = L.slot;
     L.slot = s;
+    this.cancelKnifeCharge?.();
     SFX.playSwitch();
     L.reloadEnd = 0;
     const w = this.me.wp[s];
@@ -1255,11 +1257,24 @@ export class Game {
   }
 
   // couteau lancé (1.25) : clic droit avec le couteau en main ; il se ramasse en passant dessus
-  throwKnife() {
+  // clic droit maintenu : la barre de force se remplit ; au relâchement, le couteau part
+  chargeKnife() {
     if (!this.canAct() || this.me?.ko || ['buy', 'warmup', 'over'].includes(this.snap?.ph)) { if (this.me?.ko) this.centerMsg('VA RAMASSER TON COUTEAU', 1.2); return; }
-    const now = performance.now() / 1000; if (now < (this.knifeNext || 0)) return; this.knifeNext = now + 1;
+    const now = performance.now() / 1000; if (now < (this.knifeNext || 0)) return;
+    this.knifeChargeT0 = now;
+    this.net.send('knifeCharge');
+    $('knife-charge').classList.add('on');
+  }
+  cancelKnifeCharge() { this.knifeChargeT0 = 0; $('knife-charge')?.classList.remove('on', 'full'); }
+  knifeChargePower() { return this.knifeChargeT0 ? knifePower(performance.now() / 1000 - this.knifeChargeT0) : 0; }
+  throwKnife() {
+    if (!this.knifeChargeT0) return;
+    const power = this.knifeChargePower();
+    this.cancelKnifeCharge();
+    if (!this.canAct() || this.me?.ko || this.curWeaponId() !== 'knife') return;
+    const now = performance.now() / 1000; this.knifeNext = now + 1;
     this.net.send('throwKnife', { d: this.aimDir().map(v => Math.round(v * 10000) / 10000) });
-    SFX.playWhoosh?.(); this.vmKick = 1;
+    SFX.playWhoosh?.(); this.vmKick = 0.6 + power * 0.6;
   }
   toggleScope(force) {
     const def = WEAPONS[this.curWeaponId()];
@@ -1679,9 +1694,12 @@ export class Game {
           // couteau lancé : le modèle du couteau (avec le skin de son propriétaire), qui tourne en vol
           m = new THREE.Group();
           const owner = this.roster.get(pr.o), w = buildWeapon('knife', pr.o === this.myId ? profile.equipped.knife || 'default' : owner?.skins?.knife || 'default');
-          w.scale.setScalar(1.6); m.add(w); m.userData.knife = true;
+          // m regarde dans la direction du vol ; pivot tourne autour de son axe latéral (rotation dans le plan du vol)
+          const pivot = new THREE.Group(); w.scale.setScalar(1.6); w.rotation.y = Math.PI; pivot.add(w); m.add(pivot);
+          m.userData.knife = true; m.userData.pivot = pivot;
+          if (pr.d) { const p0 = new THREE.Vector3(...pr.p); m.position.copy(p0); m.lookAt(p0.clone().add(new THREE.Vector3(...pr.d))); }
           const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 24), new THREE.MeshBasicMaterial({ color: pr.o === this.myId ? '#19e3c4' : '#ff4f6d', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
-          ring.rotation.x = -Math.PI / 2; m.add(ring); m.userData.ring = ring;
+          ring.rotation.x = -Math.PI / 2; ring.visible = false; this.scene.add(ring); m.userData.ring = ring;
         } else {
           const col = pr.k === 'smoke' ? '#c9d0ff' : pr.k === 'flash' ? '#ffffff' : pr.k === 'cryo' ? '#9ee7ff' : '#ff8a3d';
           m = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.2 }));
@@ -1690,8 +1708,9 @@ export class Game {
         this.scene.add(m); this.projMeshes.set(pr.i, m);
       }
       m.userData.target = pr.p; m.userData.stopped = !!pr.s;
+      if (m.userData.ring) { m.userData.ring.visible = !!pr.s; if (pr.s) m.userData.ring.position.set(pr.p[0], groundHeight(pr.p[0], pr.p[2], pr.p[1] + 0.1, this.map.boxes) + 0.04, pr.p[2]); }
     }
-    for (const [id, m] of this.projMeshes) if (!projIds.has(id)) { this.scene.remove(m); this.projMeshes.delete(id); }
+    for (const [id, m] of this.projMeshes) if (!projIds.has(id)) { this.scene.remove(m); if (m.userData.ring) this.scene.remove(m.userData.ring); this.projMeshes.delete(id); }
     // armes au sol
     const dropIds = new Set((s.drops || []).map(d => d.i));
     for (const d of s.drops || []) {
@@ -2054,8 +2073,14 @@ export class Game {
       const tg = m.userData.target;
       if (tg) m.position.lerp(new THREE.Vector3(...tg), Math.min(1, dt * 15));
       if (m.userData.knife) {
-        if (!m.userData.stopped) m.rotation.x -= dt * 22; // tourne en vol
-        else { m.rotation.x = -Math.PI / 2.4; m.userData.ring.material.opacity = 0.35 + Math.sin(now * 5) * 0.2; m.userData.ring.position.y = -m.position.y + 0.04; }
+        const pv = m.userData.pivot;
+        if (!m.userData.stopped) pv.rotation.x += dt * 24; // tourne bout par-dessus bout, dans l'axe du lancer
+        else if (!m.userData.landed) {
+          m.userData.landed = true;
+          pv.rotation.x = 0; // pointe vers l'avant : planté dans le mur ou posé
+          if (m.position.y < 0.6) { m.rotation.set(0, m.rotation.y, 0); pv.rotation.x = Math.PI / 2; } // au sol : à plat
+        }
+        if (m.userData.stopped) { m.userData.ring.material.opacity = 0.35 + Math.sin(now * 5) * 0.2; }
       }
     }
     if (this.coreMesh.visible) {
@@ -2165,6 +2190,10 @@ export class Game {
     let insp = 0;
     if (this.inspectT > 0) { this.inspectT -= dt; if (this.local.lastShot > now - 0.2 || L.reloadEnd > now) this.inspectT = 0; insp = Math.sin(Math.min(1, (1.8 - this.inspectT) / 1.8) * Math.PI); }
     this.vm.visible = !(melee && this.me?.ko);
+    if (this.knifeChargeT0) {
+      if (!this.me?.al || this.curWeaponId() !== 'knife') this.cancelKnifeCharge();
+      else { const pw = this.knifeChargePower(), kc = $('knife-charge'); kc.querySelector('i').style.width = Math.round(pw * 100) + '%'; kc.classList.toggle('full', pw >= 1); this.vm.position.z += pw * 0.12; this.vm.rotation.x -= pw * 0.5; }
+    }
     this.updateDmgNums(dt); // couteau lancé : la main est vide
     this.vm.rotation.set(this.vmKick * (melee ? -0.6 : 0.12) - reloadK * 0.6 + sw * 0.6 + insp * 0.35, this.vmSwayX * 2 + (melee ? this.vmKick * 0.8 : 0) + insp * 1.1, reloadK * 0.4 + insp * 0.5 + (L.slideRoll || 0) * 2.5);
   }

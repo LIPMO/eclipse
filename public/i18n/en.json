@@ -2010,11 +2010,12 @@
 "COUTEAU RAMASSÉ": "KNIFE PICKED UP",
 "PAS ASSEZ DE CRÉDITS": "NOT ENOUGH CREDITS",
 "(clique sur un coéquipier pour lui acheter une arme)": "(click a teammate to buy them a weapon)",
-"Clic droit avec le couteau en main : tu le lances ! Va le ramasser ensuite (il revient tout seul après 10 s).": "Right-click with the knife in hand: you throw it! Then go pick it up (it comes back by itself after 10 s).",
 "En Assaut, clique sur un coéquipier dans le menu d'achat pour lui offrir une arme.": "In Assault, click a teammate in the buy menu to give them a weapon.",
 "rapide": "fast",
 "moyenne": "medium",
-"lente": "slow"
+"lente": "slow",
+"Couteau en main : maintiens le clic droit pour charger la force, relâche pour le lancer. Va le ramasser ensuite.": "Knife in hand: hold right-click to charge the power, release to throw. Then go pick it up.",
+"FORCE": "POWER"
 },
 "patterns": [
 [

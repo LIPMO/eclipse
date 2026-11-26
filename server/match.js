@@ -1,5 +1,5 @@
 // Logique de partie autoritaire côté serveur
-import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, KNIFE_THROW, lossBonus } from '../shared/data.js';
+import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, KNIFE_THROW, lossBonus, knifePower } from '../shared/data.js';
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
@@ -444,6 +444,7 @@ export class Match {
       case 'reload': return this.handleReload(p);
       case 'buy': return msg.for && msg.for !== p.id ? this.buyForMate(p, msg.item, msg.for) : this.handleBuy(p, msg.item);
       case 'throwKnife': return this.handleThrowKnife(p, msg);
+      case 'knifeCharge': if (p.alive && p.weapons[p.slot]?.id === 'knife' && !p.knifeOut) p.knifeChargeAt = this.time; return;
       case 'sell': return this.handleSell(p, msg);
       case 'drop': return this.handleDrop(p);
       case 'ready': return this.handleReady(p);
@@ -534,7 +535,7 @@ export class Match {
     if (finite(m.pt)) p.pitch = Math.max(-1.55, Math.min(1.55, m.pt));
     p.crouch = !!m.c;
     p.sliding = !!m.sl && p.crouch && (p.slideUntil || 0) > this.time;
-    if ([1, 2, 3].includes(m.s) && p.weapons[m.s] && m.s !== p.slot) { p.slot = m.s; p.reloadEnd = 0; }
+    if ([1, 2, 3].includes(m.s) && p.weapons[m.s] && m.s !== p.slot) { p.slot = m.s; p.reloadEnd = 0; p.knifeChargeAt = 0; }
     if (p.interact && p.interactPos && Math.hypot(p.pos[0] - p.interactPos[0], p.pos[2] - p.interactPos[2]) > 0.6) { p.prog = 0; p.interactPos = p.pos.slice(); }
   }
 
@@ -608,9 +609,15 @@ export class Match {
     const raw = Array.isArray(msg.d) && msg.d.length === 3 && msg.d.every(finite) ? norm(msg.d) : null;
     if (!raw) return;
     const eye = this.eye(p), K = KNIFE_THROW;
+    // force mesurée par le serveur (durée depuis l'appui), jamais celle annoncée par le joueur
+    const power = knifePower(p.knifeChargeAt ? this.time - p.knifeChargeAt : 0);
+    p.knifeChargeAt = 0;
     p.knifeOut = true; p.knifeNext = this.time + K.cooldown; p.protEnd = 0; p.lastActive = this.time; p.invisEnd = Math.min(p.invisEnd, this.time);
-    this.projectiles.push({ id: this.nextId++, kind: 'knife', owner: p.id, team: p.team, pos: [eye[0] + raw[0] * 0.5, eye[1] + raw[1] * 0.5 - 0.05, eye[2] + raw[2] * 0.5], vel: raw.map(v => v * K.speed), fuse: this.time + K.flight, stopped: false });
-    this.broadcast({ type: 'knifeThrow', i: p.id });
+    const k = (power - K.minPower) / (1 - K.minPower); // 0 = lancer rapide, 1 = chargé à fond
+    const speed = K.speedMin + (K.speedMax - K.speedMin) * k;
+    this.projectiles.push({ id: this.nextId++, kind: 'knife', owner: p.id, team: p.team, pos: [eye[0] + raw[0] * 0.5, eye[1] + raw[1] * 0.5 - 0.05, eye[2] + raw[2] * 0.5], vel: raw.map(v => v * speed), dir: raw, power,
+      dmg: K.damageMin + (K.damageMax - K.damageMin) * k, fuse: this.time + K.flight, stopped: false });
+    this.broadcast({ type: 'knifeThrow', i: p.id, p: Math.round(power * 100) / 100 });
   }
   // un pas de vol du couteau : touche un joueur, se plante dans un mur, ou se ramasse
   tickKnife(pr, dt, boxes) {
@@ -633,7 +640,7 @@ export class Match {
       for (const hb of hitboxes(q.pos, q.crouch)) { const t = rayAABB(pr.pos, dir, hb.min, hb.max); if (t < bestT) { bestT = t; target = q; zone = hb.zone; } }
     }
     if (target) {
-      const dmg = K.damage * (zone === 'head' ? K.headMul : zone === 'legs' ? K.legMul : 1) * (this.isEnemy(owner, target) ? 1 : 0.5);
+      const dmg = (pr.dmg || K.damageMin) * (zone === 'head' ? K.headMul : zone === 'legs' ? K.legMul : 1) * (this.isEnemy(owner, target) ? 1 : 0.5);
       owner.hits++;
       this.damage(target, dmg, owner, 'knife', zone === 'head');
       pr.pos = [target.pos[0], target.pos[1] + 0.05, target.pos[2]]; pr.stopped = true; pr.fuse = T + K.returnAfter;
@@ -1366,7 +1373,7 @@ export class Match {
     }
     const common = {
       t: Date.now(), ph: this.phase, tm: Math.max(0, r2(this.phaseEnd - T)), rd: this.round, hf: this.half, sc: this.score,
-      proj: this.projectiles.map(p => ({ i: p.id, k: p.kind, p: p.pos.map(r2), ...(p.kind === 'knife' ? { s: p.stopped ? 1 : 0, o: p.owner } : {}) })),
+      proj: this.projectiles.map(p => ({ i: p.id, k: p.kind, p: p.pos.map(r2), ...(p.kind === 'knife' ? { s: p.stopped ? 1 : 0, o: p.owner, d: p.dir.map(r2) } : {}) })),
       smokes: this.smokes.map(s => ({ i: s.id, p: s.pos.map(r2), r: s.r, u: r2(s.end - T) })),
       fires: this.fires.map(f => ({ i: f.id, p: f.pos.map(r2), r: f.r, k: f.kind, u: r2(f.end - T) })),
       walls: this.walls.map(w => ({ i: w.wallId, min: w.min.map(r2), max: w.max.map(r2), hp: w.hp })),

@@ -466,7 +466,7 @@ const MODE_TIPS = {
   gungame: 'Gun Game : chaque élimination te donne l\'arme suivante. L\'élimination au couteau fait reculer ta victime.',
   lives: 'Dernier debout : tu as peu de vies, joue prudemment et laisse les autres se battre entre eux.',
 };
-const GEN_TIPS = ['Une glissade (sprint puis accroupi) te rend plus difficile à toucher.', 'Clic droit avec le couteau en main : tu le lances ! Va le ramasser ensuite (il revient tout seul après 10 s).', 'En Assaut, clique sur un coéquipier dans le menu d\'achat pour lui offrir une arme.', 'Clic molette : marque une position pour ton équipe.', 'Les tirs à la tête font beaucoup plus de dégâts : vise à hauteur de tête.', 'Recharge à l\'abri, jamais en plein duel.', 'Change de position après une élimination : l\'ennemi sait où tu es.', 'Les pas s\'entendent : marche (touche de marche) pour approcher sans bruit.'];
+const GEN_TIPS = ['Une glissade (sprint puis accroupi) te rend plus difficile à toucher.', 'Couteau en main : maintiens le clic droit pour charger la force, relâche pour le lancer. Va le ramasser ensuite.', 'En Assaut, clique sur un coéquipier dans le menu d\'achat pour lui offrir une arme.', 'Clic molette : marque une position pour ton équipe.', 'Les tirs à la tête font beaucoup plus de dégâts : vise à hauteur de tête.', 'Recharge à l\'abri, jamais en plein duel.', 'Change de position après une élimination : l\'ennemi sait où tu es.', 'Les pas s\'entendent : marche (touche de marche) pour approcher sans bruit.'];
 let loadTimer = null;
 function showLoading(m) {
   const el = $('loadscr'); if (!el || m.spectate) return;

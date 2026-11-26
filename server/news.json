@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.25.2",
+    "date": "2026-11-26",
+    "title": "Couteau lancé : barre de force",
+    "items": [
+      "Maintiens le clic droit avec le couteau pour charger le lancer (barre FORCE sous le viseur, pleine en 1 seconde) : un lancer rapide fait 45 dégâts à 15 m/s, un lancer chargé 80 dégâts à 40 m/s (176 à la tête).",
+      "Le couteau vole tout droit et tourne sur lui-même dans l'axe du lancer."
+    ]
+  },
+  {
     "version": "1.25.1",
     "date": "2026-11-26",
     "title": "Couteau lancé en ligne droite",
