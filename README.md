@@ -60,17 +60,7 @@ Le dossier `launcher/` contient l'application de bureau (Electron). Elle se conn
 
 **Téléchargement pour les joueurs :** https://eclipseee.online/telecharger (bouton « Télécharger » en bas du site, à côté des CGU).
 
-**Publier une nouvelle version :** change `version` dans `launcher/package.json`, envoie le code, puis l'étiquette correspondante :
-
-```bash
-git tag launcher-v2.0.1
-```
-
-```bash
-git push origin launcher-v2.0.1
-```
-
-GitHub Actions (`.github/workflows/launcher.yml`) compile alors Windows (installateur en un clic + portable) et Linux (AppImage), calcule les empreintes SHA-256, ajoute une **attestation de provenance signée** (Sigstore) et publie le tout sur GitHub Releases. Les launchers installés se mettent à jour tout seuls.
+**Publier une nouvelle version :** change `version` dans `launcher/package.json` (par exemple 2.0.1) et envoie le code sur `main`. GitHub Actions (`.github/workflows/launcher.yml`) voit que cette version n'est pas encore publiée et compile alors Windows (installateur en un clic + portable) et Linux (AppImage), calcule les empreintes SHA-256, ajoute une **attestation de provenance signée** (Sigstore) et publie le tout sur GitHub Releases. Les launchers installés se mettent à jour tout seuls.
 
 **Signature Windows (Authenticode)** : sans certificat de signature de code, Windows affiche l'écran SmartScreen la première fois (« Informations complémentaires » → « Exécuter quand même »). Pour le supprimer, achète un certificat de signature de code et ajoute dans les secrets du dépôt `WIN_CSC_LINK` (fichier .pfx encodé en base64) et `WIN_CSC_KEY_PASSWORD` : la compilation signera alors automatiquement les fichiers Windows.
 

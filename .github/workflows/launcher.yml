@@ -1,5 +1,6 @@
 # Compile le launcher ECLIPSE (Windows + Linux), le signe et le publie sur GitHub Releases.
-# Se lance quand on envoie une étiquette « launcher-v<version> » (ex. launcher-v2.0.0), ou à la main (onglet Actions).
+# Se lance tout seul quand le dossier launcher/ change sur main : si la version de launcher/package.json n'est pas
+# encore publiée, elle est compilée et publiée. Aussi avec une étiquette « launcher-v<version> » ou à la main (onglet Actions).
 #
 # Signature :
 #  - Toujours : attestation de provenance signée par GitHub (Sigstore) + empreintes SHA-256 (SHA256SUMS.txt).
@@ -10,6 +11,8 @@
 name: Launcher
 on:
   push:
+    branches: [main]
+    paths: ['launcher/**', '.github/workflows/launcher.yml']
     tags: ['launcher-v*']
   workflow_dispatch:
 permissions:
@@ -18,7 +21,29 @@ permissions:
   attestations: write
 concurrency: launcher-release
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./launcher/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "launcher-v$VERSION" -R "${{ github.repository }}" >/dev/null 2>&1 && [ "${{ github.event_name }}" = "push" ]; then
+            echo "La version $VERSION est déjà publiée : rien à faire (change la version dans launcher/package.json pour publier)."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
     strategy:
       fail-fast: true
       matrix:
@@ -61,7 +86,7 @@ jobs:
             launcher/dist/*.blockmap
 
   release:
-    needs: build
+    needs: [check, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -87,7 +112,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SIGNED: ${{ secrets.WIN_CSC_LINK != '' && 'oui' || 'non' }}
         run: |
-          VERSION=$(node -p "require('./launcher/package.json').version")
+          VERSION="${{ needs.check.outputs.version }}"
           TAG="launcher-v$VERSION"
           NOTES="ECLIPSE Launcher $VERSION
 
