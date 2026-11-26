@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.26.0",
+    "date": "2026-11-26",
+    "title": "Caisses traversables, temps mort, manche au couteau",
+    "items": [
+      "Les balles de certaines armes traversent les caisses en bois avec moins de dégâts : Hornet 30 %, Viper 35 %, Lancer 50 %, Tempest 55 %, Longbow 80 %. Les murs restent pleins.",
+      "Assaut : bouton TEMPS MORT dans le menu d'achat (+30 s de phase d'achat, une fois par équipe et par mi-temps).",
+      "Parties perso : option « Manche au couteau » ; l'équipe gagnante choisit de commencer en attaque ou en défense.",
+      "Tableau des scores : précision et part des éliminations à la tête. Rapport de dégâts : nombre de touches et de tirs à la tête, envoyé à tous en fin de manche.",
+      "Les bots coéquipiers marquent les ennemis qu'ils repèrent. Dans le salon, l'hôte choisit l'agent et la difficulté de chaque bot."
+    ]
+  },
+  {
     "version": "1.25.2",
     "date": "2026-11-26",
     "title": "Couteau lancé : barre de force",

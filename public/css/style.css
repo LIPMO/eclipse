@@ -331,7 +331,7 @@ h2 { font-size: 20px; } h3 { font-size: 15px; }
 .sb-inner, .end-inner, .pause-inner { background: rgba(14, 18, 30, .96); border: 1px solid var(--line2); padding: 22px; }
 .sb-inner { width: min(900px, 94vw); }
 .sb-team { margin-bottom: 14px; }
-.sb-row { display: grid; grid-template-columns: 34px 1fr 70px 46px 46px 46px 60px 70px 60px; align-items: center; gap: 8px; padding: 5px 8px; font-family: var(--body); font-size: 16px; background: rgba(255,255,255,.03); margin-bottom: 3px; border-left: 3px solid var(--c, transparent); }
+.sb-row { display: grid; grid-template-columns: 34px 1fr 70px 46px 46px 46px 60px 56px 52px 70px 60px; align-items: center; gap: 8px; padding: 5px 8px; font-family: var(--body); font-size: 16px; background: rgba(255,255,255,.03); margin-bottom: 3px; border-left: 3px solid var(--c, transparent); }
 .sb-row.head { background: none; color: var(--muted); font-size: 12px; letter-spacing: .15em; font-family: var(--head); }
 .sb-row.me { background: rgba(139, 92, 255, .18); }
 .sb-row.dead { opacity: .5; }
@@ -1337,3 +1337,15 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 #knife-charge i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #19e3c4, #ffcf5a 60%, #ff4f6d); }
 #knife-charge.full b { border-color: #ff4f6d; box-shadow: 0 0 10px rgba(255,79,109,.8); animation: kcPulse .4s ease-in-out infinite alternate; }
 @keyframes kcPulse { from { transform: scale(1); } to { transform: scale(1.06); } }
+
+/* 1.26 : choix du côté après la manche au couteau */
+#side-choice { position: absolute; left: 50%; top: 32%; transform: translateX(-50%); display: none; z-index: 30; background: rgba(12,16,28,.95); border: 1px solid var(--accent); padding: 18px 24px; text-align: center; min-width: 340px; pointer-events: auto; }
+#side-choice.show { display: block; }
+#side-choice h3 { font-family: var(--head); letter-spacing: .1em; margin: 0 0 6px; }
+#side-choice .sc-btns { display: flex; gap: 12px; justify-content: center; margin: 12px 0 6px; }
+#side-choice .sc-btns .btn { font-size: 18px; padding: 12px 22px; }
+
+/* 1.26 : réglages des bots dans le salon (hôte) */
+.member .bot-set { display: flex; gap: 4px; margin-top: 3px; }
+.member .bot-set select { font-size: 11px; padding: 1px 3px; background: #0d1220; border: 1px solid var(--line2); color: var(--text); max-width: 110px; }
+#dmg-report small { color: var(--muted); font-size: 11px; }

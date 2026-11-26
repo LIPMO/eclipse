@@ -1,5 +1,5 @@
 // Logique de partie autoritaire côté serveur
-import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, KNIFE_THROW, lossBonus, knifePower } from '../shared/data.js';
+import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, KNIFE_THROW, lossBonus, knifePower, TIMEOUT } from '../shared/data.js';
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
@@ -11,6 +11,16 @@ const r2 = v => Math.round(v * 100) / 100;
 const r3 = v => Math.round(v * 1000) / 1000;
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const finite = v => typeof v === 'number' && Number.isFinite(v);
+// distance de sortie d'un rayon qui traverse une boîte (méthode des « tranches »)
+function rayExit(o, d, min, max) {
+  let tmax = Infinity;
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) continue;
+    const t1 = (min[i] - o[i]) / d[i], t2 = (max[i] - o[i]) / d[i];
+    tmax = Math.min(tmax, Math.max(t1, t2));
+  }
+  return tmax;
+}
 
 export class Match {
   constructor(room, io) {
@@ -28,6 +38,8 @@ export class Match {
     this.round = 0;
     this.half = 0;
     this.lossStreak = { alpha: 0, beta: 0 }; // défaites d'affilée par équipe (bonus de défaite)
+    this.timeoutsUsed = { alpha: 0, beta: 0 }; // temps morts tactiques utilisés cette mi-temps
+    this.sideFlip = false; // manche au couteau : le gagnant a choisi l'autre côté
     this.score = { alpha: 0, beta: 0 };
     this.projectiles = []; this.smokes = []; this.fires = []; this.walls = []; this.drops = [];
     this.nextId = 1;
@@ -71,7 +83,7 @@ export class Match {
       slides: 0, adsShots: 0,
     };
     this.refillCharges(p);
-    if (p.isBot) p.brain = new BotBrain(this, p, this.difficulty);
+    if (p.isBot) p.brain = new BotBrain(this, p, m.botDiff || this.difficulty); // difficulté propre au bot (parties perso)
     return p;
   }
 
@@ -157,7 +169,9 @@ export class Match {
     }
   }
 
-  side(p) { return sideOf(p.team, this.half); }
+  // mi-temps « effective » : la manche au couteau peut inverser les côtés de départ
+  effHalf() { return (this.half + (this.sideFlip ? 1 : 0)) % 2; }
+  side(p) { return sideOf(p.team, this.effHalf()); }
   isEnemy(a, b) { return a.id !== b.id && (isFfa(this.mode) || a.team !== b.team); }
   eye(p) { return [p.pos[0], p.pos[1] + (p.crouch ? PLAYER.eyeCrouch : PLAYER.eye), p.pos[2]]; }
 
@@ -268,6 +282,7 @@ export class Match {
 
   // ---------- Manches ----------
   startRound() {
+    this.knifeRound = !!(this.opts.knifeRound && this.mode === 'assault' && !this.knifeDone && this.round === 0);
     this.round++;
     this.phase = 'buy';
     this.phaseEnd = this.time + (this.mode === 'duel' ? DUEL.buyTime : ROUND.buyTime);
@@ -296,7 +311,7 @@ export class Match {
       p.alive = true; p.hp = 100; p.slot = p.weapons[1] ? 1 : 2; p.reloadEnd = 0; p.knifeOut = false;
       this.applyWeaponRule(p);
       p.healEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.invisEnd = 0; p.revealEnd = 0; p.blindEnd = 0;
-      p.interact = false; p.prog = 0; p.damagedBy = new Map(); p.joinedMidRound = false; p.roundKills = 0; p.roundDmg = 0; p.ready = false; p.armorBought = null;
+      p.interact = false; p.prog = 0; p.damagedBy = new Map(); p.hitsBy = new Map(); p.joinedMidRound = false; p.roundKills = 0; p.roundDmg = 0; p.ready = false; p.armorBought = null;
       this.refillCharges(p);
       const list = spawnSets[side];
       const sp = list[idx[side]++ % list.length];
@@ -306,6 +321,13 @@ export class Match {
       const yaw = Math.atan2(-(mw / 2 - pos[0]), -(mh / 2 - pos[2]));
       this.teleport(p, pos, yaw);
       if (p.brain) p.brain.onRoundStart();
+    }
+    if (this.knifeRound) {
+      // manche au couteau : couteaux uniquement, pas d'achat ni de Noyau, courte attente avant le départ
+      for (const p of this.players.values()) { p.weapons = { 1: null, 2: null, 3: { id: 'knife' } }; p.slot = 3; p.armor = 0; p.charges = {}; }
+      this.phaseEnd = this.time + 4; this.core.status = 'none';
+      this.broadcast({ type: 'notice', text: 'MANCHE AU COUTEAU : LE GAGNANT CHOISIT SON CÔTÉ' });
+      return this.broadcast({ type: 'roundStart', round: 0, half: this.half, score: this.score, knife: 1, loss: { ...this.lossStreak } });
     }
     const atk = [...this.players.values()].filter(p => this.side(p) === 'atk');
     if (this.mode === 'duel') this.core.status = 'none';
@@ -318,7 +340,15 @@ export class Match {
   }
 
   endRound(winSide, reason) {
-    if (this.phase === 'end' || this.phase === 'over') return;
+    if (this.phase === 'end' || this.phase === 'over' || this.phase === 'sidechoice') return;
+    if (this.knifeRound) {
+      let team = winSide ? this.teamOfSide(winSide) : null;
+      if (!team || reason === 'time') { const alive = { alpha: 0, beta: 0 }; for (const p of this.players.values()) if (p.alive) alive[p.team]++; team = alive.alpha === alive.beta ? (Math.random() < 0.5 ? 'alpha' : 'beta') : alive.alpha > alive.beta ? 'alpha' : 'beta'; }
+      this.knifeWinner = team; this.phase = 'sidechoice'; this.phaseEnd = this.time + 12;
+      const cur = {}; for (const p of this.players.values()) if (p.team === team) cur.side = this.side(p);
+      this.broadcast({ type: 'sideChoice', team, current: cur.side || null, until: 12 });
+      return;
+    }
     const winTeam = winSide ? this.teamOfSide(winSide) : null;
     if (winTeam) this.score[winTeam]++;
     if (winTeam) { const lose = winTeam === 'alpha' ? 'beta' : 'alpha'; this.lossStreak[winTeam] = 0; this.lossStreak[lose] = Math.min(5, this.lossStreak[lose] + 1); }
@@ -332,19 +362,39 @@ export class Match {
     }
     this.phase = 'end';
     this.phaseEnd = this.time + ROUND.endTime;
-    for (const p of this.players.values()) if (p.alive) this.sendDmgReport(p);
+    for (const p of this.players.values()) this.sendDmgReport(p);
     this.roundHistory.push(winTeam || '');
     let mvp = null;
     for (const p of this.players.values()) if (p.roundKills > 0 || p.roundDmg > 0) if (!mvp || p.roundKills > mvp.roundKills || (p.roundKills === mvp.roundKills && p.roundDmg > mvp.roundDmg)) mvp = p;
     this.broadcast({ type: 'roundEnd', winner: winTeam, side: winSide, reason, score: this.score, history: this.roundHistory, loss: { ...this.lossStreak }, bonus, mvp: mvp ? { id: mvp.id, name: mvp.name, kills: mvp.roundKills, dmg: Math.round(mvp.roundDmg) } : null });
     if (winTeam && this.score[winTeam] >= this.target) this.pendingOver = winTeam;
     else if (this.half === 0 && this.round === this.target - 1) {
-      this.half = 1; this.resetEconomy = true;
+      this.half = 1; this.resetEconomy = true; this.timeoutsUsed = { alpha: 0, beta: 0 };
       this.broadcast({ type: 'notice', text: 'CHANGEMENT DE CÔTÉ' });
     }
   }
 
-  teamOfSide(side) { return sideOf('alpha', this.half) === side ? 'alpha' : 'beta'; }
+  applySideChoice(side, by = null) {
+    if (this.phase !== 'sidechoice') return;
+    const team = this.knifeWinner;
+    const curSide = sideOf(team, this.effHalf());
+    if (side && side !== curSide) this.sideFlip = !this.sideFlip;
+    const finalSide = sideOf(team, this.effHalf());
+    this.knifeRound = false; this.knifeDone = true; this.round = 0; this.resetEconomy = true;
+    for (const p of this.players.values()) { p.alive = false; }
+    this.broadcast({ type: 'sideChosen', team, side: finalSide, by: by?.name || null });
+    this.startRound();
+  }
+  // temps mort tactique : +30 s de phase d'achat, une fois par équipe et par mi-temps
+  handleTimeout(p) {
+    if (this.mode !== 'assault' || this.phase !== 'buy' || this.knifeRound || p.isBot) return;
+    if ((this.timeoutsUsed[p.team] || 0) >= 1) { this.send(p, { type: 'notice', text: 'TON ÉQUIPE A DÉJÀ UTILISÉ SON TEMPS MORT CETTE MI-TEMPS' }); return; }
+    this.timeoutsUsed[p.team] = 1;
+    const left = this.phaseEnd - this.time;
+    this.phaseEnd = this.time + Math.min(TIMEOUT.maxBuy, left + TIMEOUT.extra);
+    this.broadcast({ type: 'timeout', team: p.team, by: p.name, until: Math.round(this.phaseEnd - this.time) });
+  }
+  teamOfSide(side) { return sideOf('alpha', this.effHalf()) === side ? 'alpha' : 'beta'; }
   ultCost(p) { return AGENTS[p.agent].abilities.x.cost; }
 
   matchOver(winner) {
@@ -404,7 +454,7 @@ export class Match {
       p.slot = p.weapons[1] ? 1 : 2;
       this.applyWeaponRule(p);
     }
-    p.reloadEnd = 0; p.damagedBy = new Map(); p.invisEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.blindEnd = 0;
+    p.reloadEnd = 0; p.damagedBy = new Map(); p.hitsBy = new Map(); p.invisEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.blindEnd = 0;
     p.protEnd = this.time + 1.5; // protection de réapparition : annulée dès que le joueur tire ou utilise une capacité
     const [mw, mh] = this.map.size;
     this.teleport(p, best, Math.atan2(-(mw / 2 - best[0]), -(mh / 2 - best[2])));
@@ -448,6 +498,8 @@ export class Match {
       case 'sell': return this.handleSell(p, msg);
       case 'drop': return this.handleDrop(p);
       case 'ready': return this.handleReady(p);
+      case 'chooseSide': if (this.phase === 'sidechoice' && p.team === this.knifeWinner && (msg.side === 'atk' || msg.side === 'def')) this.applySideChoice(msg.side, p); return;
+      case 'timeout': return this.handleTimeout(p);
       case 'ability': return this.handleAbility(p, msg);
       case 'interact': p.interact = !!msg.on; if (p.interact) p.interactPos = p.pos.slice(); return;
       case 'mark': return this.handleMark(p, msg);
@@ -547,7 +599,7 @@ export class Match {
   }
 
   handleBuy(p, item) {
-    if (!p.alive || this.mode === 'gungame') return;
+    if (!p.alive || this.mode === 'gungame' || this.knifeRound) return;
     const ffa = isFfa(this.mode);
     if (!ffa && this.phase !== 'buy') return;
     if (WEAPONS[item] && item !== 'knife') {
@@ -584,7 +636,7 @@ export class Match {
 
   // ---------- acheter une arme pour un coéquipier (1.25, Assaut) ----------
   buyForMate(p, item, forId) {
-    if (this.mode !== 'assault' || this.phase !== 'buy' || !p.alive) return;
+    if (this.mode !== 'assault' || this.phase !== 'buy' || !p.alive || this.knifeRound) return;
     const q = this.players.get(forId), d = WEAPONS[item];
     if (!q || q === p || !q.alive || q.team !== p.team || !d || item === 'knife' || !d.cost) return;
     const tell = text => { if (!p.isBot) this.send(p, { type: 'notice', text }); };
@@ -746,7 +798,8 @@ export class Match {
     for (const q of this.players.values()) {
       if (q === p || !this.isEnemy(p, q)) continue;
       const dealt = Math.round(q.damagedBy.get(p.id) || 0), recv = Math.round(p.damagedBy.get(q.id) || 0);
-      if (dealt || recv) rows.push({ i: q.id, n: q.name, dealt, recv, dead: !q.alive });
+      const out = q.hitsBy?.get(p.id), inn = p.hitsBy?.get(q.id);
+      if (dealt || recv) rows.push({ i: q.id, n: q.name, dealt, recv, dead: !q.alive, hd: out?.n || 0, hh: out?.h || 0, hr: inn?.n || 0, hrh: inn?.h || 0 });
     }
     if (rows.length) this.send(p, { type: 'dmgReport', rows: rows.sort((a, b) => b.dealt + b.recv - a.dealt - a.recv).slice(0, 8) });
   }
@@ -777,18 +830,33 @@ export class Match {
     const dmgAcc = new Map();
     for (const dir of dirs) {
       const wr = raycastBoxes(origin, dir, range, boxes);
-      let bestT = wr.t, target = null, zone = null;
-      for (const q of this.players.values()) {
-        if (!q.alive || q === p || (!this.isEnemy(p, q) && !this.opts.friendlyFire)) continue;
-        if (Math.hypot(q.pos[0] - origin[0], q.pos[2] - origin[2]) > bestT + 2) continue;
-        for (const hb of hitboxes(q.pos, q.crouch)) {
-          const t = rayAABB(origin, dir, hb.min, hb.max);
-          if (t < bestT) { bestT = t; target = q; zone = hb.zone; }
+      let bestT = wr.t, target = null, zone = null, through = false;
+      const findTarget = (from, to) => {
+        for (const q of this.players.values()) {
+          if (!q.alive || q === p || (!this.isEnemy(p, q) && !this.opts.friendlyFire)) continue;
+          if (Math.hypot(q.pos[0] - origin[0], q.pos[2] - origin[2]) > to + 2) continue;
+          for (const hb of hitboxes(q.pos, q.crouch)) {
+            const t = rayAABB(origin, dir, hb.min, hb.max);
+            if (t > from && t < to && t < (target ? bestT : Infinity)) { bestT = t; target = q; zone = hb.zone; }
+          }
+        }
+      };
+      findTarget(-1, wr.t);
+      if (!target) bestT = wr.t;
+      // balle qui traverse une caisse en bois (armes avec « pen ») : continue derrière avec moins de dégâts
+      if (!target && d.pen && wr.box && (wr.box.kind === 'crate' || wr.box.kind === 'crateHigh')) {
+        const exitT = rayExit(origin, dir, wr.box.min, wr.box.max);
+        if (exitT > wr.t && exitT - wr.t < 3.6) {
+          const after = [origin[0] + dir[0] * (exitT + 0.01), origin[1] + dir[1] * (exitT + 0.01), origin[2] + dir[2] * (exitT + 0.01)];
+          const wr2 = raycastBoxes(after, dir, range - exitT, boxes);
+          findTarget(exitT, exitT + wr2.t);
+          if (target) through = true; else bestT = exitT + wr2.t;
         }
       }
       if (target && this.opts.headOnly && zone !== 'head' && d.type !== 'melee') target = null; // têtes uniquement
       if (target) {
         let dmg = d.damage * (zone === 'head' ? d.headMul : zone === 'legs' ? d.legMul : 1);
+        if (through) dmg *= d.pen; // à travers une caisse
         if (!this.isEnemy(p, target)) dmg *= 0.5; // tir allié (option de salon) : moitié des dégâts
         if (d.falloff && bestT > d.falloff[0]) dmg *= d.falloff[1];
         const acc = dmgAcc.get(target) || { dmg: 0, head: false };
@@ -815,6 +883,7 @@ export class Match {
     if (attacker && attacker !== q && q.protEnd > this.time) return; // protection de réapparition
     if (attacker && attacker !== q) {
       q.damagedBy.set(attacker.id, (q.damagedBy.get(attacker.id) || 0) + Math.min(amount, Math.max(0, q.hp) + Math.max(0, q.armor)));
+      q.hitsBy ||= new Map(); const hb = q.hitsBy.get(attacker.id) || { n: 0, h: 0 }; hb.n++; if (head) hb.h++; q.hitsBy.set(attacker.id, hb);
       q.lastDamagedBy = attacker.id; q.lastDamagedAt = this.time;
     }
     if (attacker && attacker !== q && this.isEnemy(attacker, q)) { const real = Math.min(amount, q.hp + q.armor); attacker.dmg += real; attacker.roundDmg = (attacker.roundDmg || 0) + real; }
@@ -957,7 +1026,7 @@ export class Match {
 
   // ---------- Capacités ----------
   handleAbility(p, m) {
-    if (!p.alive || this.phase === 'over' || this.phase === 'warmup') return;
+    if (!p.alive || this.phase === 'over' || this.phase === 'warmup' || this.knifeRound) return;
     const key = m.k;
     const ab = AGENTS[p.agent].abilities[key];
     if (!ab || this.opts.noAbilities) return;
@@ -1220,7 +1289,7 @@ export class Match {
     const core = this.core;
     if (this.phase === 'warmup' && T >= this.phaseEnd) { this.startRound(); return; }
     if (this.phase === 'buy' && T >= this.phaseEnd) {
-      this.phase = 'live'; this.phaseEnd = T + (this.opts.roundTime || (this.mode === 'duel' ? DUEL.roundTime : ROUND.roundTime));
+      this.phase = 'live'; this.phaseEnd = T + (this.knifeRound ? 60 : this.opts.roundTime || (this.mode === 'duel' ? DUEL.roundTime : ROUND.roundTime));
       this.broadcast({ type: 'phase', phase: 'live' });
     }
     // ramassage du noyau
@@ -1289,6 +1358,11 @@ export class Match {
     } else if (this.phase === 'end' && T >= this.phaseEnd) {
       if (this.pendingOver) this.matchOver(this.pendingOver);
       else this.startRound();
+    } else if (this.phase === 'sidechoice') {
+      // équipe de bots seulement : choix au hasard ; sinon, sans réponse, on garde les côtés actuels
+      const humans = [...this.players.values()].some(p => p.team === this.knifeWinner && !p.isBot);
+      if (!humans && T > this.phaseEnd - 9) this.applySideChoice(Math.random() < 0.5 ? 'atk' : 'def');
+      else if (T >= this.phaseEnd) this.applySideChoice(null);
     }
   }
 
@@ -1363,7 +1437,7 @@ export class Match {
       const base = {
         i: p.id, p: p.pos.map(r2), y: r3(p.yaw), pt: r3(p.pitch), c: p.crouch ? 1 : 0, al: p.alive ? 1 : 0,
         w: w ? w.id : 'knife', iv: p.invisEnd > T ? 1 : 0, rv: p.revealEnd > T ? 1 : 0,
-        pl: p.prog > 0 ? 1 : 0, gl: p.gun, lv: p.lives, st: p.streak, k: p.kills, d: p.deaths, a: p.assists, sc: p.score, pg: p.ping || 0, dm: Math.round(p.dmg),
+        pl: p.prog > 0 ? 1 : 0, gl: p.gun, lv: p.lives, st: p.streak, k: p.kills, d: p.deaths, a: p.assists, sc: p.score, pg: p.ping || 0, dm: Math.round(p.dmg), ac: p.shots ? Math.round(p.hits / p.shots * 100) : null, hs: p.kills ? Math.round(p.hsKills / p.kills * 100) : null,
       };
       if (p.protEnd > T) base.sp = 1;
       if (p.sliding && p.alive && (p.slideUntil || 0) > T) base.sd = 1;
@@ -1390,8 +1464,8 @@ export class Match {
         if (!q.alive) { list.push(pub.get(q.id)); continue; }
         const vis = this.visibility(p, q, T);
         if (vis === 'full') list.push(pub.get(q.id));
-        else if (vis === 'audio') list.push(JSON.stringify({ i: q.id, p: q.pos.map(r2), au: 1, al: 1, gl: q.gun, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg) }));
-        else list.push(JSON.stringify({ i: q.id, h: 1, al: 1, gl: q.gun, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg) }));
+        else if (vis === 'audio') list.push(JSON.stringify({ i: q.id, p: q.pos.map(r2), au: 1, al: 1, gl: q.gun, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg), ac: q.shots ? Math.round(q.hits / q.shots * 100) : null, hs: q.kills ? Math.round(q.hsKills / q.kills * 100) : null }));
+        else list.push(JSON.stringify({ i: q.id, h: 1, al: 1, gl: q.gun, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg), ac: q.shots ? Math.round(q.hits / q.shots * 100) : null, hs: q.kills ? Math.round(q.hsKills / q.kills * 100) : null }));
       }
       // le Noyau porté n'est montré qu'aux attaquants ; posé ou au sol, il est visible par tous
       const side = this.side(p);

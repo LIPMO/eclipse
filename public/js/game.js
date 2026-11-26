@@ -598,6 +598,7 @@ export class Game {
           <button class="btn small" data-bact="rebuy" title="Rachète l'équipement de la manche précédente">⟲ RACHETER <kbd>${esc(KB('rebuy'))}</kbd></button>
           <span class="buy-favs">${[0, 1, 2].map(i => `<span class="bfav"><button class="btn small ghost" data-fav="${i}"></button><button class="btn small ghost" data-favsave="${i}" title="Enregistrer l'équipement actuel dans ce favori">💾</button></span>`).join('')}</span>
           ${roundMode && this.mode !== 'duel' ? '<button class="btn small" data-bact="request">🙋 DEMANDER UNE ARME</button>' : ''}
+          ${this.mode === 'assault' ? '<button class="btn small" data-bact="timeout" title="Prolonge la phase d\'achat de 30 s pour tout le monde (une fois par mi-temps et par équipe)">⏸ TEMPS MORT</button>' : ''}
           ${roundMode ? `<button class="btn small primary" data-bact="ready">✔ PRÊT <kbd>${esc(KB('ready'))}</kbd></button>` : ''}
         </div>
       </div>
@@ -611,6 +612,7 @@ export class Game {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.bact === 'rebuy') this.rebuy();
       else if (b.dataset.bact === 'request') this.requestWeapon();
+      else if (b.dataset.bact === 'timeout') this.net.send('timeout');
       else if (b.dataset.bact === 'ready') this.sendReady();
       else if (b.dataset.sell) this.sellItem(b.dataset.sell);
       else if (b.dataset.bfor !== undefined) { this.buyFor = b.dataset.bfor || null; this.buyCache = {}; }
@@ -679,6 +681,8 @@ export class Game {
       if (this.buyFor && !mates.some(p => p.i === this.buyFor && p.al)) this.buyFor = null;
       set('buy-team', mates.length ? `<h4>TON ÉQUIPE <span class="muted">(clique sur un coéquipier pour lui acheter une arme)</span></h4>${this.buyFor ? `<div class="bt-for">🎁 Tu achètes pour <b>${esc(this.nameOf(this.buyFor))}</b> : choisis une arme · <button class="btn small ghost" data-bfor="">ANNULER</button></div>` : ''}${mates.map(p => `<div class="bt-row ${p.al ? '' : 'dead'} ${this.buyFor === p.i ? 'sel' : ''}" ${p.al && s.ph === 'buy' ? `data-bfor="${esc(p.i)}" title="Acheter une arme pour ${esc(this.nameOf(p.i))}"` : ''}><span>${esc(this.nameOf(p.i))}${p.rd ? ' <b class="ok">✔</b>' : ''}</span><span class="gold">${p.$ ?? '—'}</span><span>${esc(WEAPONS[p.pw]?.name || '—')}</span><span class="muted">${p.ar ? '⛉ ' + p.ar : ''}</span></div>`).join('')}` : '');
     }
+    const tb = document.querySelector('#buy-extra [data-bact="timeout"]');
+    if (tb) { tb.disabled = s.ph !== 'buy' || !!this.timeoutUsedHalf || !!this.knifeRound; tb.textContent = this.timeoutUsedHalf ? '⏸ TEMPS MORT UTILISÉ' : '⏸ TEMPS MORT'; }
     const rb = document.querySelector('#buy-extra [data-bact="ready"]');
     if (rb) { rb.disabled = s.ph !== 'buy' || !!this.self?.rd; rb.innerHTML = `✔ PRÊT${this.readyN ? ` ${this.readyN.n}/${this.readyN.total}` : ''} <kbd>${esc(KB('ready'))}</kbd>`; }
   }
@@ -1190,9 +1194,9 @@ export class Game {
       const ag = AGENTS[r.agent] || AGENTS.ignis;
       const ally = !isFfa(this.mode) && r.team === me?.team;
       const lvl = r.level ? `<span class="sb-lvl">${r.prestige ? `<span class="pres">★${['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][r.prestige]}</span>` : ''}${r.level}</span>` : '';
-      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan && !ST().streamer ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${p.i === this.leaderId && isFfa(this.mode) ? '👑 ' : ''}${esc(this.nameOf(p.i))}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}${!r.bot && p.i !== this.myId && isFriendName(r.name) ? ' <span title="Ami">🤝</span>' : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : lives ? (p.lv > 0 ? '❤'.repeat(Math.min(p.lv, 5)) : 'éliminé') : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
+      return `<div class="sb-row ${p.i === this.myId ? 'me' : ''} ${p.al ? '' : 'dead'}" style="--c:${ag.color}">${agentIconHTML(r.agent, 'sm')}<span>${lvl}${r.clan && !ST().streamer ? `<span class="clan-tag">[${esc(r.clan)}]</span> ` : ''}${p.i === this.leaderId && isFfa(this.mode) ? '👑 ' : ''}${esc(this.nameOf(p.i))}${r.bot ? ' <span class="muted">(bot)</span>' : ''}${r.title ? ` <span class="sb-title">${esc(r.title)}</span>` : ''}${!r.bot && p.i !== this.myId && isFriendName(r.name) ? ' <span title="Ami">🤝</span>' : ''}</span><span>${gun ? `${(p.gl || 0) + 1}/${GUN_LADDER.length}` : lives ? (p.lv > 0 ? '❤'.repeat(Math.min(p.lv, 5)) : 'éliminé') : p.sc}</span><span>${p.k}</span><span>${p.d}</span><span>${p.a}</span><span>${p.dm ?? ''}</span><span class="muted">${p.ac != null ? p.ac + ' %' : '—'}</span><span class="muted">${p.hs != null ? p.hs + ' %' : '—'}</span><span>${ally || p.i === this.myId ? (p.$ ?? '') : ''}</span><span class="muted">${r.bot ? 'BOT' : p.pg ? p.pg + ' ms' : '—'}</span></div>`;
     };
-    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : lives ? 'VIES' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span>CRÉDITS</span><span>PING</span></div>`;
+    const head = `<div class="sb-row head"><span></span><span>JOUEUR</span><span>${gun ? 'ARME' : lives ? 'VIES' : 'SCORE'}</span><span>É</span><span>M</span><span>A</span><span>DÉG.</span><span title="Précision : balles qui touchent">PRÉC.</span><span title="Part des éliminations à la tête">TÊTE</span><span>CRÉDITS</span><span>PING</span></div>`;
     let html;
     if (this.mode === 'duel') html = `<h2>DUEL 1v1 — premier à ${this.target} manches</h2><br>${head}${players.map(row).join('')}`;
     else if (gun) html = `<h2>GUN GAME — chaque élimination donne l'arme suivante, le couteau pour finir</h2><br>${head}${players.map(row).join('')}`;
@@ -1479,7 +1483,9 @@ export class Game {
     on('roundStart', m => {
       if (m.loss) this.lossStreak = m.loss;
       this.buyFor = null;
-      this.banner(`MANCHE ${m.round}`, m.half ? 'SECONDE MI-TEMPS · PHASE D\'ACHAT' : `PHASE D'ACHAT — ${KB('buy')} POUR ACHETER`, '', 3);
+      this.knifeRound = !!m.knife; this.timeoutUsedHalf = m.half !== this.lastHalf ? false : this.timeoutUsedHalf; this.lastHalf = m.half;
+      if (m.knife) this.banner('MANCHE AU COUTEAU', 'Couteaux uniquement · le gagnant choisit son côté', '', 3.5);
+      else this.banner(`MANCHE ${m.round}`, m.half ? 'SECONDE MI-TEMPS · PHASE D\'ACHAT' : `PHASE D'ACHAT — ${KB('buy')} POUR ACHETER`, '', 3);
       SFX.playUI('roundStart');
       for (const o of this.others.values()) { o.deadT = 0; o.ch.root.rotation.x = 0; }
       for (const t of this.tracers) this.scene.remove(t.mesh);
@@ -1527,6 +1533,27 @@ export class Game {
     on('knifeBack', m => { this.centerMsg(m.auto ? 'TON COUTEAU EST REVENU' : 'COUTEAU RAMASSÉ', 1); SFX.playSwitch(); });
     on('gift', m => { const n = WEAPONS[m.item]?.name || ''; this.centerMsg(`${m.from.toUpperCase()} T'OFFRE : ${n.toUpperCase()}`, 2.5); this.pendingSwitch = m.slot; SFX.playUI('buy'); });
     on('teamGift', m => this.addChat({ from: 'SYSTÈME', system: true, text: `🎁 ${m.from} offre ${WEAPONS[m.item]?.name || ''} à ${m.to}` }));
+    on('timeout', m => {
+      const mine = this.roster.get(this.myId)?.team === m.team;
+      if (mine) this.timeoutUsedHalf = true;
+      this.banner('TEMPS MORT TACTIQUE', `${m.by} (${mine ? 'ton équipe' : 'équipe adverse'}) · phase d'achat prolongée : ${m.until} s`, '', 3.5);
+      SFX.playUI('roundStart'); this.buyCache = {};
+    });
+    on('sideChoice', m => {
+      const mine = this.roster.get(this.myId)?.team === m.team;
+      const box = $('side-choice');
+      box.innerHTML = mine ? `<h3>VOUS AVEZ GAGNÉ LA MANCHE AU COUTEAU</h3><p>Choisis le côté de départ de ton équipe (${m.until} s) :</p><div class="sc-btns"><button class="btn primary" data-side="atk">⚔ ATTAQUE</button><button class="btn primary" data-side="def">🛡 DÉFENSE</button></div><p class="muted small">Sans choix, les côtés restent ${m.current === 'atk' ? 'attaque' : 'défense'} pour ton équipe.</p>`
+        : `<h3>MANCHE AU COUTEAU PERDUE</h3><p>L'équipe adverse choisit son côté de départ…</p>`;
+      box.classList.add('show');
+      box.onclick = e => { const b = e.target.closest('[data-side]'); if (!b) return; this.net.send('chooseSide', { side: b.dataset.side }); box.querySelectorAll('button').forEach(x => { x.disabled = true; }); };
+      if (mine) this.unlock();
+    });
+    on('sideChosen', m => {
+      $('side-choice').classList.remove('show');
+      const mine = this.roster.get(this.myId)?.team === m.team;
+      const mySide = mine ? m.side : (m.side === 'atk' ? 'def' : 'atk');
+      this.banner(mySide === 'atk' ? 'TU COMMENCES EN ATTAQUE' : 'TU COMMENCES EN DÉFENSE', m.by ? `Choix de ${m.by}` : 'Côtés choisis', '', 3.5);
+    });
     on('bought', m => { if (m.slot) { this.pendingSwitch = m.slot; this.bought['s' + m.slot] = m.item; } else if (ARMOR[m.item]) this.bought.armor = m.item; });
     on('sold', m => { const n = WEAPONS[m.item]?.name || ARMOR[m.item]?.name || ''; this.centerMsg(`${n.toUpperCase()} REVENDU · +${m.refund}`, 1.5); SFX.playUI('buy'); if (m.slot) delete this.bought['s' + m.slot]; else delete this.bought.armor; this.buyCache = {}; });
     on('dropped', m => { this.centerMsg(`${(WEAPONS[m.item]?.name || '').toUpperCase()} LÂCHÉ`, 1.2); SFX.playSwitch(); });
@@ -2441,7 +2468,7 @@ export class Game {
     if (!ST().dmgReport || !rows?.length || this.spec) return;
     let el = $('dmg-report');
     if (!el) { el = document.createElement('div'); el.id = 'dmg-report'; $('hud').appendChild(el); }
-    el.innerHTML = `<h4>DÉGÂTS DE LA MANCHE</h4>${rows.map(r => `<div class="dr-row ${r.dead ? 'dead' : ''}"><span>${esc(this.nameOf(r.i) === '???' ? r.n : this.nameOf(r.i))}${r.dead ? ' ✝' : ''}</span><span class="dr-out" title="Dégâts infligés">→ ${r.dealt}</span><span class="dr-in" title="Dégâts reçus">← ${r.recv}</span></div>`).join('')}`;
+    el.innerHTML = `<h4>DÉGÂTS DE LA MANCHE</h4>${rows.map(r => `<div class="dr-row ${r.dead ? 'dead' : ''}"><span>${esc(this.nameOf(r.i) === '???' ? r.n : this.nameOf(r.i))}${r.dead ? ' ✝' : ''}</span><span class="dr-out" title="Dégâts infligés">→ ${r.dealt}${r.hd ? ` <small>(${r.hd} touche${r.hd > 1 ? 's' : ''}${r.hh ? `, ${r.hh} tête${r.hh > 1 ? 's' : ''}` : ''})</small>` : ''}</span><span class="dr-in" title="Dégâts reçus">← ${r.recv}${r.hr ? ` <small>(${r.hr}${r.hrh ? `, ${r.hrh} tête${r.hrh > 1 ? 's' : ''}` : ''})</small>` : ''}</span></div>`).join('')}`;
     el.classList.add('show');
     clearTimeout(this.drT); this.drT = setTimeout(() => el.classList.remove('show'), 6500);
   }

@@ -311,6 +311,7 @@ function renderRoom() {
     return `<div class="member ${m.id === state.myId ? 'me' : ''}" style="--c:${a?.color}">${agentIconHTML(m.agent)}
       <div class="mn">${m.level ? `<span class="mlvl">${presTag(m.prestige)}${m.level}</span>` : ''}${m.clan ? `<span class="clan-tag">[${esc(m.clan)}]</span> ` : ''}<span class="${m.account ? 'link' : ''}" ${m.account ? `data-prof="${esc(m.name)}"` : ''}>${profile.settings.streamer && m.id !== state.myId && !m.isBot ? 'Joueur' : esc(m.name)}</span> ${m.id === r.hostId ? '<span class="host">★ HÔTE</span>' : ''}${m.title ? ` <span class="title-tag">${esc(m.title)}</span>` : ''}<div class="ma">${a?.name || ''} · ${a?.role || ''}</div></div>
       ${other ? `<button class="x rep" data-report="${esc(m.name)}" title="Signaler ce joueur">⚑</button>` : ''}
+      ${m.isBot && host && r.state === 'lobby' && !r.tournament ? `<div class="bot-set"><select data-botagent="${esc(m.id)}" title="Agent du bot">${AGENT_ORDER.map(id => `<option value="${id}" ${m.agent === id ? 'selected' : ''}>${esc(AGENTS[id].name)}</option>`).join('')}</select><select data-botdiff="${esc(m.id)}" title="Difficulté du bot"><option value="">Diff. salon</option>${Object.entries(DIFF_LABEL).filter(([k]) => k !== 'cible').map(([k, l]) => `<option value="${k}" ${m.botDiff === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : m.isBot && m.botDiff ? `<div class="muted small">${DIFF_LABEL[m.botDiff] || ''}</div>` : ''}
       ${m.isBot ? (host ? `<button class="x" data-rm="${m.id}" title="Retirer">✕</button>` : '<span class="muted">BOT</span>') : (m.ready ? '<span class="rdy">PRÊT</span>' : '')}</div>`;
   };
   const alpha = r.members.filter(m => m.team === 'alpha' || m.team === 'ffa');
@@ -426,6 +427,10 @@ $('agent-pick').onclick = e => {
 };
 document.querySelectorAll('[data-join]').forEach(b => b.onclick = () => net.send('setTeam', { team: b.dataset.join }));
 document.querySelectorAll('[data-bot]').forEach(b => b.onclick = () => net.send('addBot', { team: b.dataset.bot }));
+document.querySelectorAll('.team-panel .members').forEach(el => el.onchange = e => {
+  const a = e.target.closest('[data-botagent]'); if (a) net.send('botSet', { id: a.dataset.botagent, agent: a.value });
+  const d = e.target.closest('[data-botdiff]'); if (d) net.send('botSet', { id: d.dataset.botdiff, diff: d.value || null });
+});
 document.querySelectorAll('.team-panel .members').forEach(el => el.onclick = e => {
   const x = e.target.closest('[data-rm]'); if (x) net.send('removeBot', { id: x.dataset.rm });
   const rp = e.target.closest('[data-report]'); if (rp) openReport(rp.dataset.report);

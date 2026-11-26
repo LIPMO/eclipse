@@ -251,7 +251,7 @@ function roomSummary(r) {
 }
 function roomState(r) {
   return { ...roomSummary(r), hostId: r.hostId, target: r.target, difficulty: r.difficulty, private: !!r.private, code: r.code || null, opts: cleanCustomOpts(r.opts), custom: !!r.custom, autoStartIn: r.autoStartAt ? Math.max(0, Math.ceil((r.autoStartAt - Date.now()) / 1000)) : 0, sizes: sizeOptions(r.mode), tournament: !!r.tournament, hasPassword: !!r.password,
-    members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, ready: m.ready, level: m.isBot ? null : m.level, prestige: m.prestige || 0, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
+    members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, team: m.team, agent: m.agent, isBot: m.isBot, botDiff: m.isBot ? m.botDiff || null : undefined, ready: m.ready, level: m.isBot ? null : m.level, prestige: m.prestige || 0, title: m.title || null, clan: m.clan || null, account: !!m.account })) };
 }
 // les salons privés n'apparaissent pas dans la liste publique
 const publicRooms = () => [...rooms.values()].filter(r => !r.private).map(roomSummary);
@@ -758,6 +758,19 @@ function handleLobby(c, msg) {
       const taken = !isFfa(r.mode) && [...r.members.values()].some(o => o !== m && o.team === m.team && o.agent === msg.agent);
       if (taken) { const bot = [...r.members.values()].find(o => o.isBot && o.team === m.team && o.agent === msg.agent); if (bot) { bot.agent = m.agent; } else break; }
       m.agent = msg.agent; pushRoom(r); break;
+    }
+    // parties perso (1.26) : l'hôte choisit l'agent et la difficulté de chaque bot avant la partie
+    case 'botSet': {
+      if (!isHost || !r || r.state !== 'lobby' || r.tournament) break;
+      const bot = r.members.get(msg.id); if (!bot || !bot.isBot) break;
+      if (msg.diff !== undefined) bot.botDiff = DIFFICULTIES.includes(msg.diff) ? msg.diff : null;
+      if (msg.agent !== undefined && AGENTS[msg.agent] && !agentOff(msg.agent)) {
+        const other = !isFfa(r.mode) && [...r.members.values()].find(o => o !== bot && o.team === bot.team && o.agent === msg.agent);
+        if (other && !other.isBot) { send(c.id, { type: 'error', text: `${AGENTS[msg.agent].name} est déjà joué par ${other.name}.` }); break; }
+        if (other) other.agent = bot.agent; // échange avec l'autre bot
+        bot.agent = msg.agent;
+      }
+      pushRoom(r); break;
     }
     case 'setSkins': {
       if (!c.account) c.skins = cleanSkins(msg.skins);

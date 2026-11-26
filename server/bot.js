@@ -233,7 +233,15 @@ export class BotBrain {
     if (w && WEAPONS[w.id].mag && w.mag === 0 && w.reserve === 0 && p.weapons[2] && p.slot !== 2) p.slot = 2;
 
     if (enemy) {
-      if (this.target !== enemy) { this.target = enemy; this.reactUntil = T + cfg.react * (0.75 + Math.random() * 0.6); this.aimHead = Math.random() < cfg.head; }
+      if (this.target !== enemy) {
+        this.target = enemy; this.reactUntil = T + cfg.react * (0.75 + Math.random() * 0.6); this.aimHead = Math.random() < cfg.head;
+        // nouvel ennemi repéré : le bot le marque pour ses coéquipiers humains (au plus toutes les 10 s)
+        if (!isFfa(m.mode) && T - (this.lastMark ?? -99) > 10 && [...m.players.values()].some(q => !q.isBot && q.team === p.team && q !== p)) {
+          this.lastMark = T;
+          const e0 = m.eye(p), to = [enemy.pos[0] - e0[0], enemy.pos[1] + 1.2 - e0[1], enemy.pos[2] - e0[2]];
+          m.handleMark(p, { d: to });
+        }
+      }
       const e = m.eye(p);
       const h = enemy.crouch ? PLAYER.hCrouch : PLAYER.h;
       const tp = [enemy.pos[0], enemy.pos[1] + (this.aimHead ? h - 0.17 : h * 0.62), enemy.pos[2]];

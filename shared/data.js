@@ -18,6 +18,8 @@ export const KNIFE_THROW = { damageMin: 45, damageMax: 80, headMul: 2.2, legMul:
 export const knifePower = (heldSeconds) => Math.max(KNIFE_THROW.minPower, Math.min(1, (heldSeconds || 0) / KNIFE_THROW.charge));
 // argent gagné en cas de défaite selon le nombre de défaites d'affilée (1 = première défaite)
 export const lossBonus = streak => Math.min(ROUND.lossMax, ROUND.lossMoney + ROUND.lossStep * Math.max(0, streak - 1));
+// temps mort tactique (1.26, Assaut) : une fois par équipe et par mi-temps, prolonge la phase d'achat
+export const TIMEOUT = { extra: 30, maxBuy: 75 };
 export const DUEL = { buyTime: 10, roundTime: 60, money: 9000 };
 
 export const FFA = { respawn: 3, timeLimit: 600, gunTimeLimit: 480, abilityRecharge: 18 };
@@ -39,12 +41,12 @@ export const PLAYER = { hw: 0.4, h: 1.8, hCrouch: 1.25, eye: 1.62, eyeCrouch: 1.
 export const WEAPONS = {
   knife:   { id: 'knife', name: 'Lame tactique', slot: 3, cost: 0, type: 'melee', damage: 50, headMul: 1.5, legMul: 1, rate: 2.2, range: 2.6, speed: 1.08, auto: true, model: 'knife' },
   spark:   { id: 'spark', name: 'Spark', slot: 2, cost: 0, type: 'pistol', damage: 26, headMul: 3, legMul: 0.85, rate: 6.5, mag: 12, reserve: 36, reload: 1.6, spread: 0.006, moveSpread: 0.03, airSpread: 0.15, recoil: 0.009, auto: false, pellets: 1, falloff: [30, 0.8], speed: 1, model: 'pistol' },
-  hornet:  { id: 'hornet', name: 'Hornet', slot: 2, cost: 800, type: 'pistol', damage: 55, headMul: 2.9, legMul: 0.85, rate: 2.8, mag: 7, reserve: 21, reload: 2.1, spread: 0.004, moveSpread: 0.05, airSpread: 0.2, recoil: 0.03, auto: false, pellets: 1, falloff: [30, 0.85], speed: 1, model: 'heavypistol' },
-  viper:   { id: 'viper', aim: 0.13, name: 'Viper', slot: 1, cost: 1600, type: 'smg', damage: 24, headMul: 2.7, legMul: 0.85, rate: 13, mag: 30, reserve: 90, reload: 2.2, spread: 0.012, moveSpread: 0.012, airSpread: 0.15, recoil: 0.006, auto: true, pellets: 1, falloff: [20, 0.75], speed: 0.97, model: 'smg', ads: { zoom: 1.2, spread: 0.65, move: 0.8, sight: 'reddot' } },
+  hornet:  { id: 'hornet', pen: 0.3, name: 'Hornet', slot: 2, cost: 800, type: 'pistol', damage: 55, headMul: 2.9, legMul: 0.85, rate: 2.8, mag: 7, reserve: 21, reload: 2.1, spread: 0.004, moveSpread: 0.05, airSpread: 0.2, recoil: 0.03, auto: false, pellets: 1, falloff: [30, 0.85], speed: 1, model: 'heavypistol' },
+  viper:   { id: 'viper', pen: 0.35, aim: 0.13, name: 'Viper', slot: 1, cost: 1600, type: 'smg', damage: 24, headMul: 2.7, legMul: 0.85, rate: 13, mag: 30, reserve: 90, reload: 2.2, spread: 0.012, moveSpread: 0.012, airSpread: 0.15, recoil: 0.006, auto: true, pellets: 1, falloff: [20, 0.75], speed: 0.97, model: 'smg', ads: { zoom: 1.2, spread: 0.65, move: 0.8, sight: 'reddot' } },
   brute:   { id: 'brute', aim: 0.17, name: 'Brute', slot: 1, cost: 1850, type: 'shotgun', damage: 13, headMul: 2, legMul: 0.85, rate: 1.15, mag: 6, reserve: 18, reload: 2.6, spread: 0.06, moveSpread: 0.01, airSpread: 0.1, recoil: 0.05, auto: false, pellets: 12, falloff: [12, 0.4], speed: 0.95, model: 'shotgun', ads: { zoom: 1.15, spread: 0.75, move: 0.8, sight: 'reddot' } },
-  tempest: { id: 'tempest', aim: 0.2, name: 'Tempest', slot: 1, cost: 2250, type: 'rifle', damage: 42, headMul: 3.6, legMul: 0.85, rate: 4.8, mag: 20, reserve: 60, reload: 2.4, spread: 0.003, moveSpread: 0.06, airSpread: 0.25, recoil: 0.016, auto: false, pellets: 1, falloff: [60, 0.9], speed: 0.94, model: 'dmr', ads: { zoom: 1.6, spread: 0.45, move: 0.7, sight: 'acog' } },
-  lancer:  { id: 'lancer', aim: 0.24, name: 'Lancer', slot: 1, cost: 2900, type: 'rifle', damage: 39, headMul: 4, legMul: 0.85, rate: 9.75, mag: 25, reserve: 75, reload: 2.5, spread: 0.004, moveSpread: 0.07, airSpread: 0.25, recoil: 0.011, auto: true, pellets: 1, falloff: [50, 0.9], speed: 0.92, model: 'rifle', ads: { zoom: 1.35, spread: 0.55, move: 0.75, sight: 'holo' } },
-  longbow: { id: 'longbow', aim: 0.38, name: 'Longbow', slot: 1, cost: 4700, type: 'sniper', damage: 150, headMul: 1.7, legMul: 0.85, rate: 0.75, mag: 5, reserve: 15, reload: 3.6, spread: 0.08, scopedSpread: 0.0005, moveSpread: 0.15, airSpread: 0.3, recoil: 0.07, auto: false, pellets: 1, falloff: [999, 1], speed: 0.85, scope: 3.5, model: 'sniper' },
+  tempest: { id: 'tempest', pen: 0.55, aim: 0.2, name: 'Tempest', slot: 1, cost: 2250, type: 'rifle', damage: 42, headMul: 3.6, legMul: 0.85, rate: 4.8, mag: 20, reserve: 60, reload: 2.4, spread: 0.003, moveSpread: 0.06, airSpread: 0.25, recoil: 0.016, auto: false, pellets: 1, falloff: [60, 0.9], speed: 0.94, model: 'dmr', ads: { zoom: 1.6, spread: 0.45, move: 0.7, sight: 'acog' } },
+  lancer:  { id: 'lancer', pen: 0.5, aim: 0.24, name: 'Lancer', slot: 1, cost: 2900, type: 'rifle', damage: 39, headMul: 4, legMul: 0.85, rate: 9.75, mag: 25, reserve: 75, reload: 2.5, spread: 0.004, moveSpread: 0.07, airSpread: 0.25, recoil: 0.011, auto: true, pellets: 1, falloff: [50, 0.9], speed: 0.92, model: 'rifle', ads: { zoom: 1.35, spread: 0.55, move: 0.75, sight: 'holo' } },
+  longbow: { id: 'longbow', pen: 0.8, aim: 0.38, name: 'Longbow', slot: 1, cost: 4700, type: 'sniper', damage: 150, headMul: 1.7, legMul: 0.85, rate: 0.75, mag: 5, reserve: 15, reload: 3.6, spread: 0.08, scopedSpread: 0.0005, moveSpread: 0.15, airSpread: 0.3, recoil: 0.07, auto: false, pellets: 1, falloff: [999, 1], speed: 0.85, scope: 3.5, model: 'sniper' },
 };
 // viseur (clic droit) : zoom, dispersion × spread, vitesse × move. Pistolets : pas de viseur ; Longbow : lunette (scope).
 export const WEAPON_ORDER = ['spark', 'hornet', 'viper', 'brute', 'tempest', 'lancer', 'longbow'];
@@ -65,7 +67,7 @@ export const CUSTOM_RULES = {
   respawn: { label: 'Réapparition', def: 0, modes: ['ffa', 'gungame'], opts: [[0, '3 s (normal)'], [1, '1 s'], [5, '5 s']] },
 };
 // interrupteurs des parties personnalisées
-export const CUSTOM_FLAGS = [['infAmmo', 'Munitions infinies'], ['noAbilities', 'Sans capacités (armes uniquement)'], ['headOnly', 'Tirs à la tête uniquement'], ['lowGrav', 'Gravité basse'], ['bigHead', 'Grosses têtes'], ['friendlyFire', 'Tir allié (dégâts divisés par deux)'], ['randomMap', 'Carte aléatoire à chaque partie']];
+export const CUSTOM_FLAGS = [['infAmmo', 'Munitions infinies'], ['noAbilities', 'Sans capacités (armes uniquement)'], ['headOnly', 'Tirs à la tête uniquement'], ['lowGrav', 'Gravité basse'], ['bigHead', 'Grosses têtes'], ['friendlyFire', 'Tir allié (dégâts divisés par deux)'], ['randomMap', 'Carte aléatoire à chaque partie'], ['knifeRound', 'Manche au couteau : le gagnant choisit son côté (Assaut)']];
 // armes autorisées selon la règle « Armes » (give : arme principale offerte à chaque apparition)
 export const WEAPON_RULES = {
   pistols: { allow: ['spark', 'hornet', 'knife'], give: null },
