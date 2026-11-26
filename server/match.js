@@ -3,6 +3,7 @@ import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWA
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
+import { doorsFor, lightsFor, courseFor, atCheckpoint, DOOR, LAMP, COURSE } from '../shared/props.js';
 import { WEAPON_UNLOCK } from '../shared/progress.js';
 // retard de la retransmission pour les amis spectateurs (ms)
 export const FRIEND_DELAY = 10000;
@@ -49,6 +50,10 @@ export class Match {
     this.resetEconomy = true;
     this.botSite = 'A';
     this.wallBoxesCache = null;
+    // objets interactifs (1.28) : portes coulissantes (F) et lampes qu'on peut casser
+    this.doors = doorsFor(this.map).map(d => ({ ...d, open: false, next: 0 }));
+    this.lamps = lightsFor(this.map);
+    this.lampsOff = new Set();
     this.paused = false; // pause décidée depuis l'administration
     // options du salon : munitions infinies, sans capacités, têtes uniquement, gravité basse
     const o = room.opts || {};
@@ -176,7 +181,7 @@ export class Match {
   eye(p) { return [p.pos[0], p.pos[1] + (p.crouch ? PLAYER.eyeCrouch : PLAYER.eye), p.pos[2]]; }
 
   allBoxes() {
-    if (!this.wallBoxesCache) this.wallBoxesCache = this.map.boxes.concat(this.walls);
+    if (!this.wallBoxesCache) this.wallBoxesCache = this.map.boxes.concat(this.walls, this.doors.filter(d => !d.open).map(d => d.box));
     return this.wallBoxesCache;
   }
 
@@ -288,6 +293,8 @@ export class Match {
     this.phaseEnd = this.time + (this.mode === 'duel' ? DUEL.buyTime : ROUND.buyTime);
     for (const tr of this.traps || []) this.broadcast({ type: 'trapGone', id: tr.id });
     this.projectiles = []; this.smokes = []; this.fires = []; this.walls = []; this.wallBoxesCache = null; this.drops = []; this.readyDone = false; this.traps = [];
+    for (const d of this.doors) { d.open = false; d.next = 0; } // chaque manche repart portes fermées, lampes allumées
+    this.lampsOff.clear();
     this.core = { status: 'carried', carrier: null, pos: null, site: null, plantedAt: 0 };
     this.botSite = Math.random() < 0.5 ? 'A' : 'B';
     const spawnSets = { atk: shuffle(this.map.spawns.atk.slice()), def: shuffle(this.map.spawns.def.slice()) };
@@ -501,7 +508,9 @@ export class Match {
       case 'chooseSide': if (this.phase === 'sidechoice' && p.team === this.knifeWinner && (msg.side === 'atk' || msg.side === 'def')) this.applySideChoice(msg.side, p); return;
       case 'timeout': return this.handleTimeout(p);
       case 'ability': return this.handleAbility(p, msg);
-      case 'interact': p.interact = !!msg.on; if (p.interact) p.interactPos = p.pos.slice(); return;
+      case 'interact': p.interact = !!msg.on; if (p.interact) { p.interactPos = p.pos.slice(); this.useDoor(p); } return;
+      case 'courseStart': return this.courseStart(p);
+      case 'courseStop': if (p.course) { p.course = null; this.send(p, { type: 'courseStop' }); } return;
       case 'mark': return this.handleMark(p, msg);
       case 'emote': return this.handleEmote(p, msg);
     }
@@ -567,6 +576,60 @@ export class Match {
     p.lastValid = { pos: np.slice(), t: T };
     p.pos = np;
     this.applyLook(p, m);
+    if (p.course) this.courseStep(p);
+  }
+
+  // ---- portes coulissantes : F près d'une porte l'ouvre ou la ferme ----
+  doorNear(p, reach = DOOR.reach) {
+    let best = null, bd = reach;
+    for (const d of this.doors) {
+      const b = d.box;
+      const dx = Math.max(b.min[0] - p.pos[0], 0, p.pos[0] - b.max[0]), dz = Math.max(b.min[2] - p.pos[2], 0, p.pos[2] - b.max[2]);
+      const dd = Math.hypot(dx, dz);
+      if (dd < bd) { bd = dd; best = d; }
+    }
+    return best;
+  }
+  useDoor(p, onlyOpen = false) {
+    if (!p.alive || !this.doors.length || this.phase === 'over') return false;
+    // pas de porte pendant qu'on pose ou désamorce le Noyau
+    const cell = this.map.cellAt(p.pos[0], p.pos[2]);
+    if (!p.isBot && ((this.core.carrier === p.id && (cell === 'A' || cell === 'B')) || (this.core.status === 'planted' && this.core.pos && Math.hypot(this.core.pos[0] - p.pos[0], this.core.pos[2] - p.pos[2]) < 2.6))) return false;
+    const d = this.doorNear(p);
+    if (!d || this.time < d.next || (onlyOpen && d.open)) return false;
+    if (d.open) {
+      // on ne referme pas une porte sur quelqu'un
+      const b = d.box, hw = PLAYER.hw + 0.05;
+      for (const q of this.players.values()) if (q.alive && q.pos[0] + hw > b.min[0] && q.pos[0] - hw < b.max[0] && q.pos[2] + hw > b.min[2] && q.pos[2] - hw < b.max[2]) return false;
+    }
+    d.open = !d.open; d.next = this.time + DOOR.cooldown; this.wallBoxesCache = null;
+    p.interact = false; // un appui = une action (pas de pose du Noyau en même temps)
+    this.broadcast({ type: 'door', i: d.i, o: d.open ? 1 : 0, by: p.id });
+    return true;
+  }
+
+  // ---- parcours chronométré (champ de tir) : le serveur vérifie chaque balise et mesure le temps ----
+  courseStart(p) {
+    if (this.difficulty !== 'cible' || !p.alive || p.isBot) return;
+    const c = courseFor(this.map);
+    if (c.cps.length < 3) return;
+    for (const d of this.doors) if (!d.open) { d.open = true; this.wallBoxesCache = null; this.broadcast({ type: 'door', i: d.i, o: 1 }); }
+    this.teleport(p, c.start.slice(), c.yaw);
+    p.course = { i: 0, go: this.time + COURSE.countdown };
+    p.trollFreeze = this.time + COURSE.countdown; // immobile pendant le compte à rebours
+    this.send(p, { type: 'courseGo', in: COURSE.countdown, n: c.cps.length });
+  }
+  courseStep(p) {
+    const c = courseFor(this.map), st = p.course;
+    if (this.time < st.go) return;
+    const cp = c.cps[st.i];
+    if (!cp || !atCheckpoint(cp, p.pos)) return;
+    st.i++;
+    const t = Math.round((this.time - st.go) * 1000) / 1000;
+    if (st.i < c.cps.length) { this.send(p, { type: 'courseCp', i: st.i, t }); return; }
+    p.course = null;
+    const res = this.io.onCourse ? this.io.onCourse(p, this.map.id, t) : null;
+    this.send(p, { type: 'courseEnd', t, ...(res || {}) });
   }
 
   // glissade : le client prévient au départ ; le serveur limite la fréquence et accorde un peu de distance
@@ -844,7 +907,7 @@ export class Match {
       findTarget(-1, wr.t);
       if (!target) bestT = wr.t;
       // balle qui traverse une caisse en bois (armes avec « pen ») : continue derrière avec moins de dégâts
-      if (!target && d.pen && wr.box && (wr.box.kind === 'crate' || wr.box.kind === 'crateHigh')) {
+      if (!target && d.pen && wr.box && (wr.box.kind === 'crate' || wr.box.kind === 'crateHigh' || wr.box.kind === 'door')) {
         const exitT = rayExit(origin, dir, wr.box.min, wr.box.max);
         if (exitT > wr.t && exitT - wr.t < 3.6) {
           const after = [origin[0] + dir[0] * (exitT + 0.01), origin[1] + dir[1] * (exitT + 0.01), origin[2] + dir[2] * (exitT + 0.01)];
@@ -852,6 +915,12 @@ export class Match {
           findTarget(exitT, exitT + wr2.t);
           if (target) through = true; else bestT = exitT + wr2.t;
         }
+      }
+      // lampe touchée avant tout le reste : elle se casse et arrête la balle
+      if (!target && d.type !== 'melee' && this.lamps.length) {
+        let lt = Infinity, lamp = null;
+        for (const l of this.lamps) { if (this.lampsOff.has(l.i)) continue; const t = raySphere(origin, dir, l.p, LAMP.r); if (t > 0 && t < bestT && t < lt) { lt = t; lamp = l; } }
+        if (lamp) { bestT = lt; this.lampsOff.add(lamp.i); this.broadcast({ type: 'lamp', i: lamp.i, by: p.id }); }
       }
       if (target && this.opts.headOnly && zone !== 'head' && d.type !== 'melee') target = null; // têtes uniquement
       if (target) {
@@ -898,6 +967,7 @@ export class Match {
 
   kill(v, a, wpn, head) {
     v.alive = false; v.hp = 0; v.deaths++; v.diedAt = this.time; v.interact = false; v.prog = 0;
+    if (v.course) { v.course = null; this.send(v, { type: 'courseStop', why: 'mort' }); }
     if (this.core.carrier === v.id) this.dropCore(v);
     // l'arme principale (sinon le pistolet acheté) tombe au sol et peut être ramassée
     if (this.dropsOn()) { const s = v.weapons[1] ? 1 : v.weapons[2] && v.weapons[2].id !== 'spark' ? 2 : 0; if (s) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = s === 2 ? this.newWeapon('spark') : null; } }
@@ -1452,6 +1522,8 @@ export class Match {
       fires: this.fires.map(f => ({ i: f.id, p: f.pos.map(r2), r: f.r, k: f.kind, u: r2(f.end - T) })),
       walls: this.walls.map(w => ({ i: w.wallId, min: w.min.map(r2), max: w.max.map(r2), hp: w.hp })),
       drops: this.drops.map(d => ({ i: d.id, w: d.w.id, p: d.pos.map(r2) })),
+      ...(this.doors.length ? { dr: this.doors.map(d => d.open ? 1 : 0).join('') } : {}),
+      ...(this.lampsOff.size ? { lo: [...this.lampsOff] } : {}),
     };
     const commonStr = JSON.stringify(common).slice(1);
     const meCache = new Map();

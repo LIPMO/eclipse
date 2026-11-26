@@ -227,3 +227,7 @@ export function playNotify() { if (!ctx) return; const t = ctx.currentTime; tone
 export function playPromote() { if (!ctx) return; const t = ctx.currentTime; tone(C('ui'), t, 0.15, 600, 1200, 'square', 0.08); tone(C('ui'), t + 0.12, 0.25, 1200, 1200, 'triangle', 0.18); }
 export function playWhoosh() { if (!ctx) return; const t = ctx.currentTime; noise(C('ui'), t, 0.6, 900, 0.7, 'bandpass', 0.5); tone(C('ui'), t, 0.5, 200, 60, 'sine', 0.25); }
 export function playTick(last = false) { if (!ctx) return; tone(C('ui'), ctx.currentTime, 0.07, last ? 1400 : 1000, last ? 1400 : 1000, 'sine', 0.15); }
+// objets interactifs (1.28) : porte coulissante, lampe brisée, escalade
+export function playDoor(pos, open = true) { if (!ctx) return; const t = ctx.currentTime; const o = out(pos, 40, 'abilities'); tone(o, t, 0.7, open ? 70 : 110, open ? 110 : 60, 'sawtooth', 0.12); noise(o, t, 0.75, 700, 0.6, 'lowpass', 0.35); noise(o, t + 0.62, 0.15, 300, 1, 'lowpass', 0.5); }
+export function playGlass(pos) { if (!ctx) return; const t = ctx.currentTime; const o = out(pos, 45, 'abilities'); noise(o, t, 0.35, 6500, 1.5, 'highpass', 0.6); for (let i = 0; i < 4; i++) tone(o, t + 0.03 + i * 0.05, 0.12, 3000 + Math.random() * 3000, 2500, 'sine', 0.06); }
+export function playMantle() { if (!ctx) return; const t = ctx.currentTime; noise(C('steps'), t, 0.12, 500, 1, 'lowpass', 0.45); noise(C('steps'), t + 0.22, 0.1, 900, 1, 'bandpass', 0.35); }

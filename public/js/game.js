@@ -1,7 +1,8 @@
 // Client de jeu : rendu, prédiction du mouvement local, tir, capacités, HUD.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
+import { parseMap, CELL, MAP_INFO, WALL_H } from '/shared/maps.js';
+import { doorsFor, lightsFor, courseFor, DOOR, COURSE } from '/shared/props.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
 import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower, recoilX, RECOIL_PATTERNS } from '/shared/data.js';
 import { tr } from './i18n.js';
@@ -117,6 +118,7 @@ export class Game {
 
     this.initRenderer();
     this.buildMap();
+    this.buildProps();
     this.setupBloom();
     this.initViewmodel();
     this.initHUD();
@@ -976,6 +978,7 @@ export class Game {
       case 'lastWeapon': if (this.prevSlot && this.me?.wp?.[this.prevSlot]) this.switchSlot(this.prevSlot); break;
       case 'bigMap': $('minimap').classList.add('big'); break;
       case 'ready': this.sendReady(); break;
+      case 'course': if (this.range) { if (this.course) this.net.send('courseStop'); else this.startCourse(); } break;
       case 'rebuy': this.rebuy(); break;
       case 'mark': if (this.me?.al && !this.ended) this.net.send('mark', { d: this.aimDir() }); break;
       case 'emote': this.toggleEmote(); break;
@@ -1084,6 +1087,8 @@ export class Game {
     $('p-surrender').onclick = () => { if (confirm('Proposer à ton équipe d\'abandonner la partie ? (vote, à partir de la manche 4)')) { this.net.send('chat', { text: '/ff' }); this.showPause(false); } };
     $('p-challenge').style.display = this.range ? '' : 'none';
     $('p-challenge').onclick = () => { this.lock(); this.startChallenge(); };
+    $('p-course').style.display = this.range ? '' : 'none';
+    $('p-course').onclick = () => { this.lock(); this.startCourse(); };
   }
 
   openSettings() {
@@ -1599,6 +1604,13 @@ export class Game {
     on('readyState', m => { this.readyN = m; if (m.name !== this.roster.get(this.myId)?.name) this.caption(`${m.name} est prêt (${m.n}/${m.total})`, null, 'ready', 0, 0.2); });
     on('dmgReport', m => this.showDmgReport(m.rows));
     on('wallBreak', () => SFX.playAbility('wall', null));
+    // portes, lampes et parcours (1.28)
+    on('door', m => { const d = this.doorList?.[m.i]; if (!d) return; this.setDoor(d, !!m.o); SFX.playDoor([d.center[0], 1.5, d.center[1]], !!m.o); });
+    on('lamp', m => { const l = this.lampList?.[m.i]; if (l && !l.off) this.setLamp(l, true, true); });
+    on('courseGo', m => this.onCourseGo(m));
+    on('courseCp', m => this.onCourseCp(m));
+    on('courseEnd', m => this.onCourseEnd(m));
+    on('courseStop', m => { if (this.course) { this.course = null; this.showCourseMarkers(false); $('course-hud').innerHTML = ''; if (m.why) this.centerMsg('PARCOURS ANNULÉ', 1.5); } });
     on('mark', m => this.addMark(m));
     // pièges de Kora (1.19) : visibles seulement par son équipe
     on('trap', m => {
@@ -1703,9 +1715,10 @@ export class Game {
     }
     for (const [id, mesh] of this.wallMeshes) if (!wallIds.has(id)) { this.scene.remove(mesh); this.wallMeshes.delete(id); wallsChanged = true; }
     if (wallsChanged) {
-      this.boxes = this.map.boxes.concat([...this.wallMeshes.values()].map(m => m.userData.box));
+      this.rebuildBoxes();
       if (this.me?.al) depenetrate(this.local.pos, [...this.wallMeshes.values()].map(m => m.userData.box));
     }
+    this.syncProps(s);
     // fumées
     const smokeIds = new Set(s.smokes.map(x => x.i));
     for (const sm of s.smokes) {
@@ -1895,7 +1908,7 @@ export class Game {
     if (!alive) return;
     const ph = this.snap?.ph;
     const def = WEAPONS[this.curWeaponId()];
-    const frozen = ph === 'warmup' || ph === 'over' || (this.interacting && this.me?.pr) || this.chatOpen || this.trollOn('freeze');
+    const frozen = ph === 'warmup' || ph === 'over' || (this.interacting && this.me?.pr) || this.chatOpen || this.trollOn('freeze') || (this.course && now < this.course.go);
     L.crouch = H.has('crouch') && !frozen;
     let f = 0, s = 0;
     if (!frozen) { f = (H.has('forward') ? 1 : 0) - (H.has('back') ? 1 : 0); s = (H.has('right') ? 1 : 0) - (H.has('left') ? 1 : 0); }
@@ -1940,11 +1953,16 @@ export class Game {
       if (L.slideT > 0) { L.slideT = 0; const hv = Math.hypot(L.vel[0], L.vel[2]), cap = MOVE.slideSpeed * MOVE.slideJumpKeep * (def.speed || 1) * (this.me.sm || 1); if (hv > cap) { L.vel[0] *= cap / hv; L.vel[2] *= cap / hv; } }
       L.vel[1] = MOVE.jump; L.onGround = false; SFX.playJump();
     }
-    L.vel[1] -= MOVE.gravity * (this.opts.lowGrav ? 0.45 : 1) * dt;
+    // escalade (1.28) : saut maintenu face à un rebord atteignable → on se hisse dessus
+    if (!L.mantle && H.has('jump') && !L.onGround && !frozen && !L.crouch && L.vel[1] > -7 && ST().mantle !== false) this.tryMantle(now, f > 0.3);
     const prev = L.pos.slice();
-    const wasGround = L.onGround, fallV = L.vel[1];
-    L.onGround = collideMove(L.pos, L.vel, dt, this.boxes);
-    if (L.onGround && !wasGround && fallV < -3) SFX.playLand(fallV < -11);
+    if (L.mantle) this.updateMantle(dt, now);
+    else {
+      L.vel[1] -= MOVE.gravity * (this.opts.lowGrav ? 0.45 : 1) * dt;
+      const wasGround = L.onGround, fallV = L.vel[1];
+      L.onGround = collideMove(L.pos, L.vel, dt, this.boxes);
+      if (L.onGround && !wasGround && fallV < -3) SFX.playLand(fallV < -11);
+    }
     if (ph === 'buy' && !isFfa(this.mode)) {
       const allowed = this.me.side === 'atk' ? 'T' : 'D';
       if (this.map.cellAt(L.pos[0], L.pos[2]) !== allowed) { L.pos[0] = prev[0]; L.pos[2] = prev[2]; L.vel[0] = L.vel[2] = 0; }
@@ -2114,6 +2132,7 @@ export class Game {
     if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) { this.vmFlash.visible = false; } }
     this.muzzleLight.intensity *= Math.exp(-dt * 40);
     for (const m of this.wallMeshes.values()) m.scale.y = Math.min(1, m.scale.y + dt * 4);
+    this.updateProps(dt, now);
     for (const g of this.smokeMeshes.values()) {
       const age = now - g.userData.born;
       g.scale.setScalar(Math.min(1, 0.2 + age * 1.6));
@@ -2369,6 +2388,11 @@ export class Game {
       else if (me.side === 'def' && s.ph === 'planted' && s.core.p && Math.hypot(s.core.p[0] - this.local.pos[0], s.core.p[2] - this.local.pos[2]) < 2.3) hint = `MAINTENEZ ${KB('interact')} POUR DÉSAMORCER`;
       else if (s.ph === 'buy') hint = `${KB('buy')} — MENU D'ACHAT`;
     }
+    if (!hint && me.al && this.doorList?.length) {
+      const d = this.doorNear(DOOR.reach - 0.2);
+      if (d) hint = `${KB('interact')} — ${d.open ? 'FERMER' : 'OUVRIR'} LA PORTE`;
+    }
+    if (!hint && me.al && this.range && !this.course && !this.chal) hint = `${KB('ready')} — DÉFI DE VISÉE · ${KB('course')} — PARCOURS CHRONOMÉTRÉ`;
     $('core-hint').textContent = hint;
     $('core-hint').classList.toggle('warn', hint.startsWith('⚠'));
     const pr = $('progress');
@@ -2510,9 +2534,227 @@ export class Game {
     el.classList.add('show');
     clearTimeout(this.drT); this.drT = setTimeout(() => el.classList.remove('show'), 6500);
   }
+  // ---- escalade (1.28) ----
+  tryMantle(now, forward) {
+    const L = this.local;
+    if (!forward || now < (L.mantleReady || 0)) return false;
+    const dx = -Math.sin(L.yaw), dz = -Math.cos(L.yaw);
+    const px = L.pos[0] + dx * (PLAYER.hw + 0.3), pz = L.pos[2] + dz * (PLAYER.hw + 0.3);
+    let top = -1;
+    for (const b of this.boxes) {
+      if (px <= b.min[0] || px >= b.max[0] || pz <= b.min[2] || pz >= b.max[2]) continue;
+      if (b.min[1] > L.pos[1] + 0.6) continue; // rebord au-dessus de la tête : rien à attraper ici
+      const h = b.max[1] - L.pos[1];
+      if (h > 0.35 && h <= MOVE.mantleReach && b.max[1] > top) top = b.max[1];
+    }
+    if (top < 0) return false;
+    // place libre en haut (dans la direction du regard) et au-dessus de soi pendant la montée
+    const fit = p => !this.boxes.some(o => p[0] + PLAYER.hw > o.min[0] && p[0] - PLAYER.hw < o.max[0] && p[1] + PLAYER.h > o.min[1] && p[1] < o.max[1] && p[2] + PLAYER.hw > o.min[2] && p[2] - PLAYER.hw < o.max[2]);
+    const up = [L.pos[0], top + 0.02, L.pos[2]];
+    let to = null;
+    for (const k of [0.95, 1.25, 0.7]) { const c = [L.pos[0] + dx * k, top + 0.02, L.pos[2] + dz * k]; if (fit(c) && groundHeight(c[0], c[2], top + 0.05, this.boxes) >= top - 0.05) { to = c; break; } }
+    if (!to || !fit(up)) return false;
+    L.mantle = { t: 0, dur: MOVE.mantleTime * Math.max(0.6, (top - L.pos[1]) / MOVE.mantleReach), from: L.pos.slice(), to };
+    L.vel[0] = L.vel[1] = L.vel[2] = 0; L.slideT = 0;
+    this.mantles = (this.mantles || 0) + 1;
+    SFX.playMantle();
+    return true;
+  }
+  updateMantle(dt, now) {
+    const L = this.local, M = L.mantle;
+    M.t += dt;
+    const k = Math.min(1, M.t / M.dur), ease = x => 1 - (1 - x) * (1 - x);
+    const ky = ease(Math.min(1, k / 0.65)), kh = ease(Math.max(0, (k - 0.4) / 0.6));
+    L.pos[1] = M.from[1] + (M.to[1] - M.from[1]) * ky;
+    L.pos[0] = M.from[0] + (M.to[0] - M.from[0]) * kh;
+    L.pos[2] = M.from[2] + (M.to[2] - M.from[2]) * kh;
+    L.vel[0] = L.vel[1] = L.vel[2] = 0;
+    L.onGround = false;
+    if (k >= 1) { L.mantle = null; L.onGround = true; L.mantleReady = now + 0.25; }
+  }
+
+  // ---- objets interactifs (1.28) : portes coulissantes et lampes ----
+  buildProps() {
+    const S = this.scene, th = this.map.theme;
+    const doorMat = new THREE.MeshStandardMaterial({ color: th.night ? '#2c3150' : '#59606b', metalness: 0.55, roughness: 0.5 });
+    const stripeMat = new THREE.MeshStandardMaterial({ color: th.accent, emissive: th.accent, emissiveIntensity: 0.8 });
+    this.doorList = doorsFor(this.map).map(d => {
+      const b = d.box, half = d.width / 2, thick = d.axis === 'x' ? b.max[2] - b.min[2] : b.max[0] - b.min[0];
+      const g = new THREE.Group();
+      g.position.set(d.center[0], 0, d.center[1]);
+      if (d.axis === 'z') g.rotation.y = Math.PI / 2;
+      const leaves = [-1, 1].map(side => {
+        const leaf = new THREE.Group();
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(half, WALL_H, thick), doorMat);
+        panel.position.y = WALL_H / 2; panel.castShadow = panel.receiveShadow = true; leaf.add(panel);
+        for (const y of [1.1, 2.6]) { const st = new THREE.Mesh(new THREE.BoxGeometry(half * 0.94, 0.1, thick + 0.04), stripeMat); st.position.y = y; leaf.add(st); }
+        const edge = new THREE.Mesh(new THREE.BoxGeometry(0.08, WALL_H, thick + 0.05), stripeMat); edge.position.set(-side * half / 2, WALL_H / 2, 0); leaf.add(edge);
+        leaf.position.x = side * half / 2; leaf.userData.side = side;
+        g.add(leaf); return leaf;
+      });
+      S.add(g);
+      return { ...d, half, g, leaves, open: false, k: 0 };
+    });
+    // lampes murales : ampoule + halo ; une balle les casse jusqu'à la manche suivante
+    const pc = document.createElement('canvas'); pc.width = pc.height = 64;
+    const pg = pc.getContext('2d'), grd = pg.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(1, 'rgba(255,255,255,0)'); pg.fillStyle = grd; pg.fillRect(0, 0, 64, 64);
+    const poolTex = new THREE.CanvasTexture(pc);
+    const lampCol = th.night ? th.accent : '#ffd98a';
+    const bracketMat = new THREE.MeshStandardMaterial({ color: '#2a2a2e', metalness: 0.7, roughness: 0.4 });
+    this.lampList = lightsFor(this.map).map(l => {
+      const g = new THREE.Group();
+      g.position.set(l.p[0], l.p[1], l.p[2]);
+      g.rotation.y = Math.atan2(l.n[0], l.n[2]);
+      const br = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.1, 0.34), bracketMat); br.position.set(0, 0.1, -0.05); g.add(br);
+      const bulbMat = new THREE.MeshStandardMaterial({ color: '#fff6dc', emissive: lampCol, emissiveIntensity: 2.4 });
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), bulbMat); bulb.position.set(0, -0.04, 0.05); g.add(bulb);
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(1.5, 3.3, 18, 1, true), new THREE.MeshBasicMaterial({ color: lampCol, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      cone.position.set(0, -1.65, 0.55); g.add(cone);
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 4.6), new THREE.MeshBasicMaterial({ map: poolTex, color: lampCol, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }));
+      pool.rotation.x = -Math.PI / 2; pool.position.set(0, -l.p[1] + 0.03, 1.1); g.add(pool);
+      S.add(g);
+      return { ...l, g, bulb, cone, pool, off: false, col: lampCol };
+    });
+    this.rebuildBoxes();
+  }
+  rebuildBoxes() {
+    this.boxes = this.map.boxes.concat([...this.wallMeshes.values()].map(m => m.userData.box), (this.doorList || []).filter(d => !d.open).map(d => d.box));
+  }
+  doorNear(reach = DOOR.reach) {
+    let best = null, bd = reach; const p = this.local.pos;
+    for (const d of this.doorList || []) {
+      const b = d.box, dx = Math.max(b.min[0] - p[0], 0, p[0] - b.max[0]), dz = Math.max(b.min[2] - p[2], 0, p[2] - b.max[2]);
+      const dd = Math.hypot(dx, dz); if (dd < bd) { bd = dd; best = d; }
+    }
+    return best;
+  }
+  setDoor(d, open) {
+    if (d.open === open) return;
+    d.open = open;
+    this.rebuildBoxes();
+    if (!open && this.me?.al) depenetrate(this.local.pos, [d.box]);
+  }
+  setLamp(l, off, fx = false) {
+    l.off = off;
+    l.bulb.material.emissiveIntensity = off ? 0 : 2.4;
+    l.bulb.material.color.set(off ? '#333' : '#fff6dc');
+    l.cone.visible = l.pool.visible = !off;
+    if (off && fx) {
+      SFX.playGlass(l.p);
+      // éclats de verre
+      const geo = new THREE.BufferGeometry(), n = 14, pos = new Float32Array(n * 3), vel = [];
+      for (let i = 0; i < n; i++) { pos.set(l.p, i * 3); vel.push([(Math.random() - 0.5) * 3 + l.n[0] * 1.5, Math.random() * 2, (Math.random() - 0.5) * 3 + l.n[2] * 1.5]); }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: '#e8f6ff', size: 0.07, transparent: true, opacity: 0.9 }));
+      this.scene.add(pts);
+      (this.glassFx ||= []).push({ pts, vel, t: 0 });
+    }
+  }
+  syncProps(s) {
+    if (this.doorList?.length && typeof s.dr === 'string') this.doorList.forEach((d, i) => this.setDoor(d, s.dr[i] === '1'));
+    if (this.lampList?.length) { const off = new Set(s.lo || []); for (const l of this.lampList) if (off.has(l.i) !== l.off) this.setLamp(l, off.has(l.i)); }
+  }
+  updateProps(dt, now) {
+    for (const d of this.doorList || []) {
+      const tgt = d.open ? 1 : 0;
+      if (d.k === tgt) continue;
+      d.k = tgt > d.k ? Math.min(1, d.k + dt * 2.2) : Math.max(0, d.k - dt * 2.2);
+      for (const leaf of d.leaves) leaf.position.x = leaf.userData.side * (d.half / 2 + d.half * 0.97 * d.k);
+    }
+    if (this.glassFx?.length) {
+      for (const fx of this.glassFx) {
+        fx.t += dt; const a = fx.pts.geometry.attributes.position;
+        for (let i = 0; i < fx.vel.length; i++) { const v = fx.vel[i]; v[1] -= 12 * dt; a.setXYZ(i, a.getX(i) + v[0] * dt, Math.max(0.02, a.getY(i) + v[1] * dt), a.getZ(i) + v[2] * dt); }
+        a.needsUpdate = true; fx.pts.material.opacity = Math.max(0, 0.9 - fx.t * 0.6);
+      }
+      this.glassFx = this.glassFx.filter(fx => { if (fx.t < 1.5) return true; this.scene.remove(fx.pts); fx.pts.geometry.dispose(); fx.pts.material.dispose(); return false; });
+    }
+    if (this.course) this.updateCourse(now);
+    if (this.lampList?.length) for (const l of this.lampList) if (!l.off) l.bulb.material.emissiveIntensity = 2.2 + Math.sin(now * 7 + l.i) * 0.08;
+  }
+
+  // ---- parcours chronométré (champ de tir, 1.28) : le serveur valide les balises et le temps ----
+  startCourse() {
+    if (!this.range || this.course || !this.me?.al) return;
+    if (this.chal) { this.centerMsg('TERMINE D\'ABORD LE DÉFI DE VISÉE', 1.5); return; }
+    this.net.send('courseStart');
+  }
+  buildCourseMarkers() {
+    if (this.courseMarkers) return;
+    const c = courseFor(this.map), acc = this.map.theme.accent;
+    this.courseDef = c;
+    this.courseMarkers = c.cps.map((cp, i) => {
+      const g = new THREE.Group(); g.position.set(cp.p[0], cp.p[1], cp.p[2]);
+      const ringMat = new THREE.MeshBasicMaterial({ color: acc, transparent: true, opacity: 0.85, depthWrite: false });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(COURSE.r, 0.07, 8, 40), ringMat); ring.rotation.x = Math.PI / 2; ring.position.y = 0.08; g.add(ring);
+      const wall = new THREE.Mesh(new THREE.CylinderGeometry(COURSE.r, COURSE.r, 2.4, 32, 1, true), new THREE.MeshBasicMaterial({ color: acc, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      wall.position.y = 1.2; g.add(wall);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 40, 8, 1, true), new THREE.MeshBasicMaterial({ color: acc, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
+      beam.position.y = 20; g.add(beam);
+      // numéro de la balise
+      const cv = document.createElement('canvas'); cv.width = cv.height = 64; const x = cv.getContext('2d');
+      x.fillStyle = '#fff'; x.font = 'bold 44px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(i === c.cps.length - 1 ? '🏁' : String(i + 1), 32, 34);
+      const num = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false, transparent: true }));
+      num.position.y = 3.1; num.scale.set(0.9, 0.9, 0.9); g.add(num);
+      g.visible = false; this.scene.add(g);
+      return { g, ring, wall, beam };
+    });
+  }
+  showCourseMarkers(on) {
+    if (on) this.buildCourseMarkers();
+    for (const m of this.courseMarkers || []) m.g.visible = false;
+  }
+  onCourseGo(m) {
+    const now = performance.now() / 1000;
+    this.buildCourseMarkers();
+    this.course = { go: now + m.in, i: 0, n: m.n, cd: Math.ceil(m.in) + 1, last: 0 };
+    this.chal = null; if ($('chal')) $('chal').innerHTML = '';
+    $('course-res')?.classList.remove('show');
+    this.local.vel[0] = this.local.vel[1] = this.local.vel[2] = 0; this.local.mantle = null;
+  }
+  onCourseCp(m) {
+    if (!this.course) return;
+    this.course.i = m.i; this.course.last = m.t;
+    SFX.playTick(); this.centerMsg(`BALISE ${m.i} / ${this.course.n} · ${m.t.toFixed(2)} s`, 1);
+  }
+  onCourseEnd(m) {
+    this.course = null; this.showCourseMarkers(false); $('course-hud').innerHTML = '';
+    SFX.playUI(m.rec ? 'win' : 'roundStart');
+    this.banner(m.rec ? 'NOUVEAU RECORD' : 'PARCOURS TERMINÉ', `${m.t.toFixed(2)} s`, m.rec ? 'win' : '', 3);
+    const el = $('course-res');
+    const rows = (m.top || []).map((r, i) => `<li class="${r.n === this.roster.get(this.myId)?.name ? 'me' : ''}"><span>${i + 1}.</span><b>${esc(r.n)}</b><em>${r.t.toFixed(2)} s</em></li>`).join('');
+    el.innerHTML = `<div class="cr-t">${m.rec ? '🏆 NOUVEAU RECORD' : 'PARCOURS TERMINÉ'}</div>
+      <div class="cr-time">${m.t.toFixed(2)} s</div>
+      <div class="muted">${m.guest ? 'Invité : connecte-toi pour enregistrer ton temps.' : `Ton record : ${(m.best || m.t).toFixed(2)} s · ${m.rank}<sup>e</sup> sur ${m.total}`}</div>
+      ${rows ? `<div class="cr-sub">CLASSEMENT · ${esc(MAP_NAMES[this.map.id] || this.map.id)}</div><ol>${rows}</ol>` : ''}
+      <div class="muted">${esc(KB('course'))} pour recommencer</div>`;
+    el.classList.add('show');
+    clearTimeout(this.courseResT); this.courseResT = setTimeout(() => el.classList.remove('show'), 14000);
+  }
+  updateCourse(now) {
+    const c = this.course, def = this.courseDef;
+    if (now < c.go) {
+      const n = Math.ceil(c.go - now);
+      if (n !== c.cd) { c.cd = n; this.centerMsg(`PARCOURS : ${n}…`, 1); SFX.playTick(); }
+    } else if (c.cd) { c.cd = 0; this.centerMsg('PARTEZ !', 1); SFX.playTick(true); }
+    const t = Math.max(0, now - c.go);
+    this.courseMarkers.forEach((mk, i) => {
+      const next = i === c.i, soon = i === c.i + 1;
+      mk.g.visible = i >= c.i && i <= c.i + 1;
+      mk.wall.material.opacity = next ? 0.16 + Math.sin(now * 6) * 0.05 : 0.05;
+      mk.ring.material.opacity = next ? 0.95 : 0.35;
+      mk.beam.visible = next; mk.ring.scale.setScalar(next ? 1 + Math.sin(now * 4) * 0.04 : 1);
+      if (soon) mk.wall.material.opacity = 0.04;
+    });
+    const cp = def.cps[c.i];
+    const dist = cp ? Math.round(Math.hypot(cp.p[0] - this.local.pos[0], cp.p[2] - this.local.pos[2])) : 0;
+    $('course-hud').innerHTML = `<div class="ch-t">⏱ ${t.toFixed(2)} s</div><div>Balise <b>${Math.min(c.i + 1, c.n)}</b> / ${c.n}${cp?.top ? ' · <b>en hauteur</b>' : ''} · ${dist} m</div><div class="muted">${esc(KB('course'))} pour abandonner</div>`;
+  }
+
   // ---- défi de visée de 60 s (champ de tir) ----
   startChallenge() {
-    if (!this.range || this.chal) return;
+    if (!this.range || this.chal || this.course) return;
     const now = performance.now() / 1000;
     let drill = null; try { drill = localStorage.getItem('eclipse_drill'); } catch { /* */ }
     this.chal = { end: now + 63, start: now + 3, shots: 0, hits: 0, kills: 0, hs: 0, cd: 3, mode: drill === 'hs' ? 'hs' : 'aim' };

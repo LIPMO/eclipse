@@ -327,6 +327,8 @@ export class BotBrain {
       this.vel[0] = this.dashDir[0] / n * MOVE.dashSpeed; this.vel[2] = this.dashDir[1] / n * MOVE.dashSpeed;
       if (this.dashT <= 0) this.dashDir = null;
     }
+    // porte fermée sur le chemin : le bot l'ouvre (1.28)
+    if ((wishX || wishZ) && m.doors?.length) { const d = m.doorNear(p, 1.3); if (d && !d.open) m.useDoor(p, true); }
     this.vel[1] -= MOVE.gravity * (m.opts?.lowGrav ? 0.45 : 1) * dt;
     this.onGround = collideMove(p.pos, this.vel, dt, m.allBoxes());
     // anti-blocage

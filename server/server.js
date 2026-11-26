@@ -435,6 +435,22 @@ function startMatch(r) {
     eventBigHead: () => !!admin.state.config.eventBigHead,
     eventTurbo: () => !!admin.state.config.eventTurbo,
     slideEnabled: () => admin.state.config.slide !== false,
+    // parcours chronométré (1.28) : meilleur temps par carte sur le compte + classement des 10 meilleurs
+    onCourse: (p, mapId, t) => {
+      const u = p.account ? accounts.get(p.account) : null;
+      let best = null, rec = false;
+      if (u) {
+        u.courseBest ||= {};
+        const prev = u.courseBest[mapId];
+        rec = !(prev > 0) || t < prev;
+        if (rec) { u.courseBest[mapId] = t; accounts.save(); }
+        best = u.courseBest[mapId];
+        admin.log?.('parcours', `${u.name} : ${t.toFixed(2)} s sur ${mapId}${rec ? ' (record)' : ''}`);
+      }
+      const rows = Object.values(accounts.data.users).filter(x => x && x.courseBest?.[mapId] > 0).map(x => ({ n: x.name, t: x.courseBest[mapId] })).sort((a, b) => a.t - b.t || a.n.localeCompare(b.n));
+      const rank = u ? rows.findIndex(r => r.n === u.name) + 1 : rows.filter(r => r.t < t).length + 1;
+      return { best, rec, rank, total: rows.length, top: rows.slice(0, 10), guest: !u };
+    },
     onOver: () => {
       if (r.tournament) return;
       const pool = allowedMaps(r.mode).filter(id => id !== r.mapId);
