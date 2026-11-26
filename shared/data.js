@@ -29,7 +29,8 @@ export const RECOIL_PATTERNS = {
   hornet: [0, 0.2, -0.2, 0.3, -0.3, 0.2, -0.2],
   spark: [0, 0.15, -0.15, 0.2, -0.2],
 };
-export const recoilX = (id, n) => { const p = RECOIL_PATTERNS[id]; return p ? p[n % p.length] : 0; };
+// n peut être à virgule (le compteur de rafale redescend entre deux tirs) : on prend la case entière
+export const recoilX = (id, n) => { const p = RECOIL_PATTERNS[id]; const i = Math.max(0, Math.floor(Number(n) || 0)); return p ? (p[i % p.length] || 0) : 0; };
 export const DUEL = { buyTime: 10, roundTime: 60, money: 9000 };
 
 export const FFA = { respawn: 3, timeLimit: 600, gunTimeLimit: 480, abilityRecharge: 18 };

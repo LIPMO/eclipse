@@ -10,14 +10,13 @@ export const DEFAULT_KEYS = {
 };
 export const DEFAULT_SETTINGS = {
   // souris
-  sound3d: true,
   sens: 1, sensY: 1, scopeSens: 1, invertY: false, touchSens: 1, touchSize: 1, touchOpacity: 0.55, touchLeft: false,
   // vidéo
   fov: 100, vmFov: 62, renderScale: 1, brightness: 1.05, quality: 'high', gfxPreset: 'custom', fpsCap: 0, lowFpsTip: true, bloom: true, relief: true, particles: true,
   // interface
   fps: false, minimap: true, hitmarker: true, killcam: true, bob: true, leftHand: false, enemyColor: '#ff4f6d', allyColor: '#19e3c4',
   netGraph: false, damageNumbers: true, dmgNumPos: 'target', chatMode: 'all', chatSize: 1, hudScale: 1, confirmQuit: true,
-  minimapRotate: false, minimapZoom: 1, heardOnMap: true, chEnemy: false, lowAmmoWarn: true, roundBeeps: true, dmgReport: true,
+  minimapRotate: false, minimapZoom: 1, heardOnMap: true, chEnemy: true, lowAmmoWarn: true, roundBeeps: true, dmgReport: true,
   // commandes
   crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true, slide: true,
   // 1.15
@@ -49,6 +48,8 @@ const savedSettings = data.settings || {};
 if (savedSettings.cross && !savedSettings.chColor) savedSettings.chColor = savedSettings.cross; // ancienne version
 data.settings = { ...structuredClone(DEFAULT_SETTINGS), ...savedSettings, keys: { ...DEFAULT_KEYS, ...(savedSettings.keys || {}) } };
 delete data.settings.cross;
+// 1.27.1 : le viseur rouge sur un ennemi devient actif par défaut (une seule fois ; on peut le couper ensuite)
+if (!data.settings.chEnemyOn) { data.settings.chEnemy = true; data.settings.chEnemyOn = 1; }
 data.equipped = { ...defaults().equipped, ...(data.equipped || {}) };
 export const profile = data;
 // Session de compte (jeton). Les données du compte viennent du serveur.

@@ -182,7 +182,6 @@ const SECTIONS = [
   ] },
   { id: 'audio', title: 'Audio', items: [
     { k: 'vol', t: 'range', label: 'Volume général', min: 0, max: 1, step: 0.05, pct: true },
-    { k: 'sound3d', t: 'toggle', label: 'Son 3D (devant, derrière, hauteur, murs)', hint: 'Idéal au casque. Désactive-le si ton ordinateur rame pendant les grosses fusillades.' },
     { k: 'hitSound', t: 'toggle', label: 'Son de touche' },
     { k: 'killSound', t: 'select', label: 'Son d\'élimination', opts: [['classic', 'Classique'], ['ding', 'Ding'], ['coin', 'Pièce'], ['bell', 'Cloche'], ['laser', 'Laser'], ['off', 'Aucun']] },
     { k: 'volWeapons', t: 'range', label: 'Volume : armes et dégâts', min: 0, max: 1.5, step: 0.05, pct: true },

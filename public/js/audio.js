@@ -9,12 +9,13 @@ const catNode = {};
 const C = name => catNode[name] || master;
 export function setCategoryVolume(name, v) { catVol[name] = v; if (catNode[name]) catNode[name].gain.value = v; }
 const listener = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
-let use3d = true, occlusionFn = null, activeHrtf = 0;
+// son 3D (HRTF + murs) retiré en 1.27.1 : son stéréo gauche/droite seulement
+let use3d = false, occlusionFn = null, activeHrtf = 0;
 const MAX_HRTF = 24; // au-delà (grosse fusillade), les sons suivants passent en stéréo simple pour ménager le processeur
-export function set3D(v) { use3d = v !== false; }
+export function set3D() { use3d = false; }
 export const is3D = () => use3d;
 // le jeu fournit une fonction pos → true si un mur sépare le joueur du son
-export function setOcclusion(fn) { occlusionFn = typeof fn === 'function' ? fn : null; }
+export function setOcclusion() { occlusionFn = null; }
 
 export function initAudio() {
   if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
@@ -31,6 +32,7 @@ let muted = false;
 export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : volume; if (muted && typeof speechSynthesis !== 'undefined') try { speechSynthesis.cancel(); } catch { /* */ } return muted; }
 export const isMuted = () => muted;
 export function setListener(p, yaw, pitch = 0) {
+  if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || !Number.isFinite(p[2]) || !Number.isFinite(yaw) || !Number.isFinite(pitch)) return;
   listener.x = p[0]; listener.y = p[1]; listener.z = p[2]; listener.yaw = yaw; listener.pitch = pitch;
   const L = ctx?.listener; if (!L) return;
   // regard : yaw 0 = vers -z, droite = +x (même repère que la caméra)
@@ -47,6 +49,7 @@ function out(pos, maxDist = 60, cat = 'weapons') {
   if (!pos) { g.connect(C(cat)); return g; } // sons du joueur lui-même : non spatialisés
   const dx = pos[0] - listener.x, dy = (pos[1] || 0) - listener.y, dz = pos[2] - listener.z;
   const d = Math.hypot(dx, dz, dy);
+  if (!Number.isFinite(d)) { g.connect(C(cat)); return g; }
   let vol = Math.max(0, 1 - d / maxDist) ** 1.6;
   if (vol < 0.002) return g; // trop loin : inaudible, rien à brancher
   let occluded = false;

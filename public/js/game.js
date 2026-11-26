@@ -85,14 +85,6 @@ export class Game {
     this.trolls = {}; this.trollFx = new Map(); // blagues de l'administrateur (1.15) : les miennes, et celles visibles sur les autres
     this.bigHeadEvent = !!start.fx?.bigHead; // événement serveur « grosses têtes »
     this.boxes = this.map.boxes;
-    // son 3D : un mur (ou un mur de glace) entre le joueur et le son l'étouffe
-    SFX.setOcclusion(pos => {
-      const o = this.eyePos(), ty = pos[1] < 0.6 ? pos[1] + 1.45 : pos[1]; // son aux pieds : on vise la tête (les caisses basses ne cachent pas un joueur)
-      const d = [pos[0] - o[0], ty - o[1], pos[2] - o[2]], len = Math.hypot(d[0], d[1], d[2]);
-      if (len < 1.5) return false;
-      const r = raycastBoxes(o, [d[0] / len, d[1] / len, d[2] / len], len - 0.4, this.boxes);
-      return !!r.box && r.box.kind !== 'floor';
-    });
     this.wallMeshes = new Map(); this.smokeMeshes = new Map(); this.fireMeshes = new Map(); this.projMeshes = new Map();
     this.tracers = []; this.particles = [];
     this.lastInput = 0;
@@ -1116,7 +1108,6 @@ export class Game {
     if (all || key === 'fps') $('fps').style.display = ST().fps ? 'block' : 'none';
     if (all || key === 'minimap') $('minimap').style.display = ST().minimap ? 'block' : 'none';
     if (all || key === 'vol') SFX.setVolume(ST().vol);
-    if (all || key === 'sound3d') SFX.set3D(ST().sound3d !== false);
     for (const [k, c] of [['volWeapons', 'weapons'], ['volSteps', 'steps'], ['volAbilities', 'abilities'], ['volUi', 'ui'], ['volNotif', 'notif']]) if (all || key === k) SFX.setCategoryVolume(c, ST()[k] ?? 1);
     if (all || key === 'netGraph') $('netgraph').style.display = ST().netGraph ? 'block' : 'none';
     if (all || key === 'keys') { this.buildKeyMap(); this.buildAbilityHUD(); }
@@ -1891,6 +1882,12 @@ export class Game {
   updateLocal(dt, now) {
     if (this.spec) { this.updateSpectator(dt, now); return; }
     const L = this.local, H = this.held;
+    // filet de sécurité : une valeur invalide (NaN) figeait la caméra jusqu'à la partie suivante
+    if (!Number.isFinite(L.yaw)) L.yaw = this.lastGoodYaw || 0; else this.lastGoodYaw = L.yaw;
+    if (!Number.isFinite(L.pitch)) L.pitch = 0;
+    if (!Number.isFinite(L.recoil)) L.recoil = 0;
+    if (!Number.isFinite(L.burst)) L.burst = 0;
+    if (!L.pos.every(Number.isFinite)) { L.pos = (this.lastGoodPos || [0, 0, 0]).slice(); L.vel = [0, 0, 0]; } else this.lastGoodPos = L.pos.slice();
     const alive = !!this.me?.al;
     if (!alive) return;
     const ph = this.snap?.ph;

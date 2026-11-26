@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.27.1",
+    "date": "2026-11-26",
+    "title": "Correctif : image figée et ralentissements",
+    "items": [
+      "Corrigé : l'image pouvait se figer après un tir (souvent en fin de partie) jusqu'à la partie suivante, avec des ralentissements. Cause : le nouveau recul de la 1.27.",
+      "Le jeu se remet tout seul si une valeur invalide arrive dans la caméra.",
+      "Le viseur devient rouge quand il passe sur un ennemi visible (activé pour tout le monde ; réglage « Viseur rouge sur un ennemi » pour le couper).",
+      "Son 3D retiré : retour au son stéréo, plus léger."
+    ]
+  },
+  {
     "version": "1.27.0",
     "date": "2026-11-26",
     "title": "Recul apprenable, sons des pas, entraînement",

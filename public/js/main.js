@@ -1235,7 +1235,6 @@ function applyGlobalSettings() {
   b.classList.toggle('readable', !!st.readableFont);
   b.classList.toggle('theme-light', st.menuTheme === 'light');
   for (const [k, c] of [['volWeapons', 'weapons'], ['volSteps', 'steps'], ['volAbilities', 'abilities'], ['volUi', 'ui'], ['volNotif', 'notif']]) SFX.setCategoryVolume(c, st[k] ?? 1);
-  SFX.set3D(st.sound3d !== false);
 }
 applyGlobalSettings();
 let syncT = null, applyingSync = false;
