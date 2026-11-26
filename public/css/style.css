@@ -1275,3 +1275,43 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 @keyframes lsBar { to { width: 100%; } }
 @media (max-width: 760px) { .ls-in { grid-template-columns: 1fr; gap: 12px; } .ls-map canvas { max-height: 30vh; object-fit: contain; } .ls-mn { font-size: 24px; } .ls-an { font-size: 22px; } .ls-ab .small { display: none; } }
 #lvl-n .pres { display: block; font-size: 8px; padding: 0 2px; margin: 0 auto 1px; width: max-content; line-height: 1.2; }
+
+/* ---------- boutique du jour (1.23) ---------- */
+.shop-root { max-width: 1200px; margin: 0 auto; padding: 18px 16px 40px; }
+.sh-hero { position: relative; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; padding: 26px 26px 22px; margin-bottom: 18px; overflow: hidden;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--t1) 70%, #090c15) 0%, color-mix(in srgb, var(--t2) 55%, #090c15) 100%); border: 1px solid color-mix(in srgb, var(--t2) 60%, transparent); }
+.sh-hero::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 2px, transparent 2px 22px); pointer-events: none; }
+.sh-hero h1 { font-family: var(--head); font-size: clamp(26px, 4.5vw, 46px); letter-spacing: .1em; margin: 4px 0; text-shadow: 0 2px 18px rgba(0,0,0,.5); }
+.sh-kick { font-family: var(--head); letter-spacing: .3em; font-size: 13px; opacity: .85; }
+.sh-sub { opacity: .85; }
+.sh-clock { text-align: right; z-index: 1; flex-shrink: 0; }
+.sh-clock span { display: block; font-size: 11px; letter-spacing: .2em; opacity: .8; }
+.sh-clock b { font-family: var(--head); font-size: 30px; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.sh-sec h2 { font-family: var(--head); letter-spacing: .14em; font-size: 20px; margin: 18px 0 10px; }
+.sh-sec h2 small { font-size: 13px; color: #ffcf5a; margin-left: 8px; letter-spacing: .05em; }
+.sh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.sh-grid.big { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.sh-tile { position: relative; display: flex; flex-direction: column; background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 22%, #0e1322) 0%, #0b0f1b 70%); border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent); border-bottom: 3px solid var(--rc); transition: transform .15s, box-shadow .15s; min-height: 220px; }
+.sh-tile:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0,0,0,.45), 0 0 0 1px var(--rc); }
+.sh-tile.big { min-height: 300px; }
+.sh-tile.owned { opacity: .72; }
+.sh-art { flex: 1; min-height: 110px; margin: 10px; border-radius: 2px; box-shadow: inset 0 0 40px rgba(0,0,0,.35); }
+.sh-tile.big .sh-art { min-height: 170px; }
+.sh-new { position: absolute; top: 14px; left: 14px; background: #ffcf5a; color: #1a1205; font-weight: 800; font-size: 11px; letter-spacing: .1em; padding: 2px 7px; }
+.sh-off { position: absolute; top: 14px; right: 14px; background: #ff4d6d; color: #fff; font-weight: 800; font-size: 12px; padding: 2px 7px; }
+.sh-info { padding: 0 12px 12px; }
+.sh-name { font-family: var(--head); font-size: 18px; letter-spacing: .06em; }
+.sh-tile.big .sh-name { font-size: 22px; }
+.sh-rar { color: var(--rc); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 8px; }
+.sh-buy { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.sh-price s { color: var(--muted); font-size: 13px; }
+.sh-price b { font-size: 17px; }
+.sh-btns { display: flex; gap: 6px; }
+.sh-pack-art { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin: 10px; flex: 1; min-height: 170px; align-content: center; }
+.sh-pack-art i { aspect-ratio: 1; border-radius: 2px; box-shadow: inset 0 0 12px rgba(0,0,0,.4); }
+.sh-pack-art i.got { opacity: .35; outline: 2px solid var(--ok); outline-offset: -2px; }
+.daily-shop .shop-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0; }
+@media (max-width: 600px) { .sh-hero { flex-direction: column; align-items: flex-start; padding: 18px; } .sh-clock { text-align: left; } .sh-grid, .sh-grid.big { grid-template-columns: 1fr 1fr; gap: 8px; } .sh-tile, .sh-tile.big { min-height: 0; } .sh-tile.big .sh-art, .sh-art { min-height: 80px; } .sh-btns .btn { padding: 6px 8px; } .sh-pack { grid-column: 1 / -1; } .sh-pack-art { min-height: 0; } }
+
+/* 11 onglets (1.23) : menu plus compact sur les écrans moyens pour que PARAMÈTRES reste visible */
+@media (max-width: 1500px) and (min-width: 901px) { .nav { gap: 0; } .nav button { padding: 22px 7px; letter-spacing: .03em; font-size: 12.5px; } }

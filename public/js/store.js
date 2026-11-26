@@ -10,6 +10,7 @@ export const DEFAULT_KEYS = {
 };
 export const DEFAULT_SETTINGS = {
   // souris
+  sound3d: true,
   sens: 1, sensY: 1, scopeSens: 1, invertY: false, touchSens: 1, touchSize: 1, touchOpacity: 0.55, touchLeft: false,
   // vidéo
   fov: 100, vmFov: 62, renderScale: 1, brightness: 1.05, quality: 'high', gfxPreset: 'custom', fpsCap: 0, lowFpsTip: true, bloom: true, relief: true, particles: true,

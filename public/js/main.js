@@ -47,6 +47,7 @@ function showTab(name) {
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name || (name === 'room' && b.dataset.tab === 'play')));
   if (name === 'agents') renderAgents();
   if (name === 'collection') renderCollection();
+  if (name === 'shop') openShopTab();
   if (name === 'settings') mountSettings($('settings-root'));
   if (name === 'play') { net.send('listRooms'); if (!state.guest) net.send('friends'); renderMeCard(); renderQuests(); renderEvent(); renderPartyBar(); renderLobby(); renderFriendsPlaying(state.friendsList); renderPlayCustom(); }
   if (name === 'profile') { net.send('myProfile'); renderProfile(); }
@@ -133,6 +134,7 @@ $('logout-btn').onclick = () => {
 };
 
 net.on('welcome', m => {
+  net.send('shop'); // pastille « ! » sur l'onglet BOUTIQUE quand une nouvelle boutique n'a pas été vue
   state.myId = m.id;
   state.guest = !!m.guest;
   session.account = !m.guest;
@@ -1046,18 +1048,87 @@ document.addEventListener('keydown', e => {
   e.preventDefault(); pickAgentView(ids[(i + (e.key === 'ArrowDown' ? 1 : -1) + ids.length) % ids.length] || ids[0]);
 });
 
-// ======================= COLLECTION =======================
+// ======================= BOUTIQUE DU JOUR (1.23) =======================
+// Un thème par jour (une collection), 2 skins en vedette, 6 skins du jour, le pack de la collection et un compte à rebours.
+const shopRound = v => Math.max(10, Math.round(v / 10) * 10);
+const shopDay = () => new Date().toISOString().slice(0, 10);
+function shopTimer() { const d = state.shop; if (!d) return ''; const left = Math.max(0, d.resetAt - Date.now()); const hh = Math.floor(left / 3600000), mm = Math.floor(left % 3600000 / 60000), ss = Math.floor(left % 60000 / 1000); return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`; }
+function shopTile(i, big) {
+  const s = SKINS.find(x => x.id === i.id); if (!s) return '';
+  const rar = RARITY[rarityOf(s)], owned = profile.owned.includes(i.id);
+  return `<div class="sh-tile ${big ? 'big' : ''} ${owned ? 'owned' : ''}" style="--rc:${rar.color};--b1:${s.body};--b2:${s.accent}">
+    <div class="sh-art" style="${swatchCss(s)}"></div>
+    ${i.isNew && !owned ? '<span class="sh-new">NOUVEAU</span>' : ''}<span class="sh-off">-${i.off} %</span>
+    <div class="sh-info"><div class="sh-name">${esc(i.name)}</div><div class="sh-rar">${rar.name}${s.animated ? ' · animé' : ''}${s.set ? ` · ${esc(s.set)}` : ''}</div>
+      <div class="sh-buy">${owned ? '<span class="badge-ok">POSSÉDÉ</span>' : `<span class="sh-price"><s>${i.old}</s> <span class="gem small"></span> <b>${i.price}</b></span>`}
+        <span class="sh-btns"><button class="btn small ghost" data-shp="preview" data-id="${esc(i.id)}">APERÇU</button>${owned ? '' : state.guest ? '' : `<button class="btn small primary" data-shp="buy" data-id="${esc(i.id)}">ACHETER</button>`}</span></div></div></div>`;
+}
+function renderShopTab() {
+  const root = $('shop-root'); if (!root) return;
+  const d = state.shop;
+  if (!d || !d.featured) { root.innerHTML = '<div class="panel empty-big">Chargement de la boutique du jour…</div>'; return; }
+  const ref = SKINS.find(x => x.id === d.featured[0]?.id) || {};
+  const b = d.bundle, bSkins = b ? b.ids.map(id => SKINS.find(x => x.id === id)).filter(Boolean) : [];
+  const missing = bSkins.filter(x => !profile.owned.includes(x.id));
+  const bPrice = shopRound(missing.reduce((t, x) => t + x.price, 0) * (100 - (b?.off || 50)) / 100);
+  root.innerHTML = `
+    <div class="sh-hero" style="--t1:${ref.body || '#1a2036'};--t2:${ref.accent || '#8b5cff'}">
+      <div><div class="sh-kick">BOUTIQUE DU JOUR</div><h1>THÈME : ${esc((d.theme || '').toUpperCase())}</h1><div class="sh-sub">Les skins de la collection ${esc(d.theme || '')} sont à l'honneur aujourd'hui.</div></div>
+      <div class="sh-clock"><span>NOUVELLE BOUTIQUE DANS</span><b id="shop-timer">${shopTimer()}</b></div>
+    </div>
+    ${state.guest ? '<p class="muted small">Crée un compte pour acheter des skins avec tes Éclats.</p>' : ''}
+    <div class="sh-sec"><h2>EN VEDETTE <small>-${d.featured[0]?.off || 25} %</small></h2><div class="sh-grid big">${d.featured.map(i => shopTile(i, true)).join('')}
+      ${b ? `<div class="sh-tile big sh-pack" style="--rc:#ffcf5a;--b1:${ref.body || '#222'};--b2:${ref.accent || '#8b5cff'}">
+        <div class="sh-pack-art">${bSkins.map(x => `<i class="${profile.owned.includes(x.id) ? 'got' : ''}" style="${swatchCss(x)}" title="${esc(x.name)}"></i>`).join('')}</div>
+        <span class="sh-off">-${b.off} %</span>
+        <div class="sh-info"><div class="sh-name">${esc(b.name)}</div><div class="sh-rar">${bSkins.length} skins · ${bSkins.length - missing.length} déjà possédé(s)</div>
+          <div class="sh-buy">${missing.length ? `<span class="sh-price"><s>${missing.reduce((t, x) => t + x.price, 0)}</s> <span class="gem small"></span> <b>${bPrice}</b></span>${state.guest ? '' : `<button class="btn small primary" data-shp="bundle">ACHETER LE PACK (${missing.length})</button>`}` : '<span class="badge-ok">COLLECTION COMPLÈTE</span>'}</div>
+          <div class="muted small">Tu ne paies que les skins qui te manquent. Compléter la collection débloque aussi son succès (800 Éclats et un titre).</div></div></div>` : ''}
+    </div></div>
+    <div class="sh-sec"><h2>QUOTIDIEN <small>-${d.daily[0]?.off || 40} %</small></h2><div class="sh-grid">${d.daily.map(i => shopTile(i, false)).join('')}</div></div>
+    <p class="muted small">Un skin acheté est débloqué pour toutes les armes. La boutique change chaque jour à ${new Date(d.resetAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.</p>`;
+}
+function openShopTab() {
+  if (!state.shop || !state.shop.featured || Date.now() > state.shop.resetAt) net.send('shop');
+  try { localStorage.setItem('eclipse_shop_seen', shopDay()); } catch { /* */ }
+  $('shop-badge').textContent = '';
+  renderShopTab();
+  clearInterval(openShopTab.iv);
+  openShopTab.iv = setInterval(() => { if (state.tab !== 'shop') { clearInterval(openShopTab.iv); return; } const el = $('shop-timer'); if (el) el.textContent = shopTimer(); if (state.shop && Date.now() > state.shop.resetAt + 2000) { state.shop = null; net.send('shop'); } }, 1000);
+}
+$('shop-root').onclick = e => {
+  const b = e.target.closest('[data-shp]'); if (!b) return;
+  const d = state.shop; if (!d) return;
+  if (b.dataset.shp === 'preview') { const s = SKINS.find(x => x.id === b.dataset.id); state.collSkin = b.dataset.id; state.collFilter = 'all'; state.collSet = s?.set || ''; showTab('collection'); return; }
+  if (b.dataset.shp === 'buy') {
+    const i = d.items.find(x => x.id === b.dataset.id); if (!i) return;
+    if (profile.eclats < i.price) { toast(`Il te manque ${i.price - profile.eclats} Éclats.`); return; }
+    if (confirm(`Acheter « ${i.name} » pour ${i.price} Éclats (-${i.off} %) ?`)) net.send('buyShop', { id: i.id });
+  }
+  if (b.dataset.shp === 'bundle' && d.bundle) {
+    const miss = d.bundle.ids.filter(id => !profile.owned.includes(id)).map(id => SKINS.find(x => x.id === id)).filter(Boolean);
+    const price = shopRound(miss.reduce((t, x) => t + x.price, 0) * (100 - d.bundle.off) / 100);
+    if (profile.eclats < price) { toast(`Il te manque ${price - profile.eclats} Éclats.`); return; }
+    if (confirm(`Acheter le ${d.bundle.name} : ${miss.length} skin(s) pour ${price} Éclats ?`)) net.send('buyBundle');
+  }
+};
+net.on('bundleBought', m => { toast(`${m.name} : ${m.count} skin(s) ajouté(s) à ta collection !`, 4000); SFX.playPromote?.(); });
+// bandeau dans la Collection : lien vers la boutique
 function renderShop() {
   const el = $('daily-shop'); if (!el) return;
   const d = state.shop;
-  if (!d) { el.innerHTML = '<div class="muted small">Chargement de la boutique du jour…</div>'; return; }
-  const left = Math.max(0, d.resetAt - Date.now()), h = Math.floor(left / 3600000), mn = Math.floor(left % 3600000 / 60000);
-  el.innerHTML = `<div class="shop-head"><b>BOUTIQUE DU JOUR</b> <span class="muted small">-40 % · renouvelée dans ${h} h ${mn} min</span></div><div class="shop-items">${d.items.map(i => { const s = SKINS.find(x => x.id === i.id); const owned = profile.owned.includes(i.id); return `<div class="shop-item"><div class="sw" style="${swatchCss(s)}"></div><b>${esc(i.name)}</b> <span class="rar small" style="color:${RARITY[rarityOf(s)].color}">${RARITY[rarityOf(s)].name}</span><span><s class="muted">${i.old}</s> <span class="gem small"></span> ${i.price}</span>${owned ? '<span class="badge-ok small">POSSÉDÉ</span>' : state.guest ? '<span class="muted small">compte requis</span>' : `<button class="btn small primary" data-shop="${esc(i.id)}">ACHETER</button>`}</div>`; }).join('')}</div>`;
-  el.onclick = e => { const b = e.target.closest('[data-shop]'); if (b && confirm('Acheter ce skin ?')) net.send('buyShop', { id: b.dataset.shop }); };
+  if (!d || !d.featured) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="shop-head"><b>BOUTIQUE DU JOUR · THÈME ${esc((d.theme || '').toUpperCase())}</b> <span class="muted small">${d.items.length} skins en promotion et le pack ${esc(d.theme || '')}</span> <button class="btn small primary" data-tab-go="shop">VOIR LA BOUTIQUE</button></div>`;
+  el.onclick = e => { if (e.target.closest('[data-tab-go]')) showTab('shop'); };
 }
-net.on('shop', m => { state.shop = m; renderShop(); });
+net.on('shop', m => {
+  state.shop = m; renderShop(); if (state.tab === 'shop') renderShopTab();
+  let seen = ''; try { seen = localStorage.getItem('eclipse_shop_seen') || ''; } catch { /* */ }
+  $('shop-badge').textContent = seen !== m.day && state.tab !== 'shop' ? '!' : '';
+});
+net.on('profile', () => { if (state.tab === 'shop') renderShopTab(); });
 function renderCollection() {
-  if (!state.shop || Date.now() > state.shop.resetAt) net.send('shop');
+  if (!state.shop || !state.shop.featured || Date.now() > state.shop.resetAt) net.send('shop');
   renderShop();
   $('coll-weapons').innerHTML = SKINNABLE.map(w => `<button class="${w === state.collWeapon ? 'active' : ''}" data-w="${w}">${WEAPONS[w].name.toUpperCase()}<small>${SKINS.find(s => s.id === profile.equipped[w])?.name || 'Standard'}</small></button>`).join('');
   const sel = state.collSkin || profile.equipped[state.collWeapon] || 'default';
@@ -1145,6 +1216,7 @@ function applyGlobalSettings() {
   b.classList.toggle('readable', !!st.readableFont);
   b.classList.toggle('theme-light', st.menuTheme === 'light');
   for (const [k, c] of [['volWeapons', 'weapons'], ['volSteps', 'steps'], ['volAbilities', 'abilities'], ['volUi', 'ui'], ['volNotif', 'notif']]) SFX.setCategoryVolume(c, st[k] ?? 1);
+  SFX.set3D(st.sound3d !== false);
 }
 applyGlobalSettings();
 let syncT = null, applyingSync = false;

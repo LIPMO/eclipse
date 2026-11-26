@@ -1,4 +1,5 @@
-// Sons synthétisés (WebAudio), spatialisés simplement (atténuation + panoramique)
+// Sons synthétisés (WebAudio). Son 3D (1.23) : rendu HRTF (devant/derrière, hauteur, idéal au casque),
+// sons étouffés derrière les murs et sons lointains plus sourds. Repli en stéréo simple si désactivé.
 let ctx = null, master = null, noiseBuf = null;
 let volume = 0.6;
 // volumes par catégorie (Paramètres → Audio)
@@ -7,7 +8,13 @@ const catVol = { weapons: 1, steps: 1, abilities: 1, ui: 1, notif: 1 };
 const catNode = {};
 const C = name => catNode[name] || master;
 export function setCategoryVolume(name, v) { catVol[name] = v; if (catNode[name]) catNode[name].gain.value = v; }
-const listener = { x: 0, y: 0, z: 0, yaw: 0 };
+const listener = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
+let use3d = true, occlusionFn = null, activeHrtf = 0;
+const MAX_HRTF = 24; // au-delà (grosse fusillade), les sons suivants passent en stéréo simple pour ménager le processeur
+export function set3D(v) { use3d = v !== false; }
+export const is3D = () => use3d;
+// le jeu fournit une fonction pos → true si un mur sépare le joueur du son
+export function setOcclusion(fn) { occlusionFn = typeof fn === 'function' ? fn : null; }
 
 export function initAudio() {
   if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
@@ -23,21 +30,47 @@ export function setVolume(v) { volume = v; if (master) master.gain.value = muted
 let muted = false;
 export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : volume; if (muted && typeof speechSynthesis !== 'undefined') try { speechSynthesis.cancel(); } catch { /* */ } return muted; }
 export const isMuted = () => muted;
-export function setListener(p, yaw) { listener.x = p[0]; listener.y = p[1]; listener.z = p[2]; listener.yaw = yaw; }
+export function setListener(p, yaw, pitch = 0) {
+  listener.x = p[0]; listener.y = p[1]; listener.z = p[2]; listener.yaw = yaw; listener.pitch = pitch;
+  const L = ctx?.listener; if (!L) return;
+  // regard : yaw 0 = vers -z, droite = +x (même repère que la caméra)
+  const cp = Math.cos(pitch), fx = -Math.sin(yaw) * cp, fy = Math.sin(pitch), fz = -Math.cos(yaw) * cp;
+  const ux = Math.sin(yaw) * Math.sin(pitch), uy = cp, uz = Math.cos(yaw) * Math.sin(pitch);
+  if (L.positionX) {
+    L.positionX.value = p[0]; L.positionY.value = p[1]; L.positionZ.value = p[2];
+    L.forwardX.value = fx; L.forwardY.value = fy; L.forwardZ.value = fz; L.upX.value = ux; L.upY.value = uy; L.upZ.value = uz;
+  } else if (L.setPosition) { L.setPosition(p[0], p[1], p[2]); L.setOrientation(fx, fy, fz, ux, uy, uz); }
+}
 
 function out(pos, maxDist = 60, cat = 'weapons') {
   const g = ctx.createGain();
-  const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-  if (pos) {
-    const dx = pos[0] - listener.x, dz = pos[2] - listener.z;
-    const d = Math.hypot(dx, dz, (pos[1] || 0) - listener.y);
-    g.gain.value = Math.max(0, 1 - d / maxDist) ** 1.6;
-    if (pan) {
-      const ang = Math.atan2(dx, -dz) + listener.yaw; // angle relatif
-      pan.pan.value = Math.max(-1, Math.min(1, Math.sin(ang) * Math.min(1, d / 3)));
-    }
+  if (!pos) { g.connect(C(cat)); return g; } // sons du joueur lui-même : non spatialisés
+  const dx = pos[0] - listener.x, dy = (pos[1] || 0) - listener.y, dz = pos[2] - listener.z;
+  const d = Math.hypot(dx, dz, dy);
+  let vol = Math.max(0, 1 - d / maxDist) ** 1.6;
+  if (vol < 0.002) return g; // trop loin : inaudible, rien à brancher
+  let occluded = false;
+  try { occluded = !!(occlusionFn && d > 1.5 && occlusionFn(pos)); } catch { /* */ }
+  if (occluded) vol *= 0.5;
+  g.gain.value = vol;
+  // l'air et les murs atténuent surtout les aigus : son lointain plus sourd, son derrière un mur étouffé
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.5;
+  lp.frequency.value = occluded ? 850 : Math.max(2600, 18000 - (d / maxDist) * 15500);
+  g.connect(lp);
+  if (use3d && ctx.createPanner && activeHrtf < MAX_HRTF) {
+    const p = ctx.createPanner();
+    p.panningModel = 'HRTF'; p.distanceModel = 'linear'; p.rolloffFactor = 0; p.refDistance = 1; p.maxDistance = 100000; // le volume selon la distance est déjà géré au-dessus
+    if (p.positionX) { p.positionX.value = pos[0]; p.positionY.value = pos[1] || 0; p.positionZ.value = pos[2]; } else p.setPosition(pos[0], pos[1] || 0, pos[2]);
+    lp.connect(p); p.connect(C(cat));
+    activeHrtf++; setTimeout(() => { activeHrtf--; try { p.disconnect(); } catch { /* */ } }, 2500);
+    return g;
   }
-  if (pan) { g.connect(pan); pan.connect(C(cat)); } else g.connect(C(cat));
+  const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+  if (pan) {
+    const ang = Math.atan2(dx, -dz) + listener.yaw; // angle relatif
+    pan.pan.value = Math.max(-1, Math.min(1, Math.sin(ang) * Math.min(1, d / 3)));
+    lp.connect(pan); pan.connect(C(cat));
+  } else lp.connect(C(cat));
   return g;
 }
 function noise(dest, t, dur, freq, q = 1, type = 'bandpass', gain = 1, decay = 4) {

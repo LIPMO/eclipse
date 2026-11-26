@@ -263,7 +263,7 @@
 "Changer cette quête (1 fois par jour)": "Swap this quest (once a day)",
 "Chaque partie rapporte de l'": "Every match earns",
 "Chaque élimination te donne l'arme suivante. Le premier à éliminer au couteau gagne.": "Every kill gives you the next weapon. The first to get a knife kill wins.",
-"Chargement de la boutique du jour…": "Loading today's shop…",
+"Chargement de la boutique du jour…": "Loading the daily shop…",
 "Chat": "Chat",
 "Chat (tous)": "Chat (all)",
 "Chat d'équipe": "Team chat",
@@ -1986,7 +1986,22 @@
 "Recharge à l'abri, jamais en plein duel.": "Reload in cover, never mid-duel.",
 "Change de position après une élimination : l'ennemi sait où tu es.": "Change position after a kill: the enemy knows where you are.",
 "Les pas s'entendent : marche (touche de marche) pour approcher sans bruit.": "Footsteps can be heard: walk (walk key) to approach silently.",
-"ECLIPSE n'utilise aucun cookie publicitaire. Une mesure d'audience anonyme (Cloudflare Web Analytics) est active. Ton navigateur garde seulement ce qui sert à jouer (connexion, réglages, records).": "ECLIPSE uses no advertising cookies. Anonymous audience measurement (Cloudflare Web Analytics) is active. Your browser only keeps what is needed to play (login, settings, records)."
+"ECLIPSE n'utilise aucun cookie publicitaire. Une mesure d'audience anonyme (Cloudflare Web Analytics) est active. Ton navigateur garde seulement ce qui sert à jouer (connexion, réglages, records).": "ECLIPSE uses no advertising cookies. Anonymous audience measurement (Cloudflare Web Analytics) is active. Your browser only keeps what is needed to play (login, settings, records).",
+"BOUTIQUE": "SHOP",
+"EN VEDETTE": "FEATURED",
+"QUOTIDIEN": "DAILY",
+"NOUVEAU": "NEW",
+"APERÇU": "PREVIEW",
+"ACHETER": "BUY",
+"NOUVELLE BOUTIQUE DANS": "NEW SHOP IN",
+"COLLECTION COMPLÈTE": "COLLECTION COMPLETE",
+"VOIR LA BOUTIQUE": "SEE THE SHOP",
+"Crée un compte pour acheter des skins avec tes Éclats.": "Create an account to buy skins with your Shards.",
+"Tu ne paies que les skins qui te manquent. Compléter la collection débloque aussi son succès (800 Éclats et un titre).": "You only pay for the skins you are missing. Completing the collection also unlocks its achievement (800 Shards and a title).",
+"Son 3D (devant, derrière, hauteur, murs)": "3D sound (front, back, height, walls)",
+"Idéal au casque. Désactive-le si ton ordinateur rame pendant les grosses fusillades.": "Best with headphones. Turn it off if your computer slows down during big firefights.",
+"Pas de pack aujourd'hui.": "No bundle today.",
+"Tu possèdes déjà toute cette collection.": "You already own this whole collection."
 },
 "patterns": [
 [

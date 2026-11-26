@@ -85,6 +85,14 @@ export class Game {
     this.trolls = {}; this.trollFx = new Map(); // blagues de l'administrateur (1.15) : les miennes, et celles visibles sur les autres
     this.bigHeadEvent = !!start.fx?.bigHead; // événement serveur « grosses têtes »
     this.boxes = this.map.boxes;
+    // son 3D : un mur (ou un mur de glace) entre le joueur et le son l'étouffe
+    SFX.setOcclusion(pos => {
+      const o = this.eyePos(), ty = pos[1] < 0.6 ? pos[1] + 1.45 : pos[1]; // son aux pieds : on vise la tête (les caisses basses ne cachent pas un joueur)
+      const d = [pos[0] - o[0], ty - o[1], pos[2] - o[2]], len = Math.hypot(d[0], d[1], d[2]);
+      if (len < 1.5) return false;
+      const r = raycastBoxes(o, [d[0] / len, d[1] / len, d[2] / len], len - 0.4, this.boxes);
+      return !!r.box && r.box.kind !== 'floor';
+    });
     this.wallMeshes = new Map(); this.smokeMeshes = new Map(); this.fireMeshes = new Map(); this.projMeshes = new Map();
     this.tracers = []; this.particles = [];
     this.lastInput = 0;
@@ -1057,6 +1065,7 @@ export class Game {
     if (all || key === 'fps') $('fps').style.display = ST().fps ? 'block' : 'none';
     if (all || key === 'minimap') $('minimap').style.display = ST().minimap ? 'block' : 'none';
     if (all || key === 'vol') SFX.setVolume(ST().vol);
+    if (all || key === 'sound3d') SFX.set3D(ST().sound3d !== false);
     for (const [k, c] of [['volWeapons', 'weapons'], ['volSteps', 'steps'], ['volAbilities', 'abilities'], ['volUi', 'ui'], ['volNotif', 'notif']]) if (all || key === k) SFX.setCategoryVolume(c, ST()[k] ?? 1);
     if (all || key === 'netGraph') $('netgraph').style.display = ST().netGraph ? 'block' : 'none';
     if (all || key === 'keys') { this.buildKeyMap(); this.buildAbilityHUD(); }
@@ -1847,7 +1856,7 @@ export class Game {
       this.lastInput = now;
       this.net.send('input', { p: L.pos.map(v => Math.round(v * 100) / 100), y: Math.round(L.yaw * 1000) / 1000, pt: Math.round((L.pitch + L.recoil) * 1000) / 1000, c: L.crouch ? 1 : 0, s: L.slot, ...(L.slideT > 0 ? { sl: 1 } : {}) });
     }
-    SFX.setListener(this.eyePos(), L.yaw);
+    SFX.setListener(this.eyePos(), L.yaw, L.pitch);
   }
 
   // glissade : élan vers l'avant dans la direction du déplacement
@@ -2547,7 +2556,7 @@ export class Game {
         sp.ghost.root.position.set(L.pos[0], L.pos[1], L.pos[2]); sp.ghost.root.rotation.y = L.yaw;
       } else if (sp.ghost) sp.ghost.root.visible = false;
     }
-    SFX.setListener(this.eyePos(), L.yaw);
+    SFX.setListener(this.eyePos(), L.yaw, L.pitch);
   }
 
   // ---- killcam : revoir les 3 dernières secondes avant sa mort, du point de vue du tueur ----

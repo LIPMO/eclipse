@@ -3,13 +3,51 @@ import { publicCard, titlesOf, rerollQuest, ensureUser, weekKey, rankFor, checkA
 import { TITLES, levelOf, BANNERS, ENDORSE, unlockLevel } from '../shared/progress.js';
 import { PRESENCES, presenceOf, refusesInvites } from './progression.js';
 import { SKINS } from '../shared/data.js';
-// boutique du jour : 3 skins à -40 %, renouvelés chaque jour (même sélection pour tout le monde)
-export function dailyShop(day = new Date().toISOString().slice(0, 10)) {
-  const pool = SKINS.filter(s => s.price > 0 && !s.level);
+// boutique du jour (1.23) : un thème par jour (une des collections de skins), 2 skins en vedette (-25 %),
+// 6 skins du jour (-40 %) et le pack de la collection du thème (-50 % sur les skins qui manquent).
+// Même boutique pour tout le monde, renouvelée à minuit (UTC).
+export const SHOP_OFF = { featured: 25, daily: 40, bundle: 50 };
+const shopDayKey = (d = new Date()) => d.toISOString().slice(0, 10);
+const roundPrice = v => Math.max(10, Math.round(v / 10) * 10);
+export const bundlePrice = skins => roundPrice(skins.reduce((t, s) => t + s.price, 0) * (100 - SHOP_OFF.bundle) / 100);
+function shopRng(day) {
   let h = 0; for (const ch of day) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  const pick = [];
-  while (pick.length < Math.min(3, pool.length)) { h = (h * 1103515245 + 12345) >>> 0; const s = pool[h % pool.length]; if (!pick.includes(s)) pick.push(s); }
-  return pick.map(s => ({ id: s.id, name: s.name, old: s.price, price: Math.round(s.price * 0.6 / 10) * 10 }));
+  // bits de poids fort seulement (les bits faibles d'un générateur linéaire se répètent vite)
+  return () => { h = (Math.imul(h, 1103515245) + 12345) >>> 0; h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; h ^= h >>> 13; return h >>> 8; };
+}
+const shopSets = () => [...new Set(SKINS.filter(s => s.set && s.price > 0 && !s.level).map(s => s.set))];
+// thème réellement affiché ce jour-là (jamais le même que la veille ; on remonte quelques jours pour suivre les décalages)
+function themeIndex(day, depth = 8) {
+  const n = shopSets().length; if (!n) return -1;
+  const raw = shopRng(day)() % n;
+  if (depth <= 0 || n < 2) return raw;
+  const prev = new Date(day + 'T00:00:00Z'); prev.setUTCDate(prev.getUTCDate() - 1);
+  return raw === themeIndex(shopDayKey(prev), depth - 1) ? (raw + 1) % n : raw;
+}
+function pickShop(day) {
+  const rnd = shopRng(day);
+  const buyable = s => s.price > 0 && !s.level;
+  const sets = shopSets();
+  rnd(); // même suite de tirages que themeIndex() pour la suite de la boutique
+  const ti = themeIndex(day);
+  const theme = ti >= 0 ? sets[ti] : null;
+  const themeSkins = SKINS.filter(s => s.set === theme && buyable(s)).sort((x, y) => y.price - x.price || x.name.localeCompare(y.name));
+  const pool = SKINS.filter(s => buyable(s) && s.set !== theme);
+  const daily = [];
+  while (daily.length < Math.min(6, pool.length)) { const s = pool[rnd() % pool.length]; if (!daily.includes(s)) daily.push(s); }
+  return { theme, themeSkins, featured: themeSkins.slice(0, 2), daily };
+}
+export function dailyShop(day = shopDayKey()) {
+  const cur = pickShop(day);
+  // « NOUVEAU » : pas apparu dans la boutique des 7 jours précédents
+  const seen = new Set();
+  for (let i = 1; i <= 7; i++) { const d = new Date(day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - i); const p = pickShop(shopDayKey(d)); for (const s of [...p.featured, ...p.daily]) seen.add(s.id); }
+  const item = (s, kind) => ({ id: s.id, name: s.name, set: s.set || null, old: s.price, price: roundPrice(s.price * (100 - SHOP_OFF[kind]) / 100), off: SHOP_OFF[kind], kind, isNew: !seen.has(s.id) });
+  const featured = cur.featured.map(s => item(s, 'featured')), daily = cur.daily.map(s => item(s, 'daily'));
+  return {
+    day, theme: cur.theme, featured, daily, items: [...featured, ...daily],
+    bundle: cur.theme ? { name: `Pack ${cur.theme}`, ids: cur.themeSkins.map(s => s.id), old: cur.themeSkins.reduce((t, s) => t + s.price, 0), price: bundlePrice(cur.themeSkins), off: SHOP_OFF.bundle } : null,
+  };
 }
 
 const MAX_FRIENDS = 100;
@@ -454,17 +492,34 @@ export class Social {
     this.info(c, `Tu as offert ${amount} Éclats à ${t.name}.`);
     const tc = this.clientOfKey(tk); if (tc) { this.ctx.send(tc.id, { type: 'profile', profile: this.A.publicProfile(t) }); this.ctx.send(tc.id, { type: 'gift', from: u.name, amount }); }
   }
-  m_shop(c) { this.ctx.send(c.id, { type: 'shop', items: dailyShop(), resetAt: new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z').getTime() + 86400000 }); }
+  m_shop(c) { this.ctx.send(c.id, { type: 'shop', ...dailyShop(), resetAt: new Date(shopDayKey() + 'T00:00:00Z').getTime() + 86400000 }); }
   m_buyShop(c, msg) {
     const u = this.needAccount(c); if (!u) return;
-    const item = dailyShop().find(i => i.id === msg.id);
+    const item = dailyShop().items.find(i => i.id === msg.id);
     if (!item) return this.err(c, 'Ce skin n\'est plus dans la boutique du jour.');
     if (u.owned.includes(item.id)) return this.err(c, 'Tu possèdes déjà ce skin.');
     if (u.eclats < item.price) return this.err(c, 'Pas assez d\'Éclats.');
     u.eclats -= item.price; u.owned.push(item.id); this.A.save();
     this.ctx.admin.economy?.('spend', item.price); this.ctx.admin.economy?.('skin', item.id);
     this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
-    this.info(c, `${item.name} ajouté à ta collection (-40 %) !`);
+    this.info(c, `${item.name} ajouté à ta collection (-${item.off} %) !`);
+    const got = checkAchievements(u);
+    if (got.length) { this.A.save(); for (const a of got) this.ctx.send(c.id, { type: 'achUnlocked', label: a.label, reward: a.reward, title: a.title }); this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); }
+  }
+  // pack du thème : seulement les skins qui manquent, à -50 %
+  m_buyBundle(c) {
+    const u = this.needAccount(c); if (!u) return;
+    const b = dailyShop().bundle;
+    if (!b) return this.err(c, 'Pas de pack aujourd\'hui.');
+    const missing = b.ids.filter(id => !u.owned.includes(id)).map(id => SKINS.find(s => s.id === id)).filter(Boolean);
+    if (!missing.length) return this.err(c, 'Tu possèdes déjà toute cette collection.');
+    const price = bundlePrice(missing);
+    if (u.eclats < price) return this.err(c, 'Pas assez d\'Éclats.');
+    u.eclats -= price; for (const s of missing) u.owned.push(s.id);
+    this.A.save();
+    this.ctx.admin.economy?.('spend', price); for (const s of missing) this.ctx.admin.economy?.('skin', s.id);
+    this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
+    this.ctx.send(c.id, { type: 'bundleBought', name: b.name, count: missing.length, price });
     const got = checkAchievements(u);
     if (got.length) { this.A.save(); for (const a of got) this.ctx.send(c.id, { type: 'achUnlocked', label: a.label, reward: a.reward, title: a.title }); this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); }
   }
