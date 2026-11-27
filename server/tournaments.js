@@ -36,6 +36,51 @@ export class Tournaments {
   nameOf(key) { return key ? this.A.get(key)?.name || key : null; }
   online(key) { for (const c of this.ctx.clients.values()) if (c.account === key && c.name) return c; return null; }
   log(text) { this.ctx.admin.log('tournoi', text); }
+  // annonces Discord (1.32) : beaux « embeds » envoyés par le webhook de l'administration
+  announce(kind, t, extra = '') {
+    const admin = this.ctx.admin; if (!admin?.discord) return;
+    const SITE = (process.env.SITE_URL || 'https://eclipseee.online').replace(/\/$/, '');
+    const fmt = n => Number(n || 0).toLocaleString('fr-FR');
+    const when = t.startAt ? `<t:${Math.round(t.startAt / 1000)}:F>\n(<t:${Math.round(t.startAt / 1000)}:R>)` : 'Dès que le staff le lance';
+    const base = { url: `${SITE}/#tournois`, thumbnail: { url: `${SITE}/img/logo-512.png` } };
+    if (kind === 'created') {
+      admin.discord('tournament', null, { ...base,
+        title: `🏆 Nouveau tournoi : ${t.name}`,
+        description: `Les inscriptions sont **ouvertes** !\nDuels en élimination directe : le vainqueur remporte **${fmt(t.prize)} Éclats** et un titre exclusif.\n\n➡️ **[S'inscrire dans le jeu](${SITE}/#tournois)** (onglet TOURNOIS)`,
+        fields: [
+          { name: '👥 Places', value: `**${t.size}** joueurs`, inline: true },
+          { name: '⚔️ Format', value: `Duel 1v1 · premier à **${t.target}** manche${t.target > 1 ? 's' : ''}`, inline: true },
+          { name: '💎 Récompense', value: `**${fmt(t.prize)}** Éclats`, inline: true },
+          { name: '⭐ Niveau minimum', value: `Niveau **${t.minLevel}**`, inline: true },
+          { name: '🕒 Début', value: when, inline: true },
+          { name: '🎖️ Organisé par', value: String(extra || '—'), inline: true },
+        ],
+        image: { url: `${SITE}/img/og-image.png` } });
+    } else if (kind === 'started') {
+      const names = t.players.map(k => this.nameOf(k)).filter(Boolean);
+      admin.discord('tournament', null, { ...base,
+        title: `⚔️ C'est parti : ${t.name}`,
+        description: `Le tableau est tiré au sort, les premiers duels commencent !\nBonne chance à tous les participants.`,
+        fields: [
+          { name: `👥 Participants (${names.length})`, value: names.slice(0, 32).map(n => `• ${n}`).join('\n').slice(0, 1024) || '—', inline: false },
+          { name: '⚔️ Format', value: `Premier à **${t.target}** manche${t.target > 1 ? 's' : ''}`, inline: true },
+          { name: '💎 Récompense', value: `**${fmt(t.prize)}** Éclats`, inline: true },
+          { name: '🗂️ Tours', value: `**${t.rounds.length}**`, inline: true },
+        ] });
+    } else if (kind === 'done') {
+      admin.discord('tournament', null, { ...base,
+        title: `👑 ${this.nameOf(t.champion) || '?'} remporte « ${t.name} » !`,
+        description: `Félicitations au grand vainqueur, qui empoche **${fmt(t.prize)} Éclats** et le titre de champion.`,
+        fields: [
+          { name: '🥇 Champion', value: `**${this.nameOf(t.champion) || '—'}**`, inline: true },
+          { name: '🥈 Finaliste', value: this.nameOf(t.runnerUp) || '—', inline: true },
+          { name: '👥 Participants', value: `${t.players.length}`, inline: true },
+          ...(t.startedAt ? [{ name: '⏱️ Durée', value: `${Math.max(1, Math.round((Date.now() - t.startedAt) / 60000))} min`, inline: true }] : []),
+        ] });
+    } else if (kind === 'cancelled') {
+      admin.discord('tournament', null, { ...base, color: 0x6b6f80, title: `Tournoi annulé : ${t.name}`, description: `Raison : ${extra || 'non précisée'}.` });
+    }
+  }
 
   // ---------- vues ----------
   publicView(t, viewerKey = null) {
@@ -160,6 +205,7 @@ export class Tournaments {
     };
     this.list.push(t); this.save(); this.pushAll();
     this.log(`Tournoi « ${t.name} » créé par ${by} (${t.size} places, ${t.prize} Éclats)`);
+    this.announce('created', t, by);
     for (const c of this.ctx.clients.values()) if (c.name && c.account) this.ctx.send(c.id, { type: 'tourNew', id: t.id, name: t.name, size: t.size, prize: t.prize });
     return t;
   }
@@ -178,6 +224,7 @@ export class Tournaments {
     for (let i = half; i < players.length; i++) first[i - half].p2 = players[i];
     t.status = 'running'; t.startedAt = Date.now();
     this.log(`Tournoi « ${t.name} » lancé (${players.length} joueurs) — ${by}`);
+    this.announce('started', t, by);
     for (const [i, m] of first.entries()) {
       if (!m.p2) { m.winner = m.p1; m.status = 'done'; m.bye = true; this.advance(t, 0, i, m.p1); }
       else this.makeReady(t, m);
@@ -214,6 +261,7 @@ export class Tournaments {
     t.status = 'done'; t.champion = champion; t.endedAt = Date.now();
     const final = t.rounds[t.rounds.length - 1][0];
     t.runnerUp = final.p1 === champion ? final.p2 : final.p1;
+    this.announce('done', t);
     const pay = (key, amount, title) => {
       const u = key && this.A.get(key); if (!u) return;
       if (amount > 0) { u.eclats = (u.eclats || 0) + amount; this.ctx.admin.economy?.('earn', amount); }
@@ -242,6 +290,7 @@ export class Tournaments {
     t.status = 'cancelled'; t.endedAt = Date.now(); t.cancelReason = why;
     for (const rd of t.rounds || []) for (const m of rd) { const r = m.roomId && this.ctx.rooms.get(m.roomId); if (r) this.ctx.closeRoom(r, 'Le tournoi a été annulé.'); }
     this.log(`Tournoi « ${t.name} » annulé (${why})`);
+    this.announce('cancelled', t, why);
     this.save(); this.pushAll(); this.prune();
   }
   prune() {

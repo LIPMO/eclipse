@@ -83,6 +83,26 @@ export const TROLLS = {
 const BACKUP_RE = /^eclipse-\d{4}-\d{2}-\d{2}(-\d{6})?\.json$/;
 const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul', 'questMul']);
 export const ACCOUNT_TAGS = { surveille: 'Surveillé', suspect: 'Suspect', vip: 'VIP', testeur: 'Testeur', createur: 'Créateur', partenaire: 'Partenaire' };
+const SITE_URL = (process.env.SITE_URL || 'https://eclipseee.online').replace(/\/$/, '');
+// style des alertes Discord par catégorie : couleur, auteur et icône
+const DISCORD_STYLE = {
+  cheat: { color: 0xff3355, author: '🚨 Anti-triche' },
+  report: { color: 0xff9f1c, author: '⚑ Signalement' },
+  ban: { color: 0x8b0a1e, author: '⛔ Sanction' },
+  perf: { color: 0xffd23f, author: '🐢 Performances' },
+  tournament: { color: 0xa259ff, author: '🏆 Tournois ECLIPSE' },
+  info: { color: 0x19e3c4, author: 'ECLIPSE' },
+};
+function discordEmbed(kind, e) {
+  const st = DISCORD_STYLE[kind] || DISCORD_STYLE.info;
+  return {
+    color: st.color,
+    author: { name: st.author, icon_url: `${SITE_URL}/img/logo-180.png`, url: SITE_URL },
+    timestamp: new Date().toISOString(),
+    footer: { text: 'ECLIPSE · eclipseee.online', icon_url: `${SITE_URL}/img/logo-32.png` },
+    ...e,
+  };
+}
 const DISCORD_RE = /^https:\/\/(discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)\/api\/webhooks\/\d{5,25}\/[\w-]{20,100}$/;
 const LINK_RE = /(https?:\/\/|www\.|discord\.gg|\b[a-z0-9-]{2,}\.(com|net|org|fr|io|gg|xyz|ru|info|me|be|co)\b)/i;
 const WEAPON_DEFAULTS = Object.fromEntries(Object.entries(WEAPONS).map(([id, w]) => [id, { damage: w.damage, headMul: w.headMul }]));
@@ -237,7 +257,9 @@ export class Admin {
     this.state.reports.unshift(report);
     if (this.state.reports.length > 500) this.state.reports.length = 500;
     this.log('moderation', `Signalement (${REPORT_REASONS[r.category] || r.category}) de ${r.from} contre ${r.target}${r.reason ? ' : ' + r.reason : ''}`);
-    this.discord('report', `⚑ Signalement **${REPORT_REASONS[r.category] || r.category}** de ${r.from} contre **${r.target}**${r.reason ? ' : ' + r.reason : ''}`);
+    this.discord('report', null, { title: `Signalement : ${r.target}`, description: r.reason ? `> ${String(r.reason).slice(0, 500)}` : undefined,
+      fields: [{ name: 'Motif', value: `**${REPORT_REASONS[r.category] || r.category}**`, inline: true }, { name: 'Par', value: r.from, inline: true }, { name: 'Contre', value: `**${r.target}**`, inline: true },
+        ...(report.suspect ? [{ name: 'Signalements reçus', value: `${report.suspect}`, inline: true }] : [])] });
     this.save();
     // prévient le staff connecté
     for (const c of this.onlineClients()) if (this.levelOf(c) >= 1) this.ctx.send(c.id, { type: 'system', kind: 'staff', text: `Nouveau signalement contre ${r.target} (${REPORT_REASONS[r.category] || r.category}).` });
@@ -295,19 +317,26 @@ export class Admin {
 
   // ---------- contrôles d'accès des joueurs ----------
   // alertes Discord : envoi limité (file de 30 messages, 1 toutes les 1,2 s), jamais d'adresse autre que Discord
-  discord(kind, text) {
+  // 1.32 : chaque alerte part en « embed » Discord (couleur, titre, champs, logo, date) ; le texte reste en secours
+  discord(kind, text, embed = null) {
     const cfg = this.state.config;
     if (!cfg.discordWebhook || !DISCORD_RE.test(cfg.discordWebhook)) return;
     const flag = { cheat: 'discordCheat', report: 'discordReports', ban: 'discordBans', tournament: 'discordTournaments', perf: 'discordPerf' }[kind];
     if (flag && cfg[flag] === false) return;
     this.discordQ ||= [];
     if (this.discordQ.length >= 30) return;
-    this.discordQ.push(String(text).replace(/@(everyone|here)/g, '@\u200b$1').slice(0, 1900));
+    const safe = s => String(s ?? '').replace(/@(everyone|here)/g, '@\u200b$1');
+    const e = discordEmbed(kind, embed || { description: text });
+    // nettoyage : pas de mention de masse, longueurs maximales de Discord
+    e.title = e.title ? safe(e.title).slice(0, 256) : undefined;
+    e.description = e.description ? safe(e.description).slice(0, 4000) : undefined;
+    e.fields = (e.fields || []).slice(0, 25).map(f => ({ name: safe(f.name).slice(0, 256) || '\u200b', value: safe(f.value).slice(0, 1024) || '\u200b', inline: !!f.inline }));
+    this.discordQ.push({ username: 'ECLIPSE', avatar_url: `${SITE_URL}/img/logo-512.png`, embeds: [e], allowed_mentions: { parse: [] } });
     if (this.discordT) return;
     const pump = () => {
       const msg = this.discordQ.shift();
       if (!msg) { this.discordT = null; return; }
-      fetch(cfg.discordWebhook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'ECLIPSE', content: msg, allowed_mentions: { parse: [] } }), signal: AbortSignal.timeout(8000) })
+      fetch(cfg.discordWebhook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg), signal: AbortSignal.timeout(8000) })
         .catch(() => {}).finally(() => { this.discordT = setTimeout(pump, 1200); this.discordT.unref?.(); });
     };
     pump();
@@ -334,7 +363,8 @@ export class Admin {
     const text = `Le serveur ralentit : calcul d'une image de jeu ${Math.round(avg * 10) / 10} ms en moyenne (seuil ${cfg.perfTickMs} ms), mémoire ${Math.round(memPct)} %, ${this.inGameCount()} joueur(s) en partie.`;
     this.log('systeme', text);
     this.staffNotice(text);
-    if (cfg.discordPerf) this.discord('perf', `🐢 ${text}`);
+    if (cfg.discordPerf) this.discord('perf', null, { title: 'Le serveur ralentit', description: text,
+      fields: [{ name: 'Image de jeu', value: `${Math.round(avg * 10) / 10} ms (seuil ${cfg.perfTickMs} ms)`, inline: true }, { name: 'Mémoire', value: `${Math.round(memPct)} %`, inline: true }, { name: 'En partie', value: `${this.inGameCount()} joueur(s)`, inline: true }] });
   }
   // maintenance programmée : avertissements à 10, 5 et 1 minute, puis activation
   checkMaintenance(now) {
@@ -430,7 +460,7 @@ export class Admin {
     const text = `Compte ${tags.includes('surveille') ? 'surveillé' : 'suspect'} connecté : ${u.name}`;
     this.log('moderation', text);
     for (const o of this.onlineClients()) if (o !== c && this.levelOf(o) >= 1) this.ctx.send(o.id, { type: 'system', kind: 'staff', text });
-    this.discord('cheat', `👀 ${text}`);
+    this.discord('cheat', null, { title: `👀 ${text}`, fields: [{ name: 'Étiquettes', value: tags.join(', ') || '—', inline: true }] });
   }
   filterText(text) {
     let out = text, hits = [];
@@ -605,7 +635,8 @@ export class Admin {
       }
     } else if (type === 'cheat') {
       this.log('securite', `${d.stat ? 'Statistiques suspectes' : `Mouvement suspect (${d.strikes} alertes)`} : ${d.name} dans « ${d.room.name} » — ${d.reason}`);
-      this.discord('cheat', `🚨 Anti-triche : **${d.name}** dans « ${d.room.name} » — ${d.reason}`);
+      this.discord('cheat', null, { title: `${d.stat ? 'Statistiques suspectes' : 'Mouvement suspect'} : ${d.name}`, description: `**${d.reason}**`,
+        fields: [{ name: 'Joueur', value: `**${d.name}**${d.account ? '' : ' (invité)'}`, inline: true }, { name: 'Salon', value: d.room.name || '—', inline: true }, ...(d.strikes ? [{ name: 'Alertes', value: `${d.strikes}`, inline: true }] : [])] });
       const key = d.account || 'guest:' + d.name;
       const sus = this.state.suspects[key] || (this.state.suspects[key] = { name: d.name, account: d.account || null, count: 0, alerts: [] });
       sus.count++; sus.last = Date.now(); sus.name = d.name;
@@ -937,7 +968,8 @@ const ACTIONS = {
     this.save();
     this.log('moderation', `${label} banni par ${user.name} (${minutes ? minutes + ' min' : 'définitif'})`);
     for (const [type, value] of targets) if (type === 'account') this.sanction(value, 'ban', `Banni ${minutes ? `${minutes} min` : 'définitivement'} — ${reason}`, user.name);
-    this.discord('ban', `⛔ **${label}** banni ${minutes ? `${minutes} min` : 'définitivement'} par ${user.name} — ${reason}`);
+    this.discord('ban', null, { title: `${label} banni`, description: `> ${reason}`,
+      fields: [{ name: 'Durée', value: minutes ? `${minutes} min · fin <t:${Math.round(Date.now() / 1000 + minutes * 60)}:R>` : '**Définitif**', inline: true }, { name: 'Par', value: user.name, inline: true }] });
     return { _detail: `${label} — ${minutes ? minutes + ' min' : 'définitif'} — ${reason}` };
   } },
   unban: { level: 1, post: true, label: 'Débannissement', fn({ body, user }) {

@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.32.0",
+    "date": "2026-11-27",
+    "title": "Annonces Discord des tournois",
+    "items": [
+      "Chaque nouveau tournoi est annoncé sur Discord avec une belle carte : nom, places, format, récompense, niveau minimum, date de début (à l'heure de chacun), organisateur et lien pour s'inscrire.",
+      "Le lancement (liste des participants) et le vainqueur (champion et finaliste) sont aussi annoncés.",
+      "Toutes les alertes Discord du serveur (anti-triche, signalements, sanctions, lenteurs) passent en cartes colorées, plus lisibles."
+    ]
+  },
+  {
     "version": "1.31.0",
     "date": "2026-11-27",
     "title": "Présence Discord (launcher 2.2)",
