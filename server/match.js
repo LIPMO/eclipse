@@ -1,5 +1,5 @@
 // Logique de partie autoritaire côté serveur
-import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, KNIFE_THROW, lossBonus, knifePower, TIMEOUT } from '../shared/data.js';
+import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, SNAP_EVERY, STATS_EVERY, KNIFE_THROW, lossBonus, knifePower, TIMEOUT, reloadTime, partialShells, FALL, BASH } from '../shared/data.js';
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
@@ -10,6 +10,14 @@ export const FRIEND_DELAY = 10000;
 const r2 = v => Math.round(v * 100) / 100;
 const r3 = v => Math.round(v * 1000) / 1000;
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+// normale de la face d'une boîte la plus proche d'un point (rebond des grenades)
+function boxNormal(pt, b) {
+  if (!b || !b.min) return [0, 1, 0]; // sol de la carte
+  const d = [[pt[0] - b.min[0], [-1, 0, 0]], [b.max[0] - pt[0], [1, 0, 0]], [pt[1] - b.min[1], [0, -1, 0]], [b.max[1] - pt[1], [0, 1, 0]], [pt[2] - b.min[2], [0, 0, -1]], [b.max[2] - pt[2], [0, 0, 1]]];
+  let best = d[0];
+  for (const x of d) if (Math.abs(x[0]) < Math.abs(best[0])) best = x;
+  return best[1];
+}
 const finite = v => typeof v === 'number' && Number.isFinite(v);
 // distance de sortie d'un rayon qui traverse une boîte (méthode des « tranches »)
 function rayExit(o, d, min, max) {
@@ -277,6 +285,7 @@ export class Match {
     // le client continue d'envoyer son ancienne position tant qu'il n'a pas reçu la téléportation
     p.tpGrace = this.time + 1.5; p.tpPos = p.pos.slice();
     p.lastValid = { pos: p.pos.slice(), t: this.time };
+    p.fallTop = null;
     this.send(p, { type: 'teleport', p: p.pos, y: yaw });
   }
 
@@ -492,6 +501,7 @@ export class Match {
       case 'slide': return this.handleSlide(p);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
+      case 'bash': return this.handleBash(p, msg);
       case 'buy': return msg.for && msg.for !== p.id ? this.buyForMate(p, msg.item, msg.for) : this.handleBuy(p, msg.item);
       case 'throwKnife': return this.handleThrowKnife(p, msg);
       case 'knifeCharge': if (p.alive && p.weapons[p.slot]?.id === 'knife' && !p.knifeOut) p.knifeChargeAt = this.time; return;
@@ -566,6 +576,7 @@ export class Match {
     if (d > 0.05 || (finite(m.y) && Math.abs(m.y - p.yaw) > 0.02)) { p.lastActive = T; p.afkWarned = false; }
     p.lastValid = { pos: np.slice(), t: T };
     p.pos = np;
+    this.fallStep(p, np);
     this.applyLook(p, m);
   }
 
@@ -587,7 +598,7 @@ export class Match {
     if (finite(m.pt)) p.pitch = Math.max(-1.55, Math.min(1.55, m.pt));
     p.crouch = !!m.c;
     p.sliding = !!m.sl && p.crouch && (p.slideUntil || 0) > this.time;
-    if ([1, 2, 3].includes(m.s) && p.weapons[m.s] && m.s !== p.slot) { p.slot = m.s; p.reloadEnd = 0; p.knifeChargeAt = 0; }
+    if ([1, 2, 3].includes(m.s) && p.weapons[m.s] && m.s !== p.slot) { this.cancelReload(p); p.slot = m.s; p.reloadEnd = 0; p.knifeChargeAt = 0; }
     if (p.interact && p.interactPos && Math.hypot(p.pos[0] - p.interactPos[0], p.pos[2] - p.interactPos[2]) > 0.6) { p.prog = 0; p.interactPos = p.pos.slice(); }
   }
 
@@ -595,7 +606,54 @@ export class Match {
     const w = p.weapons[p.slot];
     if (!p.alive || !w || !WEAPONS[w.id].mag || p.reloadEnd > this.time) return;
     if (w.mag >= WEAPONS[w.id].mag || w.reserve <= 0) return;
-    p.reloadEnd = this.time + WEAPONS[w.id].reload;
+    const dur = reloadTime(WEAPONS[w.id], w.mag); // recharge « tactique » plus rapide s'il reste des balles
+    p.reloadStart = this.time; p.reloadDur = dur; p.reloadMag0 = w.mag;
+    p.reloadEnd = this.time + dur;
+  }
+  // cartouches déjà glissées dans un fusil à pompe si on interrompt la recharge maintenant
+  reloadPartial(p) {
+    const w = p.weapons[p.slot];
+    if (!w || !(p.reloadEnd > this.time)) return 0;
+    return partialShells(WEAPONS[w.id], p.reloadMag0 ?? w.mag, this.time - (p.reloadStart ?? this.time), p.reloadDur, w.reserve);
+  }
+  cancelReload(p) {
+    if (!(p.reloadEnd > this.time)) return;
+    const w = p.weapons[p.slot], n = this.reloadPartial(p);
+    if (w && n > 0) { w.mag += n; w.reserve -= n; }
+    p.reloadEnd = 0;
+  }
+
+  // coup de crosse (1.28) : attaque rapide au corps à corps, avec n'importe quelle arme en main
+  handleBash(p, msg) {
+    const T = this.time;
+    if (!p.alive || ['buy', 'over', 'warmup', 'sidechoice'].includes(this.phase) || T < (p.bashNext || 0)) return;
+    const d = Array.isArray(msg.d) && msg.d.length === 3 && msg.d.every(finite) ? norm(msg.d) : [-Math.sin(p.yaw) * Math.cos(p.pitch), Math.sin(p.pitch), -Math.cos(p.yaw) * Math.cos(p.pitch)];
+    p.bashNext = T + BASH.cooldown - 0.1; // marge pour la gigue réseau
+    p.lastActive = T; p.protEnd = 0; p.invisEnd = Math.min(p.invisEnd, T);
+    const o = this.eye(p);
+    const wr = raycastBoxes(o, d, BASH.range, this.allBoxes());
+    let best = null, bt = Math.min(wr.t, BASH.range);
+    for (const q of this.players.values()) {
+      if (!q.alive || q === p || (!this.isEnemy(p, q) && !this.opts.friendlyFire)) continue;
+      if (Math.hypot(q.pos[0] - o[0], q.pos[2] - o[2]) > BASH.range + 1.5) continue;
+      for (const hb of hitboxes(q.pos, q.crouch)) { const t = rayAABB(o, d, hb.min, hb.max); if (t >= 0 && t < bt) { bt = t; best = q; } }
+    }
+    if (best) this.damage(best, BASH.damage * (this.isEnemy(p, best) ? 1 : 0.5), p, 'bash', false);
+    this.broadcast({ type: 'bash', i: p.id, h: best ? 1 : 0, o: o.map(r2) });
+  }
+
+  // dégâts de chute (1.28) : hauteur entre le point le plus haut du saut et l'atterrissage
+  fallStep(p, np) {
+    if (!p.alive || this.opts.lowGrav || p.tpGrace > this.time) { p.fallTop = null; return; }
+    const g = groundHeight(np[0], np[2], np[1], this.map.boxes);
+    if (np[1] - g > 0.08) { p.fallTop = Math.max(p.fallTop ?? np[1], np[1]); return; }
+    const drop = p.fallTop == null ? 0 : p.fallTop - np[1];
+    p.fallTop = null;
+    if (drop <= FALL.safe) return;
+    // poussé dans le vide juste après des dégâts : l'élimination revient à l'adversaire
+    const by = p.lastDamagedBy && this.time - (p.lastDamagedAt || -9) < 3 ? this.players.get(p.lastDamagedBy) : null;
+    this.damage(p, Math.round((drop - FALL.safe) * FALL.perM), by && this.isEnemy(by, p) ? by : null, 'fall', false);
+    this.send(p, { type: 'fall', d: r2(drop) });
   }
 
   handleBuy(p, item) {
@@ -813,7 +871,8 @@ export class Match {
     if (this.time - p.lastShot < interval * 0.7) return;
     if (d.type === 'melee' && p.knifeOut) return; // couteau lancé : il faut d'abord le ramasser
     if (d.type !== 'melee') {
-      if (p.reloadEnd > this.time || w.mag <= 0) return;
+      if (p.reloadEnd > this.time) { if (w.mag + this.reloadPartial(p) <= 0) return; this.cancelReload(p); }
+      if (w.mag <= 0) return;
       if (!this.opts.infAmmo) w.mag--;
     }
     p.lastShot = this.time; p.protEnd = 0; p.lastActive = this.time;
@@ -898,6 +957,7 @@ export class Match {
 
   kill(v, a, wpn, head) {
     v.alive = false; v.hp = 0; v.deaths++; v.diedAt = this.time; v.interact = false; v.prog = 0;
+    this.statsDirty = true;
     if (this.core.carrier === v.id) this.dropCore(v);
     // l'arme principale (sinon le pistolet acheté) tombe au sol et peut être ramassée
     if (this.dropsOn()) { const s = v.weapons[1] ? 1 : v.weapons[2] && v.weapons[2].id !== 'spark' ? 2 : 0; if (s) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = s === 2 ? this.newWeapon('spark') : null; } }
@@ -1160,6 +1220,15 @@ export class Match {
       this.send(v, { type: 'notice', text: 'TU AS MARCHÉ SUR UN PIÈGE !' });
     }
   }
+  // rebond (1.28) : la vitesse repart en miroir de la surface touchée, amortie ; au sol, la grenade roule puis s'arrête
+  bounceProjectile(pr, n) {
+    const dot = pr.vel[0] * n[0] + pr.vel[1] * n[1] + pr.vel[2] * n[2];
+    if (dot >= 0) return;
+    pr.vel = pr.vel.map((v, i) => (v - 2 * dot * n[i]) * 0.45);
+    if (n[1] > 0.5) { pr.vel[0] *= 0.7; pr.vel[2] *= 0.7; if (Math.hypot(...pr.vel) < 1.2) { pr.stopped = true; pr.vel = [0, 0, 0]; } }
+    pr.bounces = (pr.bounces || 0) + 1;
+    if (pr.bounces === 1 || pr.bounces % 3 === 0) this.broadcast({ type: 'bounce', p: pr.pos.map(r2) });
+  }
   deployProjectile(pr) {
     const T = this.time;
     const g = groundHeight(pr.pos[0], pr.pos[2], pr.pos[1] + 0.3, this.map.boxes);
@@ -1245,9 +1314,16 @@ export class Match {
           if (r.t < len) {
             const t = Math.max(0, r.t - 0.08);
             pr.pos = pr.pos.map((v, i) => v + dir[i] * t);
-            if (pr.kind === 'flash') { pr.stopped = true; }
-            else { pr.done = true; this.deployProjectile(pr); continue; }
+            const n = boxNormal(pr.pos, r.box);
+            if (pr.kind === 'molotov' && n[1] > 0.5) { pr.done = true; this.deployProjectile(pr); continue; }
+            this.bounceProjectile(pr, n);
           } else pr.pos = pr.pos.map((v, i) => v + step[i]);
+          // sol de la carte
+          if (pr.pos[1] <= 0.06 && pr.vel[1] < 0) {
+            pr.pos[1] = 0.06;
+            if (pr.kind === 'molotov') { pr.done = true; this.deployProjectile(pr); continue; }
+            this.bounceProjectile(pr, [0, 1, 0]);
+          }
         }
       }
       if (T >= pr.fuse) { pr.done = true; this.deployProjectile(pr); }
@@ -1281,7 +1357,7 @@ export class Match {
     }
 
     if (this.phase === 'over' && T >= this.overAt) { this.io.onEnd(); return; }
-    if (this.tickCount % 2 === 0) this.sendSnapshots();
+    if (this.tickCount % SNAP_EVERY === 0) this.sendSnapshots();
   }
 
   tickAssault(dt) {
@@ -1425,19 +1501,25 @@ export class Match {
 
   sendSnapshots() {
     const T = this.time;
-    const dtS = 2 / TICK_RATE;
+    // vitesse sur ~0,1 s (bruit de pas) : indépendante de la fréquence des snapshots
     for (const p of this.players.values()) {
-      const prev = p.snapPos || p.pos;
-      p.snapVel = [(p.pos[0] - prev[0]) / dtS, (p.pos[2] - prev[2]) / dtS];
-      p.snapPos = p.pos.slice();
+      if (p.snapT == null || T - p.snapT >= 0.099) {
+        const prev = p.snapPos || p.pos, dtS = p.snapT == null ? 1 : Math.max(0.033, T - p.snapT);
+        p.snapVel = [(p.pos[0] - prev[0]) / dtS, (p.pos[2] - prev[2]) / dtS];
+        p.snapPos = p.pos.slice(); p.snapT = T;
+      }
     }
+    // 1.28 : les statistiques (tableau des scores) ne partent que 2 fois par seconde ou juste après une élimination
+    const full = this.tickCount % STATS_EVERY === 0 || this.statsDirty;
+    this.statsDirty = false;
+    const stats = q => ({ gl: q.gun, lv: q.lives, st: q.streak, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg), ac: q.shots ? Math.round(q.hits / q.shots * 100) : null, hs: q.kills ? Math.round(q.hsKills / q.kills * 100) : null });
     const pub = new Map(), priv = new Map();
     for (const p of this.players.values()) {
       const w = p.weapons[p.slot];
       const base = {
         i: p.id, p: p.pos.map(r2), y: r3(p.yaw), pt: r3(p.pitch), c: p.crouch ? 1 : 0, al: p.alive ? 1 : 0,
         w: w ? w.id : 'knife', iv: p.invisEnd > T ? 1 : 0, rv: p.revealEnd > T ? 1 : 0,
-        pl: p.prog > 0 ? 1 : 0, gl: p.gun, lv: p.lives, st: p.streak, k: p.kills, d: p.deaths, a: p.assists, sc: p.score, pg: p.ping || 0, dm: Math.round(p.dmg), ac: p.shots ? Math.round(p.hits / p.shots * 100) : null, hs: p.kills ? Math.round(p.hsKills / p.kills * 100) : null,
+        pl: p.prog > 0 ? 1 : 0, ...(full ? stats(p) : {}),
       };
       if (p.protEnd > T) base.sp = 1;
       if (p.sliding && p.alive && (p.slideUntil || 0) > T) base.sd = 1;
@@ -1464,8 +1546,8 @@ export class Match {
         if (!q.alive) { list.push(pub.get(q.id)); continue; }
         const vis = this.visibility(p, q, T);
         if (vis === 'full') list.push(pub.get(q.id));
-        else if (vis === 'audio') list.push(JSON.stringify({ i: q.id, p: q.pos.map(r2), au: 1, al: 1, gl: q.gun, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg), ac: q.shots ? Math.round(q.hits / q.shots * 100) : null, hs: q.kills ? Math.round(q.hsKills / q.kills * 100) : null }));
-        else list.push(JSON.stringify({ i: q.id, h: 1, al: 1, gl: q.gun, k: q.kills, d: q.deaths, a: q.assists, sc: q.score, pg: q.ping || 0, dm: Math.round(q.dmg), ac: q.shots ? Math.round(q.hits / q.shots * 100) : null, hs: q.kills ? Math.round(q.hsKills / q.kills * 100) : null }));
+        else if (vis === 'audio') list.push(JSON.stringify({ i: q.id, p: q.pos.map(r2), au: 1, al: 1, ...(full ? stats(q) : {}) }));
+        else list.push(JSON.stringify({ i: q.id, h: 1, al: 1, ...(full ? stats(q) : {}) }));
       }
       // le Noyau porté n'est montré qu'aux attaquants ; posé ou au sol, il est visible par tous
       const side = this.side(p);

@@ -1,5 +1,22 @@
 [
   {
+    "version": "1.28.0",
+    "date": "2026-11-27",
+    "title": "Moins de latence, coup de crosse, 100 skins",
+    "items": [
+      "Réseau : le serveur envoie maintenant 30 images par seconde (avant 15) et les autres joueurs s'affichent avec 75 ms de retard au lieu de 120 : mouvements plus fluides et réactifs. Entrée souris brute (sans accélération) activée par défaut.",
+      "Nom et barre de vie (et armure en bleu) au-dessus de la tête des coéquipiers. Corrigé : un coéquipier pouvait parfois apparaître sans nom, avec la couleur des ennemis.",
+      "Coup de crosse (touche K) : attaque rapide au corps à corps avec n'importe quelle arme, 45 dégâts.",
+      "Recharge : 20 % plus rapide s'il reste des balles ; tirer pendant une recharge l'interrompt. Fusil à pompe : les cartouches déjà glissées restent dans l'arme.",
+      "Lunette du Longbow : la molette change le zoom (×2, ×3,5, ×6).",
+      "Les grenades (fumée, givre, flash) rebondissent sur les murs et le sol ; le cocktail s'enflamme en touchant le sol.",
+      "Dégâts de chute au-delà de 3,4 m (sauter d'une caisse haute ≈ 10 PV).",
+      "Indicateur de bruit sous le viseur : BRUYANT quand les ennemis proches entendent tes pas, SILENCIEUX en marchant ou accroupi.",
+      "100 nouveaux skins dans 10 collections : Tempête, Jardin zen, Mécanique, Confiserie, Mythes, Gothique, Tropical, Cristaux, Militaire et Aube (avec leurs titres).",
+      "Launcher 2.1 : mode performance (carte graphique forcée, priorité haute, pas de ralentissement en arrière-plan) et bouton TESTER MA CONNEXION (ping et stabilité)."
+    ]
+  },
+  {
     "version": "1.27.3",
     "date": "2026-11-26",
     "title": "Réticule totalement fixe",

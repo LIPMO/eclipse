@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('launcher', {
   setSettings: patch => ipcRenderer.invoke('settings:set', patch),
   resetSettings: () => ipcRenderer.invoke('settings:reset'),
   status: server => ipcRenderer.invoke('status:get', server),
+  netTest: server => ipcRenderer.invoke('net:test', server),
   news: () => ipcRenderer.invoke('news:get'),
   shop: () => ipcRenderer.invoke('shop:get'),
   play: where => ipcRenderer.invoke('game:play', where),

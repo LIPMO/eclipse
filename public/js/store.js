@@ -6,7 +6,7 @@ export const DEFAULT_KEYS = {
   fire: 'Mouse0', scope: 'Mouse2', reload: 'KeyR', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3',
   abilityQ: 'KeyQ', abilityE: 'KeyE', ult: 'KeyX', interact: 'KeyF', buy: 'KeyB', scoreboard: 'Tab', chat: 'Enter',
   teamChat: 'KeyY', radio: 'KeyT', mark: 'Mouse1', emote: 'KeyV', inspect: 'KeyG', react: 'KeyH',
-  drop: 'KeyJ', lastWeapon: 'KeyZ', bigMap: 'KeyM', ready: 'KeyP', rebuy: 'KeyN', muteAll: 'F8',
+  drop: 'KeyJ', lastWeapon: 'KeyZ', bigMap: 'KeyM', ready: 'KeyP', rebuy: 'KeyN', muteAll: 'F8', melee: 'KeyK',
 };
 export const DEFAULT_SETTINGS = {
   // souris
@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS = {
   // interface
   fps: false, minimap: true, hitmarker: true, killcam: true, bob: true, leftHand: false, enemyColor: '#ff4f6d', allyColor: '#19e3c4',
   netGraph: false, damageNumbers: true, dmgNumPos: 'target', chatMode: 'all', chatSize: 1, hudScale: 1, confirmQuit: true,
-  minimapRotate: false, minimapZoom: 1, heardOnMap: true, chEnemy: true, lowAmmoWarn: true, roundBeeps: true, dmgReport: true,
+  minimapRotate: false, minimapZoom: 1, heardOnMap: true, noiseMeter: true, allyTags: true, rawInput: true, chEnemy: true, lowAmmoWarn: true, roundBeeps: true, dmgReport: true,
   // commandes
   crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true, slide: true,
   // 1.15

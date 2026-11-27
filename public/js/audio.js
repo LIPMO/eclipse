@@ -230,3 +230,5 @@ export function playNotify() { if (!ctx) return; const t = ctx.currentTime; tone
 export function playPromote() { if (!ctx) return; const t = ctx.currentTime; tone(C('ui'), t, 0.15, 600, 1200, 'square', 0.08); tone(C('ui'), t + 0.12, 0.25, 1200, 1200, 'triangle', 0.18); }
 export function playWhoosh() { if (!ctx) return; const t = ctx.currentTime; noise(C('ui'), t, 0.6, 900, 0.7, 'bandpass', 0.5); tone(C('ui'), t, 0.5, 200, 60, 'sine', 0.25); }
 export function playTick(last = false) { if (!ctx) return; tone(C('ui'), ctx.currentTime, 0.07, last ? 1400 : 1000, last ? 1400 : 1000, 'sine', 0.15); }
+// rebond d'une grenade (1.28)
+export function playBounce(pos) { if (!ctx) return; const t = ctx.currentTime; const o = out(pos, 30, 'abilities'); noise(o, t, 0.06, 1800, 2, 'bandpass', 0.5); tone(o, t, 0.05, 900, 500, 'triangle', 0.12); }

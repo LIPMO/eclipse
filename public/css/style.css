@@ -1362,3 +1362,8 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 @keyframes sndFade { from { opacity: var(--o, 1); } to { opacity: 0; } }
 .end-drill { margin: 10px auto; max-width: 520px; }
 .end-drill p { margin: 6px 0 10px; }
+
+/* indicateur de bruit (1.28) */
+#noise { position: absolute; left: 50%; top: calc(50% + 54px); transform: translateX(-50%); font: 700 10px/1 var(--font, sans-serif); letter-spacing: .12em; padding: 5px 10px; border-radius: 999px; pointer-events: none; opacity: 0; transition: opacity .2s; }
+#noise.quiet { opacity: .85; color: #7dffb0; background: rgba(10, 40, 24, .55); border: 1px solid rgba(125, 255, 176, .35); }
+#noise.loud { opacity: .95; color: #ffb35c; background: rgba(48, 24, 6, .6); border: 1px solid rgba(255, 179, 92, .45); }

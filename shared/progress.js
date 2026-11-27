@@ -122,7 +122,7 @@ export const ACHIEVEMENTS = [
   // 1.19 : collections de skins complètes (bonus d'Éclats et titre)
   ...SKIN_SETS.map(set => ({ id: 'set_' + setKey(set), label: `Collection ${set}`, desc: `Posséder les 10 skins de la collection ${set}`, reward: 800, title: 'set_' + setKey(set),
     check: u => SKINS.filter(s => s.set === set).every(s => (u.owned || []).includes(s.id)) })),
-  { id: 'sets_all', label: 'Grand collectionneur', desc: 'Compléter les 10 collections de skins', reward: 3000, title: 'collectionneur', check: u => SKINS.filter(s => s.set).every(s => (u.owned || []).includes(s.id)) },
+  { id: 'sets_all', label: 'Grand collectionneur', desc: `Compléter les ${SKIN_SETS.length} collections de skins`, reward: 3000, title: 'collectionneur', check: u => SKINS.filter(s => s.set).every(s => (u.owned || []).includes(s.id)) },
 ];
 
 // ---------- titres ----------
@@ -134,6 +134,8 @@ export const TITLES = {
   fondateur: 'Fondateur', champion: 'Champion', testeur: 'Testeur', collectionneur: 'Grand collectionneur',
   set_ocean: 'Seigneur des océans', set_volcan: 'Cœur de lave', set_foret: 'Gardien de la forêt', set_arctique: 'Roi des glaces', set_cyber: 'Cyber-légende',
   set_desert: 'Nomade des sables', set_royal: 'Altesse', set_sauvage: 'Bête sauvage', set_retro: 'Icône rétro', set_cosmos: 'Voyageur cosmique',
+  // 1.28
+  set_tempete: 'Maître de l\'orage', set_jardinzen: 'Sage du jardin', set_mecanique: 'Ingénieur en chef', set_confiserie: 'Roi des bonbons', set_mythes: 'Héros des légendes', set_gothique: 'Seigneur de la nuit', set_tropical: 'Roi des îles', set_cristaux: 'Joaillier', set_militaire: 'Commandant', set_aube: 'Gardien de l\'aube',
 };
 // titres attribuables uniquement par l'équipe
 export const STAFF_TITLES = ['fondateur', 'champion', 'testeur'];

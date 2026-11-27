@@ -28,7 +28,7 @@ export const ACTIONS = [
   ['abilityQ', 'Capacité 1'], ['abilityE', 'Capacité 2'], ['ult', 'Ultime'],
   ['interact', 'Poser / désamorcer'], ['buy', 'Menu d\'achat'], ['scoreboard', 'Tableau des scores'], ['chat', 'Chat (tous)'],
   ['teamChat', 'Chat d\'équipe'], ['radio', 'Messages radio'], ['mark', 'Marquer une position (ping)'], ['emote', 'Émotes'], ['inspect', 'Inspecter l\'arme'], ['react', 'Féliciter un coéquipier (👏)'],
-  ['drop', 'Lâcher l\'arme en main'], ['lastWeapon', 'Arme précédente'], ['bigMap', 'Grande carte (maintenir)'], ['ready', 'Prêt (phase d\'achat) / défi de visée'], ['rebuy', 'Racheter l\'équipement précédent'],, ['muteAll', 'Couper / remettre tout le son']
+  ['drop', 'Lâcher l\'arme en main'], ['lastWeapon', 'Arme précédente'], ['bigMap', 'Grande carte (maintenir)'], ['ready', 'Prêt (phase d\'achat) / défi de visée'], ['rebuy', 'Racheter l\'équipement précédent'], ['melee', 'Coup de crosse (attaque rapide au corps à corps)'], ['muteAll', 'Couper / remettre tout le son']
 ];
 
 // ---------- viseur ----------
@@ -81,6 +81,7 @@ const SECTIONS = [
   ] },
   { id: 'mouse', title: 'Souris', items: [
     { k: 'sens', t: 'range', label: 'Sensibilité', min: 0.05, max: 5, step: 0.01, num: true },
+    { k: 'rawInput', t: 'toggle', label: 'Entrée souris brute', hint: 'Mouvements de la souris sans l\'accélération de Windows : visée plus précise et un peu moins de latence (prend effet au prochain clic dans le jeu)' },
     { k: 'sensY', t: 'range', label: 'Multiplicateur vertical', min: 0.3, max: 2, step: 0.05, num: true, hint: '1 = même vitesse à la verticale qu\'à l\'horizontale' },
     { k: 'scopeSens', t: 'range', label: 'Multiplicateur au viseur et en lunette', min: 0.2, max: 2, step: 0.05, num: true, hint: '1 = même vitesse de visée qu\'en vue normale (corrigée du zoom)' },
     { k: 'invertY', t: 'toggle', label: 'Inverser l\'axe vertical' },
@@ -145,6 +146,8 @@ const SECTIONS = [
     { k: 'minimapRotate', t: 'toggle', label: 'Mini-carte qui tourne avec toi' },
     { k: 'minimapZoom', t: 'range', label: 'Zoom de la mini-carte', min: 1, max: 2.5, step: 0.1, pct: true },
     { k: 'heardOnMap', t: 'toggle', label: 'Ennemis entendus sur la mini-carte', hint: 'Les pas ennemis proches apparaissent en cercles pâles' },
+    { k: 'allyTags', t: 'toggle', label: 'Nom et PV des coéquipiers', hint: 'Affiche le nom et la barre de vie (et l\'armure en bleu) au-dessus de la tête de tes coéquipiers' },
+    { k: 'noiseMeter', t: 'toggle', label: 'Indicateur de bruit', hint: 'Montre si tes pas sont entendus par les ennemis proches (BRUYANT) ou non (SILENCIEUX : marche lente ou accroupi)' },
     { k: 'chEnemy', t: 'toggle', label: 'Viseur rouge sur un ennemi', hint: 'Le viseur change de couleur quand il passe sur un ennemi visible' },
     { k: 'lowAmmoWarn', t: 'toggle', label: 'Alerte de munitions faibles' },
     { k: 'roundBeeps', t: 'toggle', label: 'Bips des 10 dernières secondes de la manche' },

@@ -1,14 +1,15 @@
 // ECLIPSE Launcher 2 — processus principal Electron
 // Nouveautés : se met à jour tout seul, options de performance (images par seconde illimitées, carte graphique
 // puissante), lancement au démarrage de l'ordinateur, fenêtre de jeu mémorisée, boutique du jour sur l'accueil.
-const { app, BrowserWindow, ipcMain, shell, dialog, session, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, session, screen, powerSaveBlocker } = require('electron');
 const path = require('node:path');
+const os = require('node:os');
 const fs = require('node:fs');
 
 const DEFAULT_SERVER = process.env.ECLIPSE_SERVER || 'https://eclipseee.online';
 const OLD_SERVERS = ['https://eclipse.charlesvibe.xyz']; // anciennes adresses par défaut : remplacées automatiquement
 const SITE = 'https://eclipseee.online';
-const DEFAULTS = { server: DEFAULT_SERVER, fullscreen: true, size: '1600x900', afterLaunch: 'hide', fpsUnlock: false, highPerfGpu: true, autoStart: false, autoUpdate: true, gameBounds: null };
+const DEFAULTS = { server: DEFAULT_SERVER, fullscreen: true, size: '1600x900', afterLaunch: 'hide', fpsUnlock: false, highPerfGpu: true, perfMode: true, autoStart: false, autoUpdate: true, gameBounds: null };
 const SIZES = ['1280x720', '1600x900', '1920x1080', '2560x1440'];
 const ICON = path.join(__dirname, 'build', 'icon.png');
 
@@ -38,6 +39,19 @@ loadSettings();
 if (settings.fpsUnlock) { app.commandLine.appendSwitch('disable-frame-rate-limit'); app.commandLine.appendSwitch('disable-gpu-vsync'); }
 if (settings.highPerfGpu) app.commandLine.appendSwitch('force_high_performance_gpu');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required'); // sons du jeu dès l'ouverture
+// Mode performance (2.1) : contre les saccades et la latence
+//  - carte graphique utilisée même si Chrome la croit incompatible (sinon rendu logiciel, très lent)
+//  - rendu et rastérisation sur la carte graphique
+//  - pas de ralentissement quand la fenêtre est cachée, en arrière-plan ou recouverte (Windows le fait en plein écran)
+if (settings.perfMode !== false) {
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-background-timer-throttling');
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+}
 
 // ---------- état du serveur ----------
 async function fetchJSON(url, ms = 5000) {
@@ -152,13 +166,43 @@ function openGame(hash = '') {
   const remember = () => { if (gameWin && !gameWin.isFullScreen() && !gameWin.isMinimized() && !gameWin.isMaximized()) { settings.gameBounds = gameWin.getBounds(); saveSettings(); } };
   gameWin.on('resized', remember); gameWin.on('moved', remember);
   gameWin.once('ready-to-show', () => gameWin.show());
-  gameWin.on('closed', () => { gameWin = null; showLauncher(); });
+  // mode performance : le jeu (et la carte graphique) passent en priorité « au-dessus de la normale », l'écran ne se met pas en veille
+  let blocker = null;
+  if (settings.perfMode !== false) {
+    try { blocker = powerSaveBlocker.start('prevent-display-sleep'); } catch { /* */ }
+    wc.on('did-finish-load', () => boostPriority(wc));
+  }
+  gameWin.on('closed', () => { if (blocker != null) try { powerSaveBlocker.stop(blocker); } catch { /* */ } gameWin = null; showLauncher(); });
   gameWin.loadURL(base + '/' + (hash ? '#' + hash : ''));
   if (launcherWin) {
     if (settings.afterLaunch === 'hide') launcherWin.hide();
     else if (settings.afterLaunch === 'minimize') launcherWin.minimize();
   }
   return { ok: true };
+}
+
+function boostPriority(wc) {
+  const prio = os.constants?.priority?.PRIORITY_ABOVE_NORMAL ?? -7;
+  const pids = new Set();
+  try { pids.add(wc.getOSProcessId()); } catch { /* */ }
+  try { for (const m of app.getAppMetrics()) if (m.type === 'GPU') pids.add(m.pid); } catch { /* */ }
+  for (const pid of pids) { try { os.setPriority(pid, prio); } catch { /* droits insuffisants (Linux) : on garde la priorité normale */ } }
+}
+
+// test de connexion (2.1) : plusieurs allers-retours vers le serveur → ping moyen, minimum, maximum et variation (gigue)
+async function netTest(server = settings.server) {
+  const base = normalizeServer(server);
+  if (!base) return { ok: false, error: 'Adresse invalide' };
+  const times = [];
+  for (let i = 0; i < 8; i++) {
+    const t0 = performance.now();
+    try { const r = await fetchJSON(base + '/healthz', 4000); if (r.status < 500) times.push(performance.now() - t0); } catch { /* perdu */ }
+  }
+  if (!times.length) return { ok: false, error: 'Serveur injoignable' };
+  const sorted = times.slice(1).length ? times.slice(1) : times; // le premier inclut l'ouverture de la connexion
+  const avg = sorted.reduce((a, b) => a + b, 0) / sorted.length;
+  const jitter = sorted.length > 1 ? sorted.slice(1).reduce((a, v, i) => a + Math.abs(v - sorted[i]), 0) / (sorted.length - 1) : 0;
+  return { ok: true, avg: Math.round(avg), min: Math.round(Math.min(...sorted)), max: Math.round(Math.max(...sorted)), jitter: Math.round(jitter), lost: 8 - times.length };
 }
 
 function applyAutoStart() {
@@ -170,7 +214,7 @@ function applyAutoStart() {
 ipcMain.handle('settings:get', () => ({ ...settings, sizes: SIZES, version: app.getVersion(), defaultServer: DEFAULT_SERVER, platform: process.platform, packaged: app.isPackaged, site: SITE }));
 ipcMain.handle('settings:set', (e, patch = {}) => {
   if ('server' in patch) { const s = normalizeServer(patch.server); if (!s) return { ok: false, error: 'Adresse du serveur invalide' }; settings.server = s; }
-  for (const k of ['fullscreen', 'fpsUnlock', 'highPerfGpu', 'autoStart', 'autoUpdate']) if (k in patch) settings[k] = !!patch[k];
+  for (const k of ['fullscreen', 'fpsUnlock', 'highPerfGpu', 'perfMode', 'autoStart', 'autoUpdate']) if (k in patch) settings[k] = !!patch[k];
   if ('size' in patch && SIZES.includes(patch.size)) { settings.size = patch.size; settings.gameBounds = null; }
   if ('afterLaunch' in patch && ['hide', 'minimize', 'keep'].includes(patch.afterLaunch)) settings.afterLaunch = patch.afterLaunch;
   if ('autoStart' in patch) applyAutoStart();
@@ -179,6 +223,7 @@ ipcMain.handle('settings:set', (e, patch = {}) => {
 });
 ipcMain.handle('settings:reset', () => { settings = { ...DEFAULTS }; saveSettings(); applyAutoStart(); return settings; });
 ipcMain.handle('status:get', (e, server) => serverStatus(server));
+ipcMain.handle('net:test', (e, server) => netTest(server));
 ipcMain.handle('news:get', () => getJSON('/api/news'));
 ipcMain.handle('shop:get', () => getJSON('/api/shop'));
 ipcMain.handle('game:play', (e, where) => openGame(where === 'boutique' ? 'boutique' : ''));

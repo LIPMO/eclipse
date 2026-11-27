@@ -1,6 +1,8 @@
 // Données partagées client/serveur : armes, agents, skins, constantes de jeu.
 export const TICK_RATE = 30;
-export const SNAP_EVERY = 2; // snapshot toutes les 2 frames serveur (15 Hz)
+export const SNAP_EVERY = 1; // snapshot à chaque frame serveur (30 Hz, 1.28 : avant 15 Hz)
+export const STATS_EVERY = 15; // statistiques du tableau des scores : 2 fois par seconde (ou tout de suite après une élimination)
+export const INTERP_DELAY = 75; // retard d'affichage des autres joueurs (ms), ≈ 2 snapshots
 
 export const ROUND = {
   buyTime: 20, roundTime: 100, fuseTime: 40, plantTime: 4, defuseTime: 7, endTime: 6,
@@ -29,9 +31,27 @@ export const RECOIL_PATTERNS = {
   hornet: [0, 0.2, -0.2, 0.3, -0.3, 0.2, -0.2],
   spark: [0, 0.15, -0.15, 0.2, -0.2],
 };
-// n peut être à virgule (le compteur de rafale redescend entre deux tirs) : on prend la case entière
-export const recoilX = (id, n) => { const p = RECOIL_PATTERNS[id]; const i = Math.max(0, Math.floor(Number(n) || 0)); return p ? (p[i % p.length] || 0) : 0; };
+// n peut être à virgule (le compteur de rafale redescend entre deux tirs) : on prend la case la plus proche
+export const recoilX = (id, n) => { const p = RECOIL_PATTERNS[id]; const i = Math.max(0, Math.round(Number(n) || 0)); return p ? (p[i % p.length] || 0) : 0; };
 export const DUEL = { buyTime: 10, roundTime: 60, money: 9000 };
+// ---- mécaniques 1.28 ----
+// recharge : avec des balles restantes, 20 % plus rapide ; tirer pendant la recharge l'interrompt s'il reste des balles.
+// Fusil à pompe : les cartouches déjà glissées restent dans l'arme si on interrompt.
+export const RELOAD = { tactical: 0.8 };
+export const reloadTime = (def, mag) => def.reload * (mag > 0 ? RELOAD.tactical : 1);
+export function partialShells(def, mag0, elapsed, dur, reserve) {
+  if (!def || def.type !== 'shotgun' || !(dur > 0)) return 0;
+  const missing = def.mag - mag0;
+  return Math.max(0, Math.min(reserve, missing, Math.floor(missing * Math.min(1, Math.max(0, elapsed) / dur))));
+}
+// dégâts de chute : au-delà de 3,4 m de chute, 15 PV par mètre (sauter d'une caisse haute ≈ 10 PV)
+export const FALL = { safe: 3.4, perM: 15 };
+// coup de crosse : attaque rapide au corps à corps, quelle que soit l'arme en main
+export const BASH = { damage: 45, range: 1.9, cooldown: 0.9 };
+// lunette : niveaux de zoom changés à la molette
+export const SCOPE_LEVELS = [2, 3.5, 6];
+// pas : au-dessus de cette vitesse, les ennemis proches entendent tes pas (même seuil que le serveur)
+export const STEP_LOUD = 4.3;
 
 export const FFA = { respawn: 3, timeLimit: 600, gunTimeLimit: 480, abilityRecharge: 18 };
 // modes « chacun pour soi » (pas d'équipes, réapparition) : Mêlée et Gun Game
@@ -426,6 +446,107 @@ export const SKINS = [
   { id: 'nebuleuse', name: 'Nébuleuse', price: 900, set: 'Cosmos', body: '#1a0630', accent: '#ff5cf0', glow: true, pattern: 'stars', metal: 0.65, rough: 0.3 },
   { id: 'quasar', name: 'Quasar', price: 1100, set: 'Cosmos', body: '#04040e', accent: '#7cf0ff', glow: true, pattern: 'rings', metal: 0.65, rough: 0.3 },
   { id: 'trounoir', name: 'Trou noir', price: 1700, set: 'Cosmos', body: '#000000', accent: '#b07cff', glow: true, animated: 'hue', pattern: 'web', metal: 0.85, rough: 0.18 },
+  // ---- 100 skins (1.28) : 10 nouvelles collections de 10 ----
+  { id: 'grisaille', name: 'Grisaille', price: 250, set: 'Tempête', body: '#5a6270', accent: '#9aa6b6', pattern: 'waves', metal: 0.35, rough: 0.55 },
+  { id: 'bruine', name: 'Bruine', price: 300, set: 'Tempête', body: '#4a5a6a', accent: '#b8d0e8', pattern: 'dots', metal: 0.35, rough: 0.55 },
+  { id: 'nimbus', name: 'Nimbus', price: 300, set: 'Tempête', body: '#6c7684', accent: '#e6edf5', pattern: 'fade', metal: 0.35, rough: 0.55 },
+  { id: 'rafale', name: 'Rafale', price: 350, set: 'Tempête', body: '#3a4656', accent: '#8fb8ff', pattern: 'lines', metal: 0.35, rough: 0.55 },
+  { id: 'grele', name: 'Grêle', price: 450, set: 'Tempête', body: '#2e3a4a', accent: '#d8f0ff', pattern: 'shards', metal: 0.5, rough: 0.4 },
+  { id: 'cyclone', name: 'Cyclone', price: 550, set: 'Tempête', body: '#1e2a3c', accent: '#6fc8ff', pattern: 'rings', metal: 0.5, rough: 0.4 },
+  { id: 'ouragan', name: 'Ouragan', price: 650, set: 'Tempête', body: '#18202e', accent: '#a0e4ff', pattern: 'waves', metal: 0.5, rough: 0.4 },
+  { id: 'foudre', name: 'Foudre', price: 900, set: 'Tempête', body: '#0c1020', accent: '#fff35a', glow: true, pattern: 'cracks', metal: 0.65, rough: 0.3 },
+  { id: 'supercellule', name: 'Supercellule', price: 1100, set: 'Tempête', body: '#0a0e1c', accent: '#7cb8ff', glow: true, pattern: 'circuit', metal: 0.65, rough: 0.3 },
+  { id: 'ilducyclone', name: 'Œil du cyclone', price: 1700, set: 'Tempête', body: '#04060e', accent: '#b8f0ff', glow: true, pattern: 'rings', metal: 0.85, rough: 0.18 },
+  { id: 'gravier', name: 'Gravier', price: 250, set: 'Jardin zen', body: '#bdb6a6', accent: '#7a7468', pattern: 'topo', metal: 0.35, rough: 0.55 },
+  { id: 'galet', name: 'Galet', price: 300, set: 'Jardin zen', body: '#8a8478', accent: '#cfc8b8', pattern: 'dots', metal: 0.35, rough: 0.55 },
+  { id: 'bonsai', name: 'Bonsaï', price: 300, set: 'Jardin zen', body: '#3a4a2e', accent: '#a6c27a', pattern: 'petals', metal: 0.35, rough: 0.55 },
+  { id: 'thevert', name: 'Thé vert', price: 350, set: 'Jardin zen', body: '#5a6e3a', accent: '#d8e6a8', pattern: 'fade', metal: 0.35, rough: 0.55 },
+  { id: 'lanterne', name: 'Lanterne', price: 450, set: 'Jardin zen', body: '#4a2a1a', accent: '#ffb86a', pattern: 'filigree', metal: 0.5, rough: 0.4 },
+  { id: 'pontrouge', name: 'Pont rouge', price: 550, set: 'Jardin zen', body: '#6a1a1a', accent: '#ff8a6a', pattern: 'stripes', metal: 0.5, rough: 0.4 },
+  { id: 'koi', name: 'Koï', price: 650, set: 'Jardin zen', body: '#f2efe6', accent: '#ff6a2a', pattern: 'scales', metal: 0.5, rough: 0.4 },
+  { id: 'cerisier', name: 'Cerisier', price: 900, set: 'Jardin zen', body: '#2a1420', accent: '#ffa8d0', glow: true, pattern: 'petals', metal: 0.65, rough: 0.3 },
+  { id: 'lunedautomne', name: 'Lune d\'automne', price: 1100, set: 'Jardin zen', body: '#141026', accent: '#ffd890', glow: true, pattern: 'stars', metal: 0.65, rough: 0.3 },
+  { id: 'espritdusanctuaire', name: 'Esprit du sanctuaire', price: 1700, set: 'Jardin zen', body: '#0a0814', accent: '#ff7ab8', glow: true, pattern: 'filigree', metal: 0.85, rough: 0.18 },
+  { id: 'rouille', name: 'Rouille', price: 250, set: 'Mécanique', body: '#6a3a22', accent: '#a86a3e', pattern: 'cracks', metal: 0.35, rough: 0.55 },
+  { id: 'boulon', name: 'Boulon', price: 300, set: 'Mécanique', body: '#5a5e64', accent: '#a8adb4', pattern: 'hex', metal: 0.35, rough: 0.55 },
+  { id: 'engrenage', name: 'Engrenage', price: 300, set: 'Mécanique', body: '#3e4248', accent: '#c8a060', pattern: 'rings', metal: 0.35, rough: 0.55 },
+  { id: 'cuivre', name: 'Cuivre', price: 350, set: 'Mécanique', body: '#7a4a28', accent: '#e0a070', pattern: 'fade', metal: 0.35, rough: 0.55 },
+  { id: 'piston', name: 'Piston', price: 450, set: 'Mécanique', body: '#2e3236', accent: '#9ab0c4', pattern: 'stripes', metal: 0.5, rough: 0.4 },
+  { id: 'vapeur', name: 'Vapeur', price: 550, set: 'Mécanique', body: '#4a4e52', accent: '#e6e6e6', pattern: 'bubbles', metal: 0.5, rough: 0.4 },
+  { id: 'horlogerie', name: 'Horlogerie', price: 650, set: 'Mécanique', body: '#2a1e10', accent: '#e8c060', pattern: 'filigree', metal: 0.5, rough: 0.4 },
+  { id: 'forge', name: 'Forge', price: 900, set: 'Mécanique', body: '#1a0c06', accent: '#ff8a2a', glow: true, pattern: 'hex', metal: 0.65, rough: 0.3 },
+  { id: 'turbine', name: 'Turbine', price: 1100, set: 'Mécanique', body: '#0c121a', accent: '#5ad8ff', glow: true, pattern: 'circuit', metal: 0.65, rough: 0.3 },
+  { id: 'curmecanique', name: 'Cœur mécanique', price: 1700, set: 'Mécanique', body: '#0a0806', accent: '#ffc040', glow: true, pattern: 'rings', metal: 0.85, rough: 0.18 },
+  { id: 'guimauve', name: 'Guimauve', price: 250, set: 'Confiserie', body: '#f6e0ec', accent: '#ffffff', pattern: 'dots', metal: 0.35, rough: 0.55 },
+  { id: 'reglisse', name: 'Réglisse', price: 300, set: 'Confiserie', body: '#16141a', accent: '#4a3a4a', pattern: 'stripes', metal: 0.35, rough: 0.55 },
+  { id: 'caramel', name: 'Caramel', price: 300, set: 'Confiserie', body: '#a86a2a', accent: '#f0c080', pattern: 'fade', metal: 0.35, rough: 0.55 },
+  { id: 'barbeapapa', name: 'Barbe à papa', price: 350, set: 'Confiserie', body: '#ffc8e8', accent: '#a8d8ff', pattern: 'bubbles', metal: 0.35, rough: 0.55 },
+  { id: 'sucredorge', name: 'Sucre d\'orge', price: 450, set: 'Confiserie', body: '#ffffff', accent: '#ff3a5a', pattern: 'stripes', metal: 0.5, rough: 0.4 },
+  { id: 'praline', name: 'Praline', price: 550, set: 'Confiserie', body: '#5a3a22', accent: '#ff9ac0', pattern: 'dots', metal: 0.5, rough: 0.4 },
+  { id: 'chewinggum', name: 'Chewing-gum', price: 650, set: 'Confiserie', body: '#ff7ac8', accent: '#7af0ff', alt: '#ffe14d', pattern: 'splatter', metal: 0.5, rough: 0.4 },
+  { id: 'bonbonacidule', name: 'Bonbon acidulé', price: 900, set: 'Confiserie', body: '#1a0a20', accent: '#9dff2e', glow: true, pattern: 'bubbles', metal: 0.65, rough: 0.3 },
+  { id: 'sucettearcenciel', name: 'Sucette arc-en-ciel', price: 1100, set: 'Confiserie', body: '#140a1e', accent: '#ff5cf0', glow: true, pattern: 'rings', metal: 0.65, rough: 0.3 },
+  { id: 'patisserieroyale', name: 'Pâtisserie royale', price: 1700, set: 'Confiserie', body: '#1a0e14', accent: '#ffd0e8', glow: true, animated: 'hue', pattern: 'filigree', metal: 0.85, rough: 0.18 },
+  { id: 'argileantique', name: 'Argile antique', price: 250, set: 'Mythes', body: '#8a5a3a', accent: '#d8a878', pattern: 'chevron', metal: 0.35, rough: 0.55 },
+  { id: 'minotaure', name: 'Minotaure', price: 300, set: 'Mythes', body: '#4a2a1a', accent: '#c87a4a', pattern: 'cracks', metal: 0.35, rough: 0.55 },
+  { id: 'medusemyt', name: 'Méduse', price: 300, set: 'Mythes', body: '#2a3a2a', accent: '#8ae0a0', pattern: 'scales', metal: 0.35, rough: 0.55 },
+  { id: 'cyclope', name: 'Cyclope', price: 350, set: 'Mythes', body: '#3a3048', accent: '#a890d8', pattern: 'rings', metal: 0.35, rough: 0.55 },
+  { id: 'pegase', name: 'Pégase', price: 450, set: 'Mythes', body: '#e8eef6', accent: '#a8c8ff', pattern: 'petals', metal: 0.5, rough: 0.4 },
+  { id: 'hydre', name: 'Hydre', price: 550, set: 'Mythes', body: '#0e2a1e', accent: '#5affa0', pattern: 'scales', metal: 0.5, rough: 0.4 },
+  { id: 'olympe', name: 'Olympe', price: 650, set: 'Mythes', body: '#f2e6c8', accent: '#e0b040', pattern: 'filigree', metal: 0.5, rough: 0.4 },
+  { id: 'phenix', name: 'Phénix', price: 900, set: 'Mythes', body: '#1a0604', accent: '#ff7a1a', glow: true, pattern: 'flames', metal: 0.65, rough: 0.3 },
+  { id: 'griffon', name: 'Griffon', price: 1100, set: 'Mythes', body: '#120e06', accent: '#ffd060', glow: true, pattern: 'chevron', metal: 0.65, rough: 0.3 },
+  { id: 'titan', name: 'Titan', price: 1700, set: 'Mythes', body: '#060408', accent: '#c890ff', glow: true, pattern: 'shards', metal: 0.85, rough: 0.18 },
+  { id: 'pierretombale', name: 'Pierre tombale', price: 250, set: 'Gothique', body: '#4a4a50', accent: '#7e7e88', pattern: 'cracks', metal: 0.35, rough: 0.55 },
+  { id: 'corbeau', name: 'Corbeau', price: 300, set: 'Gothique', body: '#141418', accent: '#3a3a48', pattern: 'scales', metal: 0.35, rough: 0.55 },
+  { id: 'brume', name: 'Brume', price: 300, set: 'Gothique', body: '#3a3a46', accent: '#a8a8c0', pattern: 'fade', metal: 0.35, rough: 0.55 },
+  { id: 'vitrail', name: 'Vitrail', price: 350, set: 'Gothique', body: '#1a1430', accent: '#8a6aff', pattern: 'shards', metal: 0.35, rough: 0.55 },
+  { id: 'chandelle', name: 'Chandelle', price: 450, set: 'Gothique', body: '#1a120a', accent: '#ffc46a', pattern: 'flames', metal: 0.5, rough: 0.4 },
+  { id: 'rosenoire', name: 'Rose noire', price: 550, set: 'Gothique', body: '#14060c', accent: '#c0203a', pattern: 'petals', metal: 0.5, rough: 0.4 },
+  { id: 'gargouille', name: 'Gargouille', price: 650, set: 'Gothique', body: '#2a2a2e', accent: '#9a9aa8', pattern: 'cracks', metal: 0.5, rough: 0.4 },
+  { id: 'spectre', name: 'Spectre', price: 900, set: 'Gothique', body: '#06060e', accent: '#7cf0d0', glow: true, pattern: 'web', metal: 0.65, rough: 0.3 },
+  { id: 'sangroyal', name: 'Sang royal', price: 1100, set: 'Gothique', body: '#100206', accent: '#ff2a4a', glow: true, pattern: 'filigree', metal: 0.65, rough: 0.3 },
+  { id: 'comtedesombres', name: 'Comte des ombres', price: 1700, set: 'Gothique', body: '#040306', accent: '#b07cff', glow: true, pattern: 'web', metal: 0.85, rough: 0.18 },
+  { id: 'sableblanc', name: 'Sable blanc', price: 250, set: 'Tropical', body: '#efe6cc', accent: '#c8b88a', pattern: 'dots', metal: 0.35, rough: 0.55 },
+  { id: 'noixdecoco', name: 'Noix de coco', price: 300, set: 'Tropical', body: '#5a3a22', accent: '#efe6d8', pattern: 'stripes', metal: 0.35, rough: 0.55 },
+  { id: 'palmier', name: 'Palmier', price: 300, set: 'Tropical', body: '#2e5a2a', accent: '#a8e070', pattern: 'petals', metal: 0.35, rough: 0.55 },
+  { id: 'lagonturquoise', name: 'Lagon turquoise', price: 350, set: 'Tropical', body: '#1a8a8a', accent: '#bff8f0', pattern: 'waves', metal: 0.35, rough: 0.55 },
+  { id: 'hibiscus', name: 'Hibiscus', price: 450, set: 'Tropical', body: '#c02a5a', accent: '#ffd0e0', pattern: 'petals', metal: 0.5, rough: 0.4 },
+  { id: 'toucan', name: 'Toucan', price: 550, set: 'Tropical', body: '#141414', accent: '#ffb020', alt: '#ff5a2a', pattern: 'stripes', metal: 0.5, rough: 0.4 },
+  { id: 'mangue', name: 'Mangue', price: 650, set: 'Tropical', body: '#ffa02a', accent: '#ff5a3a', pattern: 'fade', metal: 0.5, rough: 0.4 },
+  { id: 'volcandesiles', name: 'Volcan des îles', price: 900, set: 'Tropical', body: '#1a0604', accent: '#ff6a2a', glow: true, pattern: 'cracks', metal: 0.65, rough: 0.3 },
+  { id: 'reciffluo', name: 'Récif fluo', price: 1100, set: 'Tropical', body: '#04141e', accent: '#3affd8', glow: true, pattern: 'bubbles', metal: 0.65, rough: 0.3 },
+  { id: 'paradis', name: 'Paradis', price: 1700, set: 'Tropical', body: '#060e14', accent: '#ff8ad8', glow: true, pattern: 'petals', metal: 0.85, rough: 0.18 },
+  { id: 'quartz', name: 'Quartz', price: 250, set: 'Cristaux', body: '#d8d4e0', accent: '#ffffff', pattern: 'shards', metal: 0.35, rough: 0.55 },
+  { id: 'onyx', name: 'Onyx', price: 300, set: 'Cristaux', body: '#121214', accent: '#5a5a66', pattern: 'marble', metal: 0.35, rough: 0.55 },
+  { id: 'jade', name: 'Jade', price: 300, set: 'Cristaux', body: '#2a6a4a', accent: '#8ae0b0', pattern: 'marble', metal: 0.35, rough: 0.55 },
+  { id: 'citrine', name: 'Citrine', price: 350, set: 'Cristaux', body: '#c89a2a', accent: '#fff0a0', pattern: 'shards', metal: 0.35, rough: 0.55 },
+  { id: 'opale', name: 'Opale', price: 450, set: 'Cristaux', body: '#e6f0f6', accent: '#ff9ae0', pattern: 'marble', metal: 0.5, rough: 0.4 },
+  { id: 'tanzanite', name: 'Tanzanite', price: 550, set: 'Cristaux', body: '#2a2a7a', accent: '#9a8aff', pattern: 'hex', metal: 0.5, rough: 0.4 },
+  { id: 'grenat', name: 'Grenat', price: 650, set: 'Cristaux', body: '#5a0a1a', accent: '#ff5a7a', pattern: 'shards', metal: 0.5, rough: 0.4 },
+  { id: 'diamantnoir', name: 'Diamant noir', price: 900, set: 'Cristaux', body: '#040406', accent: '#e8f0ff', glow: true, pattern: 'shards', metal: 0.65, rough: 0.3 },
+  { id: 'amethysteroyale', name: 'Améthyste royale', price: 1100, set: 'Cristaux', body: '#14062a', accent: '#d07cff', glow: true, pattern: 'hex', metal: 0.65, rough: 0.3 },
+  { id: 'prismevivant', name: 'Prisme vivant', price: 1700, set: 'Cristaux', body: '#06060e', accent: '#ffffff', glow: true, animated: 'hue', pattern: 'shards', metal: 0.85, rough: 0.18 },
+  { id: 'kaki', name: 'Kaki', price: 250, set: 'Militaire', body: '#6a6a3a', accent: '#9a9a5a', pattern: 'camo', metal: 0.35, rough: 0.55 },
+  { id: 'olive', name: 'Olive', price: 300, set: 'Militaire', body: '#4a5a2a', accent: '#7a8a4a', alt: '#3a4620', pattern: 'digital', metal: 0.35, rough: 0.55 },
+  { id: 'sabledudesert', name: 'Sable du désert', price: 300, set: 'Militaire', body: '#b8a07a', accent: '#8a7450', alt: '#d8c4a0', pattern: 'digital', metal: 0.35, rough: 0.55 },
+  { id: 'grismarine', name: 'Gris marine', price: 350, set: 'Militaire', body: '#3a4450', accent: '#6a7684', alt: '#2a3038', pattern: 'digital', metal: 0.35, rough: 0.55 },
+  { id: 'neigetactique', name: 'Neige tactique', price: 450, set: 'Militaire', body: '#e6eaee', accent: '#9aa6b0', alt: '#ffffff', pattern: 'digital', metal: 0.5, rough: 0.4 },
+  { id: 'foretnocturne', name: 'Forêt nocturne', price: 550, set: 'Militaire', body: '#1a2418', accent: '#3a5030', pattern: 'camo', metal: 0.5, rough: 0.4 },
+  { id: 'tigreurbain', name: 'Tigre urbain', price: 650, set: 'Militaire', body: '#3a3e44', accent: '#16181c', pattern: 'tiger', metal: 0.5, rough: 0.4 },
+  { id: 'operationnuit', name: 'Opération nuit', price: 900, set: 'Militaire', body: '#06080a', accent: '#3dff6a', alt: '#0e1410', glow: true, pattern: 'digital', metal: 0.65, rough: 0.3 },
+  { id: 'commando', name: 'Commando', price: 1100, set: 'Militaire', body: '#0e1006', accent: '#ffb020', glow: true, pattern: 'camo', metal: 0.65, rough: 0.3 },
+  { id: 'general', name: 'Général', price: 1700, set: 'Militaire', body: '#08080a', accent: '#ffd24d', glow: true, pattern: 'chevron', metal: 0.85, rough: 0.18 },
+  { id: 'rosee', name: 'Rosée', price: 250, set: 'Aube', body: '#c8d8e0', accent: '#ffffff', pattern: 'dots', metal: 0.35, rough: 0.55 },
+  { id: 'brumematinale', name: 'Brume matinale', price: 300, set: 'Aube', body: '#d8d0e0', accent: '#fff0f6', pattern: 'fade', metal: 0.35, rough: 0.55 },
+  { id: 'peche', name: 'Pêche', price: 300, set: 'Aube', body: '#ffc0a0', accent: '#fff0e0', pattern: 'fade', metal: 0.35, rough: 0.55 },
+  { id: 'lavande', name: 'Lavande', price: 350, set: 'Aube', body: '#9a8ac8', accent: '#e6dcff', pattern: 'petals', metal: 0.35, rough: 0.55 },
+  { id: 'horizon', name: 'Horizon', price: 450, set: 'Aube', body: '#ff9a6a', accent: '#6a8aff', pattern: 'fade', metal: 0.5, rough: 0.4 },
+  { id: 'premierrayon', name: 'Premier rayon', price: 550, set: 'Aube', body: '#2a1a3a', accent: '#ffd06a', pattern: 'lines', metal: 0.5, rough: 0.4 },
+  { id: 'soleillevant', name: 'Soleil levant', price: 650, set: 'Aube', body: '#3a0e1a', accent: '#ff8a3a', pattern: 'rings', metal: 0.5, rough: 0.4 },
+  { id: 'couronnesolaire', name: 'Couronne solaire', price: 900, set: 'Aube', body: '#100a02', accent: '#ffd040', glow: true, pattern: 'stars', metal: 0.65, rough: 0.3 },
+  { id: 'cieldor', name: 'Ciel d\'or', price: 1100, set: 'Aube', body: '#0e0a14', accent: '#ffc8a0', glow: true, pattern: 'waves', metal: 0.65, rough: 0.3 },
+  { id: 'renaissance', name: 'Renaissance', price: 1700, set: 'Aube', body: '#06040a', accent: '#ffe6a0', glow: true, animated: 'hue', pattern: 'stars', metal: 0.85, rough: 0.18 },
   // skins exclusifs : débloqués en montant de niveau, impossibles à acheter
   { id: 'recrue', name: 'Recrue', price: 0, level: 5, body: '#2c3a2a', accent: '#9bd36a', pattern: 'camo', metal: 0.2, rough: 0.7 },
   { id: 'veteran', name: 'Vétéran', price: 0, level: 10, body: '#3a2a1e', accent: '#e0a458', pattern: 'filigree', metal: 0.6, rough: 0.35 },

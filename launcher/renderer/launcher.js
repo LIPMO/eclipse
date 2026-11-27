@@ -129,10 +129,10 @@ function renderSettings() {
   $('s-size').disabled = settings.fullscreen;
   seg('s-display', settings.fullscreen ? 'full' : 'window', v => save({ fullscreen: v === 'full' }));
   seg('s-after', settings.afterLaunch, v => save({ afterLaunch: v }));
-  $('s-fps').checked = settings.fpsUnlock; $('s-gpu').checked = settings.highPerfGpu;
+  $('s-fps').checked = settings.fpsUnlock; $('s-gpu').checked = settings.highPerfGpu; $('s-perf').checked = settings.perfMode !== false;
   $('s-autostart').checked = settings.autoStart; $('s-autoupd').checked = settings.autoUpdate;
   $('autostart-wrap').hidden = !['win32', 'darwin'].includes(settings.platform);
-  $('restart-row').hidden = !initial || (initial.fpsUnlock === settings.fpsUnlock && initial.highPerfGpu === settings.highPerfGpu);
+  $('restart-row').hidden = !initial || (initial.fpsUnlock === settings.fpsUnlock && initial.highPerfGpu === settings.highPerfGpu && initial.perfMode === (settings.perfMode !== false));
   $('ver').textContent = `Launcher v${settings.version}`;
   $('ab-ver').textContent = `ECLIPSE Launcher v${settings.version}`;
 }
@@ -146,6 +146,18 @@ async function save(patch) {
 $('s-size').onchange = e => save({ size: e.target.value });
 $('s-fps').onchange = e => save({ fpsUnlock: e.target.checked });
 $('s-gpu').onchange = e => save({ highPerfGpu: e.target.checked });
+$('s-perf').onchange = e => save({ perfMode: e.target.checked });
+$('s-nettest').onclick = async () => {
+  const msg = $('s-net-msg'), btn = $('s-nettest');
+  msg.className = 'help'; msg.textContent = 'Mesure en cours…'; btn.disabled = true;
+  const r = await L.netTest();
+  btn.disabled = false;
+  if (!r.ok) { msg.className = 'help err'; msg.textContent = `Échec : ${r.error}.`; return; }
+  const good = r.avg < 80 && r.jitter < 20 && !r.lost;
+  msg.className = 'help ' + (good ? 'ok' : 'err');
+  msg.textContent = `Ping ${r.avg} ms (min ${r.min}, max ${r.max}) · variation ${r.jitter} ms${r.lost ? ` · ${r.lost} perdu(s)` : ''}. ` +
+    (good ? 'Connexion excellente.' : r.jitter >= 20 || r.lost ? 'Connexion instable : préfère un câble à la Wi-Fi et ferme les téléchargements.' : 'Ping élevé : le serveur est loin ou la connexion chargée.');
+};
 $('s-autostart').onchange = e => save({ autoStart: e.target.checked });
 $('s-autoupd').onchange = e => save({ autoUpdate: e.target.checked });
 $('s-restart').onclick = () => L.restart();
@@ -166,7 +178,7 @@ $('s-reset').onclick = async () => { settings = { ...settings, ...(await L.reset
 // ---------- démarrage ----------
 (async () => {
   settings = await L.getSettings();
-  initial = { fpsUnlock: settings.fpsUnlock, highPerfGpu: settings.highPerfGpu };
+  initial = { fpsUnlock: settings.fpsUnlock, highPerfGpu: settings.highPerfGpu, perfMode: settings.perfMode !== false };
   renderSettings();
   refreshStatus(); loadNews(); loadShop();
   renderUpd(await L.update());
