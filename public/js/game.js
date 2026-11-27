@@ -1325,6 +1325,22 @@ export class Game {
     SFX.playReload();
   }
 
+  // mouvements dynamiques (1.30) : vitesse de rotation (lissée) et pas de côté, pour l'arme et la caméra
+  updateDynMove(dt) {
+    const L = this.local, D = this.dyn ||= { turn: 0, pitchV: 0, strafe: 0, camRoll: 0, k: 0, py: L.yaw, pp: L.pitch };
+    const lvl = ST().reduceMotion ? 'off' : (ST().dynMove || 'normal');
+    D.k = { off: 0, light: 0.5, normal: 1, strong: 1.6 }[lvl] ?? 1;
+    let dy = L.yaw - D.py; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); // écart d'angle entre -π et π
+    const dp = L.pitch - D.pp; D.py = L.yaw; D.pp = L.pitch;
+    const s = Math.max(dt, 1 / 240), a = Math.min(1, dt * 14);
+    D.turn += (Math.max(-15, Math.min(15, dy / s)) - D.turn) * a;
+    D.pitchV += (Math.max(-15, Math.min(15, dp / s)) - D.pitchV) * a;
+    // vitesse latérale par rapport au regard (droite = +)
+    const rx = Math.cos(L.yaw), rz = -Math.sin(L.yaw);
+    const lat = this.me?.al && L.onGround !== false ? (L.vel[0] * rx + L.vel[2] * rz) / MOVE.run : 0;
+    D.strafe += (Math.max(-1, Math.min(1, lat)) - D.strafe) * Math.min(1, dt * 8);
+    D.camRoll = -D.strafe * 0.016 * D.k * (1 - (this.adsK || 0) * 0.7) - Math.max(-1, Math.min(1, D.turn / 10)) * 0.006 * D.k;
+  }
   // coup de crosse (1.28) : attaque rapide au corps à corps, le serveur vérifie la touche
   quickMelee() {
     const now = performance.now() / 1000, L = this.local;
@@ -2130,7 +2146,18 @@ export class Game {
       ch.root.visible = true;
       this.setOtherWeapon(o, st.w);
       ch.root.position.set(st.p[0], st.p[1], st.p[2]);
-      ch.root.rotation.y = st.y;
+      // 1.30 : la tête et le buste tournent d'abord vers le regard, le bas du corps rattrape (plus vite en marchant)
+      if (ST().dynMove !== 'off') {
+        if (o.bodyYaw == null) o.bodyYaw = st.y;
+        let df = Math.atan2(Math.sin(st.y - o.bodyYaw), Math.cos(st.y - o.bodyYaw));
+        const moving = (o.speedS || 0) > 0.8;
+        o.bodyYaw += df * Math.min(1, dt * (moving ? 12 : 2.5));
+        if (Math.abs(df) > 1.0) o.bodyYaw = st.y - Math.sign(df) * 1.0; // pas plus de 57° de torsion
+        df = Math.atan2(Math.sin(st.y - o.bodyYaw), Math.cos(st.y - o.bodyYaw));
+        ch.root.rotation.y = o.bodyYaw;
+        ch.upper.rotation.y = df * 0.7;
+        ch.head.rotation.y = df * 0.3;
+      } else { ch.root.rotation.y = st.y; ch.upper.rotation.y = 0; ch.head.rotation.y = 0; }
       const crouch = st.c ? 1 : 0;
       const slid = st.sd && st.al ? 1 : 0;
       if (slid && !o.slid) { SFX.playSlide(st.p); if (this.isEnemyId(o.id)) this.caption('Glissade ennemie', st.p, 'slide', 30); }
@@ -2305,7 +2332,8 @@ export class Game {
       const kick = sliding && !this.scoped ? 1.07 : 1;
       if (Math.abs((this.fovKick || 1) - kick) > 0.002) { this.fovKick = (this.fovKick || 1) + (kick - (this.fovKick || 1)) * Math.min(1, dt * 8); this.updateFov(); }
       const tn = performance.now() / 1000;
-      let roll = L.slideRoll, tp = 0;
+      this.updateDynMove(dt);
+      let roll = L.slideRoll + this.dyn.camRoll, tp = 0;
       if (this.trollOn('upside')) roll += Math.PI;
       if (this.trollOn('spin')) roll += (tn * 2.4) % (Math.PI * 2);
       if (this.trollOn('drunk')) { roll += Math.sin(tn * 1.3) * 0.22; tp = Math.sin(tn * 0.9) * 0.06; }
@@ -2363,6 +2391,16 @@ export class Game {
     this.updateDmgNums(dt); // couteau lancé : la main est vide
     this.vm.rotation.set(this.vmKick * (melee ? -0.6 : 0.12) - reloadK * 0.6 + sw * 0.6 + insp * 0.35, this.vmSwayX * 2 + (melee ? this.vmKick * 0.8 : 0) + insp * 1.1, reloadK * 0.4 + insp * 0.5 + (L.slideRoll || 0) * 2.5);
     // coup de crosse : l'arme part en avant en pivotant
+    // mouvements dynamiques (1.30) : l'arme traîne derrière la souris et penche dans le sens du virage et du pas de côté
+    if (this.dyn && this.dyn.k > 0) {
+      const D = this.dyn, hk = 1 - (this.adsK || 0) * 0.8, k = D.k * hk;
+      const tv = Math.max(-1, Math.min(1, D.turn / 6)), pv = Math.max(-1, Math.min(1, D.pitchV / 6));
+      this.vm.position.x += (-tv * 0.035 - D.strafe * 0.014) * k;
+      this.vm.position.y += (pv * 0.018 - Math.abs(D.strafe) * 0.006) * k;
+      this.vm.rotation.z += (tv * 0.16 - D.strafe * 0.11) * k;
+      this.vm.rotation.y += tv * 0.07 * k;
+      this.vm.rotation.x += -pv * 0.05 * k;
+    }
     if (this.bashT > 0) { this.bashT -= dt; const bk = Math.sin(Math.max(0, Math.min(1, 1 - this.bashT / 0.32)) * Math.PI); this.vm.position.z -= bk * 0.22; this.vm.position.x -= bk * 0.08; this.vm.rotation.z += bk * 0.9; this.vm.rotation.y += bk * 0.5; }
   }
 

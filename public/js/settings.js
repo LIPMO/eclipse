@@ -147,6 +147,7 @@ const SECTIONS = [
     { k: 'killcam', t: 'toggle', label: 'Killcam (revoir les 3 dernières secondes avant ta mort)' },
     { k: 'fps', t: 'toggle', label: 'Afficher les FPS' },
     { k: 'bob', t: 'toggle', label: 'Balancement de l\'arme en marchant' },
+    { k: 'dynMove', t: 'select', label: 'Mouvements dynamiques', opts: [['off', 'Désactivés'], ['light', 'Légers'], ['normal', 'Normaux'], ['strong', 'Forts']], hint: 'L\'arme suit tes virages et penche quand tu te déplaces de côté, la caméra s\'incline légèrement ; les autres joueurs tournent la tête et le buste avant les jambes' },
     { k: 'leftHand', t: 'toggle', label: 'Arme à gauche' },
     { k: 'enemyColor', t: 'select', label: 'Couleur des ennemis', opts: [['#ff4f6d', 'Rouge'], ['#ffd400', 'Jaune (daltonisme)'], ['#c04dff', 'Violet (daltonisme)']] },
     { k: 'allyColor', t: 'select', label: 'Couleur des alliés', opts: [['#19e3c4', 'Turquoise'], ['#3d8bff', 'Bleu'], ['#7dff6b', 'Vert'], ['#ffffff', 'Blanc']], hint: 'Appliquée à la prochaine partie' },

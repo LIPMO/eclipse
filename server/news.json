@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.30.0",
+    "date": "2026-11-27",
+    "title": "Mouvements dynamiques",
+    "items": [
+      "Quand tu tournes, ton arme traîne légèrement derrière la souris et penche dans le sens du virage ; quand tu te déplaces de côté, l'arme et la caméra s'inclinent un peu (≈1°). La visée et la direction des tirs ne changent pas.",
+      "Les autres joueurs tournent d'abord la tête et le buste vers l'endroit où ils regardent, puis les jambes suivent (plus vite en marchant).",
+      "Réglage « Mouvements dynamiques » (Paramètres › Interface) : désactivés, légers, normaux (par défaut) ou forts. Désactivés automatiquement avec l'option « Réduire les mouvements »."
+    ]
+  },
+  {
     "version": "1.29.0",
     "date": "2026-11-27",
     "title": "Sons de touche au choix et 200 skins",

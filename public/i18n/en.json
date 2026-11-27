@@ -2485,7 +2485,12 @@
 "Arc électrique": "Electric arc",
 "Tesla": "Tesla",
 "Orage magnétique": "Magnetic storm",
-"Surtension": "Power surge"
+"Surtension": "Power surge",
+"Mouvements dynamiques": "Dynamic movement",
+"Désactivés": "Off",
+"Légers": "Light",
+"Forts": "Strong",
+"L'arme suit tes virages et penche quand tu te déplaces de côté, la caméra s'incline légèrement ; les autres joueurs tournent la tête et le buste avant les jambes": "Your weapon follows your turns and tilts when you strafe, the camera leans slightly; other players turn their head and torso before their legs"
 },
 "patterns": [
 [
