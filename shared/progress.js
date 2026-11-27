@@ -136,6 +136,8 @@ export const TITLES = {
   set_desert: 'Nomade des sables', set_royal: 'Altesse', set_sauvage: 'Bête sauvage', set_retro: 'Icône rétro', set_cosmos: 'Voyageur cosmique',
   // 1.28
   set_tempete: 'Maître de l\'orage', set_jardinzen: 'Sage du jardin', set_mecanique: 'Ingénieur en chef', set_confiserie: 'Roi des bonbons', set_mythes: 'Héros des légendes', set_gothique: 'Seigneur de la nuit', set_tropical: 'Roi des îles', set_cristaux: 'Joaillier', set_militaire: 'Commandant', set_aube: 'Gardien de l\'aube',
+  // 1.29
+  set_pirates: 'Capitaine des mers', set_samourai: 'Ronin', set_egypte: 'Pharaon', set_vikings: 'Jarl', set_steampunk: 'Inventeur', set_bonbonsacides: 'Roi acide', set_abysses: 'Seigneur des profondeurs', set_desertdesel: 'Errant du sel', set_neonretro: 'Icône néon', set_fantasy: 'Archimage', set_espaceprofond: 'Explorateur stellaire', set_junglesauvage: 'Prédateur', set_glaceeternelle: 'Souverain du froid', set_urbain: 'Roi de la rue', set_fruits: 'Gourmet', set_heraldique: 'Chevalier', set_rouages: 'Horloger', set_volcanssousmarins: 'Forgeron des abysses', set_opera: 'Maestro', set_electrique: 'Maître des volts',
 };
 // titres attribuables uniquement par l'équipe
 export const STAFF_TITLES = ['fondateur', 'champion', 'testeur'];

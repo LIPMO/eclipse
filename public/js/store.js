@@ -20,7 +20,7 @@ export const DEFAULT_SETTINGS = {
   // commandes
   crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true, slide: true,
   // 1.15
-  killSound: 'classic', sightColor: 'red', adsZoomMul: 1, showSpeed: false, slideTilt: true, showClock: false, hideEmotes: false,
+  killSound: 'classic', fxSounds: true, hitPreset: 'pop', sightColor: 'red', adsZoomMul: 1, showSpeed: false, slideTilt: true, showClock: false, hideEmotes: false,
   // manette
   gpSens: 1, gpSensY: 1, gpInvert: false, gpDeadzone: 0.15, gpAimAssist: true, gpVibration: true,
   // langue

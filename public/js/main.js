@@ -9,7 +9,7 @@ import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { masteryOf, BANNERS, TITLES, setKey } from '/shared/progress.js';
 import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
 import * as SFX from './audio.js';
-import { mountSettings, keyName, sanitizeSettings, applyPreset } from './settings.js';
+import { mountSettings, keyName, sanitizeSettings, applyPreset, loadCustomSounds } from './settings.js';
 import { initClans, openClanTab } from './clans.js';
 import { initTournaments, openTournamentsTab } from './tournaments.js';
 import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, renderLeaderboard, loadLeaderboard, renderEvent, notify, viewProfile, openReport, openInvitePicker, openGuide, maybeShowGuide, hub, emojify, renderPartyBar, startTour, openFeedback, openModal, closeModal, presTag } from './hub.js';
@@ -1295,6 +1295,8 @@ net.on('build', async m => {
 });
 // nettoie l'adresse après un rechargement de mise à jour
 if (/[?&]v=/.test(location.search)) { try { history.replaceState(null, '', location.pathname + location.hash); } catch { /* */ } }
+
+loadCustomSounds(); // MP3 importés pour les sons de touche / d'élimination (1.29)
 
 // ======================= LAUNCHER DÉPASSÉ (1.28.2) =======================
 // Le launcher s'identifie (« ECLIPSE-Launcher/2.0.1 »). La version portable et les anciens launchers ne peuvent pas se

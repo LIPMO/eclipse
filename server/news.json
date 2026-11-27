@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.29.0",
+    "date": "2026-11-27",
+    "title": "Sons de touche au choix et 200 skins",
+    "items": [
+      "Paramètres › Audio : choisis ton son de touche parmi 10 (Pop, Cristal, Tic, Bulle, Métal, Goutte, Arcade, Velours, Éclat, Basse ; plus aigu à la tête) et ton son d'élimination parmi 10 (Ding, Pièce, Cloche, Laser, Fanfare, Orbe, Gong, Glitch, Arpège, Impact). Bouton TESTER, et un interrupteur pour revenir aux sons classiques.",
+      "Importe ton propre son (MP3, 1,5 Mo au plus) pour la touche et pour l'élimination : il reste dans ton navigateur et n'est jamais envoyé au serveur.",
+      "200 nouveaux skins dans 20 collections : Pirates, Samouraï, Égypte, Vikings, Steampunk, Bonbons acides, Abysses, Désert de sel, Néon rétro, Fantasy, Espace profond, Jungle sauvage, Glace éternelle, Urbain, Fruits, Héraldique, Rouages, Volcans sous-marins, Opéra et Électrique (avec leurs titres). 40 collections au total.",
+      "Corrigé : les marqueurs de danger ne s'affichent plus par-dessus la fenêtre des paramètres."
+    ]
+  },
+  {
     "version": "1.28.2",
     "date": "2026-11-27",
     "title": "Mise à jour du launcher signalée dans le jeu",

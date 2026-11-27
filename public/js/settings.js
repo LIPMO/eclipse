@@ -1,5 +1,17 @@
 // Menu de paramètres complet (utilisé dans le lobby et en jeu depuis le menu pause).
 import { profile, save, DEFAULT_SETTINGS, DEFAULT_KEYS } from './store.js';
+import * as SFX from './audio.js';
+
+// ---------- sons importés (MP3) : rangés dans le navigateur (IndexedDB), jamais envoyés au serveur (1.29) ----------
+const SND_MAX = 1.5 * 1024 * 1024;
+function sndDb() {
+  return new Promise((ok, ko) => { try { const r = indexedDB.open('eclipse_sounds', 1); r.onupgradeneeded = () => r.result.createObjectStore('s'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); } catch (e) { ko(e); } });
+}
+async function sndTx(mode, fn) { const db = await sndDb(); return new Promise((ok, ko) => { const tx = db.transaction('s', mode); const st = tx.objectStore('s'); const r = fn(st); tx.oncomplete = () => ok(r?.result); tx.onerror = () => ko(tx.error); }); }
+export async function loadCustomSounds() {
+  for (const slot of ['hit', 'kill']) { try { const b = await sndTx('readonly', st => st.get(slot)); if (b) SFX.setCustomSound(slot, b); } catch { /* stockage indisponible */ } }
+}
+async function saveCustomSound(slot, buf) { await sndTx('readwrite', st => (buf ? st.put(buf, slot) : st.delete(slot))); SFX.setCustomSound(slot, buf); }
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const S = () => profile.settings;
@@ -184,7 +196,11 @@ const SECTIONS = [
   { id: 'audio', title: 'Audio', items: [
     { k: 'vol', t: 'range', label: 'Volume général', min: 0, max: 1, step: 0.05, pct: true },
     { k: 'hitSound', t: 'toggle', label: 'Son de touche' },
-    { k: 'killSound', t: 'select', label: 'Son d\'élimination', opts: [['classic', 'Classique'], ['ding', 'Ding'], ['coin', 'Pièce'], ['bell', 'Cloche'], ['laser', 'Laser'], ['off', 'Aucun']] },
+    { k: 'fxSounds', t: 'toggle', label: 'Sons de touche et d\'élimination au choix', hint: 'Désactivé : les sons classiques du jeu' },
+    { k: 'hitPreset', t: 'select', label: 'Son de touche choisi', opts: [...SFX.HIT_PRESETS, ['custom', '🎵 Mon son (MP3)']], hint: 'À chaque balle qui touche (plus aigu à la tête)' },
+    { k: 'killSound', t: 'select', label: 'Son d\'élimination choisi', opts: [['classic', 'Classique'], ...SFX.KILL_PRESETS, ['custom', '🎵 Mon son (MP3)'], ['off', 'Aucun']] },
+    { k: '_sndHit', t: 'sound', slot: 'hit', label: 'Mon son de touche (MP3)', hint: 'Importe un fichier audio (1,5 Mo au plus, 3 s jouées au plus), puis choisis « Mon son » ci-dessus' },
+    { k: '_sndKill', t: 'sound', slot: 'kill', label: 'Mon son d\'élimination (MP3)' },
     { k: 'volWeapons', t: 'range', label: 'Volume : armes et dégâts', min: 0, max: 1.5, step: 0.05, pct: true },
     { k: 'volSteps', t: 'range', label: 'Volume : pas et déplacements', min: 0, max: 1.5, step: 0.05, pct: true },
     { k: 'volAbilities', t: 'range', label: 'Volume : capacités et explosions', min: 0, max: 1.5, step: 0.05, pct: true },
@@ -253,6 +269,7 @@ function itemHTML(it) {
     (it.num ? `<input type="number" class="num" data-num="${it.k}" min="${it.min}" max="${it.max}" step="${it.step}" value="${v}">` : `<span class="val" data-val="${it.k}">${fmt(it, v)}</span>`);
   else if (it.t === 'toggle') ctrl = `<label class="switch"><input type="checkbox" data-k="${it.k}" ${v ? 'checked' : ''}><i></i></label>`;
   else if (it.t === 'color') ctrl = `<input type="color" data-k="${it.k}" value="${v}"><span class="val">${v}</span>`;
+  else if (it.t === 'sound') ctrl = `<button class="btn small" data-sndtest="${it.slot}">▶ TESTER</button><button class="btn small" data-sndpick="${it.slot}">${SFX.hasCustomSound(it.slot) ? 'REMPLACER' : 'IMPORTER UN MP3'}</button>${SFX.hasCustomSound(it.slot) ? `<button class="btn small ghost" data-snddel="${it.slot}">RETIRER</button>` : ''}<input type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a" data-sndfile="${it.slot}" hidden>`;
   else if (it.t === 'select') ctrl = `<select data-k="${it.k}">${it.opts.map(([o, l]) => `<option value="${o}" ${String(o) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   return `<div class="set-row"><div class="set-label">${esc(it.label)}${hint}</div><div class="set-ctrl">${ctrl}</div></div>`;
 }
@@ -355,6 +372,7 @@ function crosshairHTML(sec) {
 
 function onInput(e) {
   const el = e.target;
+  if (el.dataset?.sndfile && e.type === 'change') { importSound(el.dataset.sndfile, el.files?.[0], el); return; }
   if (el.id === 'set-search') { search = el.value.trim(); render(); return; }
   const k = el.dataset.k || el.dataset.num;
   if (!k) return;
@@ -375,9 +393,27 @@ function onInput(e) {
   changed(k);
 }
 
+async function importSound(slot, file, el) {
+  if (!file) return;
+  const row = el.closest('.set-row');
+  const say = m => { let n = row.querySelector('.snd-msg'); if (!n) { n = document.createElement('small'); n.className = 'snd-msg'; row.querySelector('.set-label').appendChild(n); } n.textContent = m; };
+  if (file.size > SND_MAX) { say('Fichier trop lourd (1,5 Mo au plus).'); return; }
+  try {
+    const buf = await file.arrayBuffer();
+    SFX.initAudio();
+    await new Promise((ok, ko) => { try { new (window.AudioContext || window.webkitAudioContext)().decodeAudioData(buf.slice(0), ok, ko); } catch (err) { ko(err); } }); // fichier lisible ?
+    await saveCustomSound(slot, buf);
+    if (slot === 'hit') S().hitPreset = 'custom'; else S().killSound = 'custom';
+    save(); render(); changed(slot === 'hit' ? 'hitPreset' : 'killSound');
+    setTimeout(() => (slot === 'hit' ? SFX.playHitPreset('custom', false) : SFX.playKill('custom')), 150);
+  } catch { say('Ce fichier n\'est pas un son lisible.'); }
+}
 function onClick(e) {
   const t = e.target.closest('button');
   if (!t) return;
+  if (t.dataset.sndtest) { SFX.initAudio(); const s = S(); if (t.dataset.sndtest === 'hit') SFX.playHitPreset(s.fxSounds === false ? 'classic' : s.hitPreset, false); else { const k = s.fxSounds === false ? 'classic' : s.killSound; if (k === 'classic') SFX.playHit(false, true); else if (k !== 'off') SFX.playKill(k); } return; }
+  if (t.dataset.sndpick) { t.parentElement.querySelector(`[data-sndfile="${t.dataset.sndpick}"]`).click(); return; }
+  if (t.dataset.snddel) { const slot = t.dataset.snddel; saveCustomSound(slot, null).catch(() => {}); if (slot === 'hit' && S().hitPreset === 'custom') S().hitPreset = 'pop'; if (slot === 'kill' && S().killSound === 'custom') S().killSound = 'ding'; save(); render(); return; }
   if (t.dataset.sec) { current = t.dataset.sec; search = ''; rebinding = null; render(); return; }
   if (t.dataset.slotSave !== undefined) {
     const i = +t.dataset.slotSave, sl = slots();

@@ -1369,3 +1369,4 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 #launcher-upd span { flex: 1; }
 @media (max-width: 600px) { #launcher-upd { flex-wrap: wrap; } }
 #launcher-upd a { color: #fff; text-decoration: none; }
+body.settings-open .mark-tag { display: none; }

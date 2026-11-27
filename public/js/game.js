@@ -1114,12 +1114,14 @@ export class Game {
     this.showPause(false);
     mountSettings($('settings-slot'));
     $('settings-overlay').classList.add('show');
+    document.body.classList.add('settings-open'); // les marqueurs du jeu ne passent plus par-dessus la fenêtre
     $('click-to-play').style.display = 'none';
   }
 
   closeSettings() {
     this.settingsOpen = false;
     $('settings-overlay').classList.remove('show');
+    document.body.classList.remove('settings-open');
     this.showPause(true);
   }
 
@@ -1541,9 +1543,12 @@ export class Game {
         this.hitT = 0.18;
       }
       // son d'élimination au choix (1.15)
-      const ks = ST().killSound || 'classic';
-      if (m.k && ks !== 'classic') { if (ST().hitSound) SFX.playHit(m.h, false); if (ks !== 'off') SFX.playKillSound(ks); }
-      else if (ST().hitSound || m.k) SFX.playHit(m.h, m.k);
+      // 1.29 : sons de touche et d'élimination au choix (désactivables : sons classiques)
+      const fx = ST().fxSounds !== false, ks = fx ? (ST().killSound || 'classic') : 'classic';
+      const hitFx = () => (fx ? SFX.playHitPreset(ST().hitPreset || 'pop', m.h) : SFX.playHit(m.h, false));
+      if (m.k && ks !== 'classic') { if (ST().hitSound) hitFx(); if (ks !== 'off') SFX.playKill(ks); }
+      else if (m.k) SFX.playHit(m.h, true);
+      else if (ST().hitSound) hitFx();
     });
     on('hurt', m => { this.local.hurtT = 0.4; SFX.playHurt(); if (m.from) this.showDamageDir(m.from); this.pad?.rumble(Math.min(1, 0.3 + (m.d || 0) / 100), 180); });
     on('kill', m => {
@@ -3086,6 +3091,7 @@ export class Game {
   }
 
   destroy() {
+    document.body.classList.remove("settings-open");
     if (this.destroyed) return;
     this.destroyed = true;
     cancelAnimationFrame(this.raf);

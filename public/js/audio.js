@@ -25,6 +25,7 @@ export function initAudio() {
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  setTimeout(() => { for (const s of ['hit', 'kill']) if (customSrc[s]) decodeCustom(s); }, 0); // MP3 importés (1.29)
 }
 export function setVolume(v) { volume = v; if (master) master.gain.value = muted ? 0 : v; }
 // touche « couper tout le son » (1.15) : coupe le volume général sans toucher au réglage
@@ -232,3 +233,61 @@ export function playWhoosh() { if (!ctx) return; const t = ctx.currentTime; nois
 export function playTick(last = false) { if (!ctx) return; tone(C('ui'), ctx.currentTime, 0.07, last ? 1400 : 1000, last ? 1400 : 1000, 'sine', 0.15); }
 // rebond d'une grenade (1.28)
 export function playBounce(pos) { if (!ctx) return; const t = ctx.currentTime; const o = out(pos, 30, 'abilities'); noise(o, t, 0.06, 1800, 2, 'bandpass', 0.5); tone(o, t, 0.05, 900, 500, 'triangle', 0.12); }
+
+// ---------- sons de touche et d'élimination au choix (1.29) ----------
+// 10 sons de touche (le tir à la tête joue la même chose, plus aigu) et 10 sons d'élimination, synthétisés ici
+// (aucun fichier à télécharger) ; chacun peut aussi être remplacé par un MP3 importé dans les paramètres.
+export const HIT_PRESETS = [['pop', 'Pop'], ['cristal', 'Cristal'], ['tic', 'Tic'], ['bulle', 'Bulle'], ['metal', 'Métal'], ['goutte', 'Goutte'], ['arcade', 'Arcade'], ['velours', 'Velours'], ['eclat', 'Éclat'], ['basse', 'Basse']];
+export const KILL_PRESETS = [['ding', 'Ding'], ['coin', 'Pièce'], ['bell', 'Cloche'], ['laser', 'Laser'], ['fanfare', 'Fanfare'], ['orbe', 'Orbe'], ['gong', 'Gong'], ['glitch', 'Glitch'], ['arpege', 'Arpège'], ['impact', 'Impact']];
+export function playHitPreset(kind, head) {
+  if (!ctx) return; const t = ctx.currentTime, o = C('ui'), k = head ? 1.5 : 1;
+  switch (kind) {
+    case 'custom': if (playCustom('hit', head ? 1.15 : 1)) return; break;
+    case 'pop': tone(o, t, 0.07, 700 * k, 1300 * k, 'sine', 0.3); return;
+    case 'cristal': tone(o, t, 0.18, 2600 * k, 2500 * k, 'sine', 0.16); tone(o, t, 0.12, 3900 * k, 3800 * k, 'sine', 0.06); return;
+    case 'tic': noise(o, t, 0.025, 5200 * k, 6, 'bandpass', 0.5); return;
+    case 'bulle': tone(o, t, 0.09, 400 * k, 1100 * k, 'sine', 0.28); tone(o, t + 0.04, 0.06, 900 * k, 1600 * k, 'sine', 0.12); return;
+    case 'metal': tone(o, t, 0.16, 1250 * k, 1240 * k, 'triangle', 0.14); tone(o, t, 0.12, 3380 * k, 3360 * k, 'sine', 0.06); noise(o, t, 0.02, 6000, 3, 'highpass', 0.15); return;
+    case 'goutte': tone(o, t, 0.1, 1800 * k, 600 * k, 'sine', 0.26); return;
+    case 'arcade': tone(o, t, 0.05, 880 * k, 880 * k, 'square', 0.08); tone(o, t + 0.045, 0.06, 1320 * k, 1320 * k, 'square', 0.08); return;
+    case 'velours': tone(o, t, 0.14, 520 * k, 480 * k, 'sine', 0.3); noise(o, t, 0.05, 900, 1, 'lowpass', 0.2); return;
+    case 'eclat': noise(o, t, 0.06, 7000 * k, 1.5, 'highpass', 0.3); tone(o, t, 0.05, 3000 * k, 4200 * k, 'sine', 0.08); return;
+    case 'basse': tone(o, t, 0.12, 150 * k, 90 * k, 'sine', 0.5); noise(o, t, 0.03, 2500, 2, 'bandpass', 0.18); return;
+  }
+  playHit(head, false);
+}
+// sons d'élimination supplémentaires (les 4 premiers existent depuis la 1.15, dans playKillSound)
+function killExtra(kind, t, o) {
+  if (kind === 'fanfare') { [523, 659, 784, 1047].forEach((f, i) => tone(o, t + i * 0.07, 0.22, f, f, 'triangle', 0.12)); return true; }
+  if (kind === 'orbe') { tone(o, t, 0.6, 600, 1200, 'sine', 0.18); tone(o, t + 0.05, 0.55, 900, 1800, 'sine', 0.08); return true; }
+  if (kind === 'gong') { tone(o, t, 1.4, 196, 190, 'sine', 0.3); tone(o, t, 1.0, 523, 515, 'sine', 0.08); noise(o, t, 0.1, 400, 1, 'lowpass', 0.25); return true; }
+  if (kind === 'glitch') { for (let i = 0; i < 5; i++) tone(o, t + i * 0.035, 0.03, 400 + Math.random() * 2400, 300, 'square', 0.07); return true; }
+  if (kind === 'arpege') { [784, 988, 1175, 1568, 1976].forEach((f, i) => tone(o, t + i * 0.045, 0.16, f, f, 'sine', 0.13)); return true; }
+  if (kind === 'impact') { tone(o, t, 0.35, 110, 45, 'sine', 0.55); noise(o, t, 0.25, 1200, 0.8, 'lowpass', 0.4); tone(o, t + 0.02, 0.2, 1800, 1500, 'triangle', 0.06); return true; }
+  return false;
+}
+const _playKillSound = playKillSound;
+export function playKill(kind) {
+  if (!ctx) return;
+  if (kind === 'custom' && playCustom('kill', 1)) return;
+  if (!killExtra(kind, ctx.currentTime, C('ui'))) _playKillSound(kind === 'custom' ? 'ding' : kind);
+}
+// MP3 importés : gardés en mémoire décodés (le fichier lui-même est rangé par le jeu dans le navigateur)
+const custom = { hit: null, kill: null }, customSrc = { hit: null, kill: null };
+export function setCustomSound(slot, data) { // data : ArrayBuffer ou null
+  customSrc[slot] = data; custom[slot] = null;
+  if (data && ctx) decodeCustom(slot);
+}
+function decodeCustom(slot) {
+  const src = customSrc[slot]; if (!src || !ctx) return;
+  ctx.decodeAudioData(src.slice(0)).then(b => { custom[slot] = b; }).catch(() => { custom[slot] = null; });
+}
+export function hasCustomSound(slot) { return !!customSrc[slot]; }
+function playCustom(slot, rate = 1) {
+  if (!ctx) return false;
+  if (!custom[slot]) { decodeCustom(slot); return false; }
+  const s = ctx.createBufferSource(); s.buffer = custom[slot]; s.playbackRate.value = rate;
+  const g = ctx.createGain(); g.gain.value = 0.8; s.connect(g); g.connect(C('ui'));
+  s.start(); s.stop(ctx.currentTime + Math.min(3, custom[slot].duration / rate)); // 3 s au plus
+  return true;
+}
