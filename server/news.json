@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.28.1",
+    "date": "2026-11-27",
+    "title": "Images par seconde verrouillées",
+    "items": [
+      "Nouveau réglage « Verrouiller les images par seconde » (Paramètres › Graphismes) : Écran (recommandé, par défaut), 30, 60, 75, 90, 120, 144, 165, 240 ou illimitée. Trop d'images par seconde saturaient la carte graphique et faisaient saccader le jeu : en mode Écran, le jeu suit ton écran et se bloque à 144 si la synchro verticale est coupée (launcher en « FPS illimités »).",
+      "Cadence plus régulière quand une limite est choisie (moins d'à-coups).",
+      "L'indicateur « BRUYANT / SILENCIEUX » sous le viseur est retiré."
+    ]
+  },
+  {
     "version": "1.28.0",
     "date": "2026-11-27",
     "title": "Moins de latence, coup de crosse, 100 skins",

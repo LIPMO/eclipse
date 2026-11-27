@@ -118,7 +118,7 @@ const SECTIONS = [
   ] },
   { id: 'video', title: 'Vidéo', items: [
     { k: 'gfxPreset', t: 'select', label: 'Préréglage graphique', opts: [['custom', 'Personnalisé'], ['low', 'PC faible (le plus fluide)'], ['medium', 'Moyen'], ['high', 'Haut'], ['ultra', 'Ultra']], hint: 'Règle d\'un coup la qualité, la résolution et les effets' },
-    { k: 'fpsCap', t: 'select', label: 'Limite d\'images par seconde', opts: [['0', 'Illimitée'], ['30', '30 FPS'], ['60', '60 FPS'], ['90', '90 FPS'], ['120', '120 FPS'], ['144', '144 FPS']], hint: 'Économise la batterie et réduit la chauffe' },
+    { k: 'fpsCap', t: 'select', label: 'Verrouiller les images par seconde', opts: [['auto', 'Écran (recommandé)'], ['30', '30 FPS'], ['60', '60 FPS'], ['75', '75 FPS'], ['90', '90 FPS'], ['120', '120 FPS'], ['144', '144 FPS'], ['165', '165 FPS'], ['240', '240 FPS'], ['0', 'Illimitée (déconseillé)']], hint: 'Trop d\'images par seconde saturent la carte graphique et font saccader le jeu. « Écran » suit la fréquence de ton écran (144 au maximum si la synchro est coupée). Bloque à 60 si ton ordinateur chauffe ou rame.' },
     { k: 'lowFpsTip', t: 'toggle', label: 'Proposer le préréglage « PC faible » si le jeu rame' },
     { k: 'fov', t: 'range', label: 'Champ de vision horizontal', min: 80, max: 120, step: 1, unit: '°', num: true },
     { k: 'vmFov', t: 'range', label: 'Champ de vision de l\'arme', min: 45, max: 85, step: 1, unit: '°' },
@@ -147,7 +147,6 @@ const SECTIONS = [
     { k: 'minimapZoom', t: 'range', label: 'Zoom de la mini-carte', min: 1, max: 2.5, step: 0.1, pct: true },
     { k: 'heardOnMap', t: 'toggle', label: 'Ennemis entendus sur la mini-carte', hint: 'Les pas ennemis proches apparaissent en cercles pâles' },
     { k: 'allyTags', t: 'toggle', label: 'Nom et PV des coéquipiers', hint: 'Affiche le nom et la barre de vie (et l\'armure en bleu) au-dessus de la tête de tes coéquipiers' },
-    { k: 'noiseMeter', t: 'toggle', label: 'Indicateur de bruit', hint: 'Montre si tes pas sont entendus par les ennemis proches (BRUYANT) ou non (SILENCIEUX : marche lente ou accroupi)' },
     { k: 'chEnemy', t: 'toggle', label: 'Viseur rouge sur un ennemi', hint: 'Le viseur change de couleur quand il passe sur un ennemi visible' },
     { k: 'lowAmmoWarn', t: 'toggle', label: 'Alerte de munitions faibles' },
     { k: 'roundBeeps', t: 'toggle', label: 'Bips des 10 dernières secondes de la manche' },
@@ -203,10 +202,10 @@ const SECTIONS = [
   ] },
 ];
 const GFX = {
-  low: { quality: 'low', renderScale: 0.7, fpsCap: 0, bob: false, bloom: false, relief: false, particles: false },
+  low: { quality: 'low', renderScale: 0.7, fpsCap: 60, bob: false, bloom: false, relief: false, particles: false },
   medium: { quality: 'low', renderScale: 0.9, bloom: false, relief: true, particles: true },
   high: { quality: 'high', renderScale: 1, bloom: true, relief: true, particles: true },
-  ultra: { quality: 'high', renderScale: 1, fpsCap: 0, bloom: true, relief: true, particles: true },
+  ultra: { quality: 'high', renderScale: 1, fpsCap: 'auto', bloom: true, relief: true, particles: true },
 };
 export function applyPreset(name) { if (GFX[name]) { Object.assign(S(), GFX[name]); S().gfxPreset = name; save(); document.dispatchEvent(new CustomEvent('settings-changed', { detail: { key: '*' } })); } }
 // export / import de tous les réglages (code texte)
@@ -364,7 +363,7 @@ function onInput(e) {
   if (el.type === 'checkbox') v = el.checked;
   else if (el.type === 'range' || el.type === 'number') { v = parseFloat(el.value); if (!Number.isFinite(v)) return; v = Math.min(it.max, Math.max(it.min, v)); }
   else v = el.value;
-  if (k === 'fpsCap') v = Number(v) || 0;
+  if (k === 'fpsCap') v = v === 'auto' ? 'auto' : Number(v) || 0;
   if (k === 'gfxPreset') { if (v !== 'custom') { applyPreset(v); render(); } else { S().gfxPreset = 'custom'; changed(k); } return; }
   if (['quality', 'renderScale', 'bloom', 'relief', 'particles'].includes(k)) S().gfxPreset = 'custom';
   S()[k] = v;

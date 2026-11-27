@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
-import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower, recoilX, RECOIL_PATTERNS, INTERP_DELAY, reloadTime, partialShells, BASH, SCOPE_LEVELS, STEP_LOUD } from '/shared/data.js';
+import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower, recoilX, RECOIL_PATTERNS, INTERP_DELAY, reloadTime, partialShells, BASH, SCOPE_LEVELS } from '/shared/data.js';
 import { tr } from './i18n.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm, groundHeight } from '/shared/physics.js';
 import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
@@ -1323,15 +1323,6 @@ export class Game {
     SFX.playReload();
   }
 
-  // indicateur de bruit (1.28) : au-dessus du seuil, les ennemis proches entendent tes pas
-  updateNoise(hs) {
-    const L = this.local;
-    const st = ST().noiseMeter === false || !this.me?.al || !L.onGround || hs < 0.8 ? '' : hs > STEP_LOUD ? 'loud' : 'quiet';
-    if (st === this.noiseState) return;
-    this.noiseState = st;
-    const el = $('noise'); if (!el) return;
-    el.className = st; el.textContent = st === 'loud' ? '👣 BRUYANT' : st === 'quiet' ? '🤫 SILENCIEUX' : '';
-  }
   // coup de crosse (1.28) : attaque rapide au corps à corps, le serveur vérifie la touche
   quickMelee() {
     const now = performance.now() / 1000, L = this.local;
@@ -1918,13 +1909,38 @@ export class Game {
     this.particles.push({ sp, t: life, life, size });
   }
 
+  // limite d'images par seconde réellement appliquée (0 = aucune)
+  fpsLimit(t) {
+    const v = ST().fpsCap;
+    if (v !== 'auto' && v !== undefined) return Number(v) || 0;
+    // mesure de la fréquence de l'écran sur les 90 premiers appels (avant toute limitation)
+    const m = this.rafMeasure ||= { last: 0, iv: [] };
+    if (m.hz == null) {
+      if (m.last) m.iv.push(t - m.last);
+      m.last = t;
+      if (m.iv.length < 90) return 0;
+      const s = m.iv.slice(10).sort((a, b) => a - b), med = s[s.length >> 1] || 16.7;
+      const raw = 1000 / med;
+      // synchro verticale coupée (centaines d'images par seconde) : 144 ; sinon la fréquence de l'écran la plus proche
+      m.hz = raw > 260 ? 144 : [30, 50, 60, 75, 90, 100, 120, 144, 165, 180, 200, 240].reduce((a, b) => Math.abs(b - raw) < Math.abs(a - raw) ? b : a, 60);
+      m.vsyncOff = raw > 260;
+    }
+    return m.vsyncOff ? m.hz : 0; // avec la synchro, le navigateur suit déjà l'écran : rien à limiter
+  }
+
   // ======================= BOUCLE =======================
   frame(t) {
     if (this.destroyed) return;
     this.raf = requestAnimationFrame(tt => this.frame(tt));
-    // limiteur d'images par seconde
-    const cap = Number(ST().fpsCap) || 0;
-    if (cap && t - this.last < 1000 / cap - 1.5) return;
+    // limiteur d'images par seconde (1.28.1) : « auto » = fréquence de l'écran ; sans synchro verticale (launcher
+    // « FPS illimités »), le navigateur dessine des centaines d'images inutiles qui saturent la carte graphique → 144
+    const cap = this.fpsLimit(t);
+    if (cap) {
+      const iv = 1000 / cap;
+      if (t < (this.nextFrameAt || 0) - 1) return;
+      // cadence régulière : l'image suivante est prévue un intervalle après la précédente (sans dériver)
+      this.nextFrameAt = Math.max((this.nextFrameAt || t) + iv, t + iv * 0.5);
+    }
     const dt = Math.min(0.05, (t - this.last) / 1000);
     this.last = t;
     const now = t / 1000;
@@ -2035,7 +2051,6 @@ export class Game {
       L.stepT -= dt;
       if (L.stepT <= 0) { SFX.playStep(null, true, this.surfaceAt(L.pos)); L.stepT = 0.36; }
     }
-    this.updateNoise(hs);
     // fin de rechargement : traitée AVANT le tir et la recharge automatique, sinon celle-ci voyait
     // « chargeur vide, pas de recharge en cours » et relançait une recharge qui effaçait la précédente (boucle)
     this.finishReload(now);
