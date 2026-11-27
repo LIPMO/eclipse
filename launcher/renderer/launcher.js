@@ -129,7 +129,7 @@ function renderSettings() {
   $('s-size').disabled = settings.fullscreen;
   seg('s-display', settings.fullscreen ? 'full' : 'window', v => save({ fullscreen: v === 'full' }));
   seg('s-after', settings.afterLaunch, v => save({ afterLaunch: v }));
-  $('s-fps').checked = settings.fpsUnlock; $('s-gpu').checked = settings.highPerfGpu; $('s-perf').checked = settings.perfMode !== false;
+  $('s-fps').checked = settings.fpsUnlock; $('s-gpu').checked = settings.highPerfGpu; $('s-perf').checked = settings.perfMode !== false; $('s-discord').checked = settings.discord !== false;
   $('s-autostart').checked = settings.autoStart; $('s-autoupd').checked = settings.autoUpdate;
   $('autostart-wrap').hidden = !['win32', 'darwin'].includes(settings.platform);
   $('restart-row').hidden = !initial || (initial.fpsUnlock === settings.fpsUnlock && initial.highPerfGpu === settings.highPerfGpu && initial.perfMode === (settings.perfMode !== false));
@@ -147,6 +147,7 @@ $('s-size').onchange = e => save({ size: e.target.value });
 $('s-fps').onchange = e => save({ fpsUnlock: e.target.checked });
 $('s-gpu').onchange = e => save({ highPerfGpu: e.target.checked });
 $('s-perf').onchange = e => save({ perfMode: e.target.checked });
+$('s-discord').onchange = e => save({ discord: e.target.checked });
 $('s-nettest').onclick = async () => {
   const msg = $('s-net-msg'), btn = $('s-nettest');
   msg.className = 'help'; msg.textContent = 'Mesure en cours…'; btn.disabled = true;

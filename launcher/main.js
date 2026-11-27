@@ -4,12 +4,14 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, session, screen, powerSaveBlocker } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
+const { DiscordPresence, buildActivity } = require('./discord.js');
+const DISCORD_CLIENT_ID = '1575996797615350011';
 const fs = require('node:fs');
 
 const DEFAULT_SERVER = process.env.ECLIPSE_SERVER || 'https://eclipseee.online';
 const OLD_SERVERS = ['https://eclipse.charlesvibe.xyz']; // anciennes adresses par défaut : remplacées automatiquement
 const SITE = 'https://eclipseee.online';
-const DEFAULTS = { server: DEFAULT_SERVER, fullscreen: true, size: '1600x900', afterLaunch: 'hide', fpsUnlock: false, highPerfGpu: true, perfMode: true, autoStart: false, autoUpdate: true, gameBounds: null };
+const DEFAULTS = { server: DEFAULT_SERVER, fullscreen: true, size: '1600x900', afterLaunch: 'hide', fpsUnlock: false, highPerfGpu: true, perfMode: true, discord: true, autoStart: false, autoUpdate: true, gameBounds: null };
 const SIZES = ['1280x720', '1600x900', '1920x1080', '2560x1440'];
 const ICON = path.join(__dirname, 'build', 'icon.png');
 
@@ -140,7 +142,7 @@ function openGame(hash = '') {
   gameWin = new BrowserWindow({
     width: b?.width || w, height: b?.height || h, x: b?.x, y: b?.y, fullscreen: !!settings.fullscreen, autoHideMenuBar: true, show: false,
     backgroundColor: '#000000', title: 'ECLIPSE', icon: ICON,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+    webPreferences: { preload: path.join(__dirname, 'game-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   gameWin.setMenu(null);
   const origin = new URL(base).origin;
@@ -172,7 +174,7 @@ function openGame(hash = '') {
     try { blocker = powerSaveBlocker.start('prevent-display-sleep'); } catch { /* */ }
     wc.on('did-finish-load', () => boostPriority(wc));
   }
-  gameWin.on('closed', () => { if (blocker != null) try { powerSaveBlocker.stop(blocker); } catch { /* */ } gameWin = null; showLauncher(); });
+  gameWin.on('closed', () => { if (blocker != null) try { powerSaveBlocker.stop(blocker); } catch { /* */ } gameWin = null; gameState = null; updatePresence(); showLauncher(); });
   gameWin.loadURL(base + '/' + (hash ? '#' + hash : ''));
   if (launcherWin) {
     if (settings.afterLaunch === 'hide') launcherWin.hide();
@@ -180,6 +182,30 @@ function openGame(hash = '') {
   }
   return { ok: true };
 }
+
+// ---------- présence Discord (2.2) ----------
+let presence = null, gameState = null;
+const launchedAt = Date.now();
+function updatePresence() {
+  if (!presence) return;
+  presence.set(buildActivity(gameState || {}, { since: launchedAt }));
+}
+function applyDiscord() {
+  if (settings.discord !== false) {
+    if (!presence) presence = new DiscordPresence(DISCORD_CLIENT_ID, { log: (...a) => console.log(...a) });
+    presence.start(); updatePresence();
+  } else if (presence) presence.stop();
+}
+// état envoyé par le jeu : accepté seulement depuis la fenêtre de jeu, sur le site du serveur choisi
+ipcMain.on('presence:set', (e, st) => {
+  if (!gameWin || e.sender !== gameWin.webContents) return;
+  try { if (new URL(e.senderFrame?.url || e.sender.getURL()).origin !== new URL(normalizeServer(settings.server)).origin) return; } catch { return; }
+  if (!st || typeof st !== 'object') return;
+  const pick = {};
+  for (const [k, v] of Object.entries(st).slice(0, 30)) if (typeof v === 'string' ? v.length <= 80 : typeof v === 'number' ? Number.isFinite(v) : typeof v === 'boolean') pick[k] = v;
+  gameState = pick;
+  updatePresence();
+});
 
 function boostPriority(wc) {
   const prio = os.constants?.priority?.PRIORITY_ABOVE_NORMAL ?? -7;
@@ -214,7 +240,8 @@ function applyAutoStart() {
 ipcMain.handle('settings:get', () => ({ ...settings, sizes: SIZES, version: app.getVersion(), defaultServer: DEFAULT_SERVER, platform: process.platform, packaged: app.isPackaged, site: SITE }));
 ipcMain.handle('settings:set', (e, patch = {}) => {
   if ('server' in patch) { const s = normalizeServer(patch.server); if (!s) return { ok: false, error: 'Adresse du serveur invalide' }; settings.server = s; }
-  for (const k of ['fullscreen', 'fpsUnlock', 'highPerfGpu', 'perfMode', 'autoStart', 'autoUpdate']) if (k in patch) settings[k] = !!patch[k];
+  for (const k of ['fullscreen', 'fpsUnlock', 'highPerfGpu', 'perfMode', 'discord', 'autoStart', 'autoUpdate']) if (k in patch) settings[k] = !!patch[k];
+  if ('discord' in patch) applyDiscord();
   if ('size' in patch && SIZES.includes(patch.size)) { settings.size = patch.size; settings.gameBounds = null; }
   if ('afterLaunch' in patch && ['hide', 'minimize', 'keep'].includes(patch.afterLaunch)) settings.afterLaunch = patch.afterLaunch;
   if ('autoStart' in patch) applyAutoStart();
@@ -246,6 +273,8 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(['pointerLock', 'fullscreen', 'clipboard-sanitized-write'].includes(permission)));
     createLauncher();
     setupUpdater();
+    applyDiscord();
   });
   app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', () => { try { presence?.stop(); } catch { /* */ } });
 }

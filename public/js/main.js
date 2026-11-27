@@ -1298,6 +1298,48 @@ if (/[?&]v=/.test(location.search)) { try { history.replaceState(null, '', locat
 
 loadCustomSounds(); // MP3 importés pour les sons de touche / d'élimination (1.29)
 
+// ======================= PRÉSENCE DISCORD (launcher 2.2) =======================
+// Dans le launcher seulement : l'état du joueur (menu, salon, partie) est transmis au launcher, qui l'affiche
+// sur le profil Discord. Rien n'est envoyé ailleurs, ni dans un navigateur normal.
+if (window.eclipseLauncher?.presence) {
+  const TAB_NAMES = { play: 'Jouer', agents: 'Agents', collection: 'Collection', shop: 'Boutique', profile: 'Profil', leaderboard: 'Classement', friends: 'Amis', clan: 'Clan', tournaments: 'Tournois', settings: 'Paramètres' };
+  const since = { menu: Date.now(), room: 0, match: 0 };
+  let last = '', where0 = '';
+  net.on('matchStart', () => { since.match = Date.now(); });
+  const compute = () => {
+    const g = state.game;
+    if (g && !g.destroyed) {
+      const me = g.roster?.get(g.myId), snap = g.snap, self = g.self || snap?.players?.find(p => p.i === g.myId);
+      const myTeam = me?.team, enemy = myTeam === 'alpha' ? 'beta' : 'alpha';
+      const allies = [...(g.roster?.values() || [])].filter(r => r.team === myTeam);
+      const ffa = isFfa(g.mode);
+      return {
+        where: g.spec ? 'spectate' : g.range ? 'range' : 'match', mode: g.mode, map: MAP_INFO[g.map?.id]?.name || '',
+        agent: me?.agent ? (AGENTS[me.agent]?.name || '') : '', phase: snap?.ph || '',
+        scoreA: !ffa && snap?.sc ? snap.sc[myTeam] ?? 0 : undefined, scoreB: !ffa && snap?.sc ? snap.sc[enemy] ?? 0 : undefined,
+        round: snap?.rd || 0, kills: self?.k, deaths: self?.d, assists: self?.a,
+        teamSize: ffa ? undefined : allies.filter(r => !r.bot).length, teamMax: ffa ? undefined : allies.length,
+        startedAt: since.match || Date.now(),
+      };
+    }
+    if (state.room) {
+      const r = state.room;
+      if (!since.room) since.room = Date.now();
+      return { where: 'room', mode: r.mode, private: !!r.private, players: r.members?.length || 1, max: r.max || r.members?.length || 1, partyId: 'eclipse-room-' + r.id, since: since.room };
+    }
+    since.room = 0;
+    return { where: 'menu', tab: TAB_NAMES[state.tab] || '', since: since.menu };
+  };
+  const push = () => {
+    let st; try { st = compute(); } catch { return; }
+    if (st.where !== where0) { if (st.where === 'menu') since.menu = Date.now(); where0 = st.where; }
+    const key = JSON.stringify(st); if (key === last) return; last = key;
+    for (const k of Object.keys(st)) if (st[k] === undefined || st[k] === '') delete st[k];
+    window.eclipseLauncher.presence(st);
+  };
+  setInterval(push, 3000); setTimeout(push, 500);
+}
+
 // ======================= LAUNCHER DÉPASSÉ (1.28.2) =======================
 // Le launcher s'identifie (« ECLIPSE-Launcher/2.0.1 »). La version portable et les anciens launchers ne peuvent pas se
 // mettre à jour tout seuls : on leur propose la nouvelle version ici, dans le jeu.

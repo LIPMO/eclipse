@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.31.0",
+    "date": "2026-11-27",
+    "title": "Présence Discord (launcher 2.2)",
+    "items": [
+      "Avec le launcher 2.2, ton profil Discord affiche ce que tu fais sur ECLIPSE : dans le launcher, dans le menu (onglet), dans un salon (mode, privé ou public, places), en partie (mode, carte, score, manche, agent, éliminations/morts/assistances, joueurs de ton équipe) ou au champ de tir, avec le temps de jeu et les boutons « Jouer gratuitement » et « Télécharger le launcher ».",
+      "Réglage « Présence Discord » dans les paramètres du launcher (activé par défaut) : décoché, la présence est effacée de Discord.",
+      "Le launcher parle directement au Discord installé sur ton ordinateur : rien ne passe par Internet, et la présence ne marche que dans le launcher (pas dans le navigateur)."
+    ]
+  },
+  {
     "version": "1.30.0",
     "date": "2026-11-27",
     "title": "Mouvements dynamiques",
