@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.28.2",
+    "date": "2026-11-27",
+    "title": "Mise à jour du launcher signalée dans le jeu",
+    "items": [
+      "Si ton launcher n'est pas à jour (version portable ou ancien launcher, qui ne peuvent pas se mettre à jour tout seuls), un bandeau te propose de télécharger la nouvelle version dès l'ouverture du jeu.",
+      "La page de téléchargement et le launcher connaissent la dernière version dès le démarrage du serveur."
+    ]
+  },
+  {
     "version": "1.28.1",
     "date": "2026-11-27",
     "title": "Images par seconde verrouillées",

@@ -124,6 +124,11 @@ const server = http.createServer((req, res) => {
   // lus par le launcher (1.24) : boutique du jour et dernière version du launcher (CORS ouvert, aucune donnée personnelle)
   if (req.url === '/api/shop' || req.url === '/api/launcher') {
     const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
+    if (req.url === '/api/launcher' && !launcherInfo()) {
+      // juste après un redémarrage : on attend la première lecture (quelques secondes) au lieu de répondre « chargement »
+      launcherInfoFresh().then(info => { res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : JSON.stringify(info || { available: false, reason: 'chargement' })); }).catch(() => { if (!res.headersSent) { res.writeHead(200, headers); res.end('{"available":false}'); } });
+      return;
+    }
     let out;
     if (req.url === '/api/shop') {
       const d = dailyShop(), col = id => { const s = SKINS.find(x => x.id === id); return s ? { body: s.body, accent: s.accent } : {}; };
@@ -1122,6 +1127,7 @@ server.on('error', err => {
   else console.error(err);
   process.exit(1);
 });
+launcherInfo(); // préchargement de la dernière version du launcher (page de téléchargement, bandeau de mise à jour)
 server.listen(PORT, HOST, () => {
   console.log(`ECLIPSE — serveur prêt sur http://localhost:${PORT}` + (HOST === '0.0.0.0' ? '' : ` (écoute sur ${HOST} uniquement)`));
   // la liste des adresses du réseau local peut être interdite par la protection systemd (erreur 97) : simple information, on ignore

@@ -2194,7 +2194,10 @@
 "Écran (recommandé)": "Screen (recommended)",
 "Illimitée (déconseillé)": "Unlimited (not recommended)",
 "Trop d'images par seconde saturent la carte graphique et font saccader le jeu. « Écran » suit la fréquence de ton écran (144 au maximum si la synchro est coupée). Bloque à 60 si ton ordinateur chauffe ou rame.": "Too many frames per second overload the graphics card and make the game stutter. \"Screen\" follows your screen's refresh rate (144 max if vsync is off). Lock to 60 if your computer heats up or lags.",
-"# FPS": "# FPS"
+"# FPS": "# FPS",
+"TÉLÉCHARGER": "DOWNLOAD",
+"Nouvelle version du launcher : #.#.#": "New launcher version: #.#.#",
+"(tu as la #.#.#). Si elle ne s'installe pas toute seule, télécharge-la ici.": "(you have #.#.#). If it doesn't install by itself, download it here."
 },
 "patterns": [
 [

@@ -1363,3 +1363,9 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 .end-drill { margin: 10px auto; max-width: 520px; }
 .end-drill p { margin: 6px 0 10px; }
 
+
+/* bandeau « nouvelle version du launcher » (1.28.2) */
+#launcher-upd { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 9000; display: flex; align-items: center; gap: 10px; max-width: min(900px, calc(100vw - 24px)); padding: 10px 14px; background: rgba(10, 14, 26, .95); border: 1px solid var(--accent, #19e3c4); border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.5); font: 14px var(--body, sans-serif); color: #e9ecf5; }
+#launcher-upd span { flex: 1; }
+@media (max-width: 600px) { #launcher-upd { flex-wrap: wrap; } }
+#launcher-upd a { color: #fff; text-decoration: none; }

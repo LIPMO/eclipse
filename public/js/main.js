@@ -1296,6 +1296,30 @@ net.on('build', async m => {
 // nettoie l'adresse après un rechargement de mise à jour
 if (/[?&]v=/.test(location.search)) { try { history.replaceState(null, '', location.pathname + location.hash); } catch { /* */ } }
 
+// ======================= LAUNCHER DÉPASSÉ (1.28.2) =======================
+// Le launcher s'identifie (« ECLIPSE-Launcher/2.0.1 »). La version portable et les anciens launchers ne peuvent pas se
+// mettre à jour tout seuls : on leur propose la nouvelle version ici, dans le jeu.
+(async () => {
+  const m = navigator.userAgent.match(/ECLIPSE-Launcher\/(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return;
+  const mine = [+m[1], +m[2], +m[3]];
+  let info = null;
+  for (let i = 0; i < 3 && !info?.version; i++) { try { info = await (await fetch('/api/launcher', { cache: 'no-store' })).json(); } catch { /* */ } if (!info?.version) await new Promise(r => setTimeout(r, 3000)); }
+  if (!info?.version) return;
+  const last = info.version.split('.').map(Number);
+  const older = last[0] !== mine[0] ? last[0] > mine[0] : last[1] !== mine[1] ? last[1] > mine[1] : last[2] > mine[2];
+  if (!older) return;
+  let skip = ''; try { skip = sessionStorage.getItem('eclipse_launcher_skip') || ''; } catch { /* */ }
+  if (skip === info.version) return;
+  const bar = document.createElement('div');
+  bar.id = 'launcher-upd';
+  bar.innerHTML = `<span>⬆ <b>Nouvelle version du launcher : ${info.version}</b> (tu as la ${mine.join('.')}). Si elle ne s'installe pas toute seule, télécharge-la ici.</span>
+    <a class="btn small primary" href="/telecharger" target="_blank" rel="noopener">TÉLÉCHARGER</a><button class="btn small ghost" type="button">PLUS TARD</button>`;
+  bar.querySelector('button').onclick = () => { bar.remove(); try { sessionStorage.setItem('eclipse_launcher_skip', info.version); } catch { /* */ } };
+  document.body.appendChild(bar);
+  net.on('matchStart', () => bar.remove()); // jamais par-dessus la partie
+})();
+
 // ======================= BANDEAU COOKIES =======================
 (() => {
   let seen = false; try { seen = localStorage.getItem('eclipse_cookies_ok') === '1'; } catch { /* */ }
