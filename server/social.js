@@ -322,6 +322,7 @@ export class Social {
     for (const [k, v] of Object.entries(st)) {
       if (++n > 200 || !/^[A-Za-z0-9]{1,24}$/.test(k)) break;
       if (k === 'keys' && v && typeof v === 'object') { out.keys = {}; for (const [a, code] of Object.entries(v).slice(0, 80)) if (/^[A-Za-z0-9]{1,24}$/.test(a) && typeof code === 'string' && /^[A-Za-z0-9]{0,24}$/.test(code)) out.keys[a] = code; continue; }
+      if (k === 'favSkins' && Array.isArray(v)) { out.favSkins = v.filter(x => typeof x === 'string' && /^[a-z0-9_]{1,40}$/i.test(x)).slice(-300); continue; } // skins favoris (1.39)
       if (typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) out[k] = v;
       else if (typeof v === 'string' && v.length <= 40 && !/[<>"'`]/.test(v)) out[k] = v;
     }

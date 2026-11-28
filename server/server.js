@@ -1081,6 +1081,7 @@ function createTourRoom(t, m, name) {
 const tournaments = new Tournaments({ accounts, clients, rooms, send, admin, dataDir: DATA_DIR, createRoom: createTourRoom, joinRoom, startMatch, closeRoom });
 const botApi = createBotApi({ accounts, admin, clients, rooms, social, tournaments, creators, publicCard, roomSummary, dailyShop, createRoom: createOfficialRoom, roomCode, closeRoom, version: PKG_VERSION, fs });
 admin.ctx.tournaments = tournaments;
+try { admin.repairOldRenames(); } catch (e) { console.error('Réparation des renommages', e); }
 accounts.onPurchase = skin => { admin.economy('spend', skin.price); admin.economy('skin', skin.id); };
 for (const a of integrityAlerts) admin.log('securite', a);
 if (VERIFIED) admin.log('systeme', `Mode protégé : ${VERIFIED.size} fichiers vérifiés servis depuis la mémoire`);

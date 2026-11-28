@@ -716,6 +716,45 @@ export class Admin {
   }
 
   // ---------- utilitaires internes ----------
+  // 1.39 : changement de pseudo : toutes les références à l'ancien identifiant suivent (amis, demandes, bloqués, épinglés,
+  // surnoms, notes, joueurs récents, soutien créateur, clans, tournois). Avant, le joueur disparaissait des listes d'amis
+  // et de son clan (retiré au redémarrage suivant).
+  // réparation unique des renommages faits avant la 1.39, d'après l'historique du panneau (« ancien → nouveau »)
+  repairOldRenames() {
+    if (this.state.renameRepair139) return 0;
+    const A = this.ctx.accounts; let n = 0;
+    for (const e of this.state.audit) {
+      if (e.action !== 'Compte renommé') continue;
+      const m = String(e.detail).match(/^(\S+) → (\S+)$/); if (!m) continue;
+      const o = A.key(m[1]), nk = A.key(m[2]);
+      if (o !== nk && !A.exists(o) && A.exists(nk)) { this.migrateAccountKey(o, nk); n++; }
+    }
+    this.state.renameRepair139 = true; A.save(); this.save();
+    if (n) this.log('admin', `Réparation des anciens renommages : ${n} compte(s)`);
+    return n;
+  }
+  migrateAccountKey(oldKey, newKey) {
+    const A = this.ctx.accounts, sw = k => k === oldKey ? newKey : k;
+    const arr = v => Array.isArray(v) ? [...new Set(v.map(sw))] : v;
+    const keys = o => { if (o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, oldKey)) { o[newKey] = o[oldKey]; delete o[oldKey]; } };
+    for (const x of Object.values(A.data.users)) {
+      if (!x || typeof x !== 'object') continue;
+      for (const f of ['friends', 'friendReq', 'blocked', 'pinned']) if (x[f]) x[f] = arr(x[f]);
+      keys(x.aliases); keys(x.pnotes);
+      if (Array.isArray(x.recent)) for (const r of x.recent) if (r && r.k === oldKey) r.k = newKey;
+      if (x.support?.key === oldKey) x.support.key = newKey;
+    }
+    // clans et tournois : remplacement de toutes les valeurs égales à l'ancien identifiant
+    const deep = o => {
+      if (Array.isArray(o)) { for (let i = 0; i < o.length; i++) { if (o[i] === oldKey) o[i] = newKey; else if (o[i] && typeof o[i] === 'object') deep(o[i]); } return; }
+      if (o && typeof o === 'object') for (const k of Object.keys(o)) { if (o[k] === oldKey) o[k] = newKey; else if (o[k] && typeof o[k] === 'object') deep(o[k]); if (k === oldKey) { o[newKey] = o[oldKey]; delete o[oldKey]; } }
+    };
+    for (const cl of Object.values(A.data.clans || {})) deep(cl);
+    if (this.ctx.clans?.clans && this.ctx.clans.clans !== A.data.clans) for (const cl of Object.values(this.ctx.clans.clans)) deep(cl);
+    const tl = this.ctx.tournaments?.list; if (tl) { for (const t of tl) deep(t); this.ctx.tournaments.save?.(); }
+    if (this.ctx.creators) this.ctx.creators.idx = null;
+    this.ctx.social?.lbCache?.clear?.();
+  }
   findUser(name) { const u = this.ctx.accounts.get(name); if (!u) fail('Compte introuvable', 404); return u; }
   guard(lvl, target, self) {
     const tl = LEVEL[target.role || 'player'] || 0;
@@ -1161,6 +1200,7 @@ const ACTIONS = {
     for (const s of Object.values(this.ctx.accounts.data.sessions)) if (s.user === oldKey) s.user = newKey;
     for (const b of this.state.bans) if (b.type === 'account' && b.value === oldKey) { b.value = newKey; b.label = nn; }
     for (const m of this.state.mutes) if (m.key === oldKey) { m.key = newKey; m.label = nn; }
+    if (newKey !== oldKey) { this.migrateAccountKey(oldKey, newKey); setTimeout(() => this.ctx.social?.pushFriendsOf(newKey), 0); }
     this.ctx.accounts.save(); this.save();
     for (const c of this.clientsOf(oldKey)) this.ctx.kick(c, `Ton pseudo a été changé en « ${nn} ». Reconnecte-toi.`);
     return { _detail: `${old} → ${nn}` };

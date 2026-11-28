@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.39.0",
+    "date": "2026-11-28",
+    "title": "Skins favoris et changement de pseudo corrigé",
+    "items": [
+      "Nouveau dans la COLLECTION : clique sur l'étoile ☆ d'un skin pour le mettre en favori, puis retrouve-les avec le filtre « ★ FAVORIS ». Tes favoris sont enregistrés sur ton compte.",
+      "Corrigé : après un changement de pseudo, le joueur disparaissait des listes d'amis et pouvait perdre son clan. Maintenant les amis, demandes d'amis, joueurs bloqués et épinglés, surnoms et notes, joueurs récents, clan, tournois et soutien à un code créateur suivent le nouveau pseudo.",
+      "Les joueurs déjà renommés avant cette mise à jour sont réparés automatiquement."
+    ]
+  },
+  {
     "version": "1.38.0",
     "date": "2026-11-28",
     "title": "API pour le bot Discord",

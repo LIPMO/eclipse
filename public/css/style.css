@@ -1425,3 +1425,10 @@ body.theme-light { color-scheme: light; }
 .bx-win { margin-bottom: 12px; animation: bxPop .4s ease-out; } .bx-win b { display: block; font-family: var(--head); font-size: 26px; letter-spacing: .08em; color: var(--rc); text-shadow: 0 0 18px var(--rc); }
 .bx-win span { color: var(--rc); letter-spacing: .2em; font-size: 12px; }
 @keyframes bxPop { from { transform: scale(.6); opacity: 0; } }
+
+/* favoris de la collection (1.39) */
+.skin-card { position: relative; }
+.skin-fav { position: absolute; top: 6px; right: 6px; z-index: 2; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+  background: rgba(0,0,0,.45); color: rgba(255,255,255,.7); font-size: 16px; line-height: 26px; transition: transform .12s, color .12s; }
+.skin-fav:hover { transform: scale(1.15); color: #ffd23f; }
+.skin-fav.on { color: #ffd23f; text-shadow: 0 0 10px rgba(255,210,63,.8); }

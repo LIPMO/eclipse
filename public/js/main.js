@@ -1278,12 +1278,13 @@ function renderCollection() {
   const f = state.collFilter || 'all';
   const RORDER = ['common', 'rare', 'epic', 'legendary', 'exclusive'];
   const sets = [...new Set(SKINS.map(s => s.set).filter(Boolean))];
-  const list = SKINS.filter(s => (f === 'all' || (f === 'owned' ? profile.owned.includes(s.id) || s.id === 'default' : f === 'buy' ? !profile.owned.includes(s.id) && !s.level && s.price > 0 : rarityOf(s) === f))
+  const favs = new Set(profile.settings.favSkins || []);
+  const list = SKINS.filter(s => (f === 'all' || (f === 'fav' ? favs.has(s.id) : f === 'owned' ? profile.owned.includes(s.id) || s.id === 'default' : f === 'buy' ? !profile.owned.includes(s.id) && !s.level && s.price > 0 : rarityOf(s) === f))
     && (!state.collSet || (state.collSet === 'classic' ? !s.set : s.set === state.collSet)));
   if (state.collSort === 'price') list.sort((a, b) => (a.level ? 1e6 + a.level : a.price) - (b.level ? 1e6 + b.level : b.price));
   else if (state.collSort === 'rarity') list.sort((a, b) => RORDER.indexOf(rarityOf(b)) - RORDER.indexOf(rarityOf(a)) || b.price - a.price);
   const ownedN = SKINS.filter(s => s.id === 'default' || profile.owned.includes(s.id)).length;
-  $('coll-filters').innerHTML = `<div class="seg small">${[['all', 'TOUS'], ['owned', 'POSSÉDÉS'], ['buy', 'À ACHETER'], ...RORDER.map(r => [r, RARITY[r].name.toUpperCase()])].map(([k, l]) => `<button data-cf="${k}" class="${f === k ? 'active' : ''}">${l}</button>`).join('')}</div>
+  $('coll-filters').innerHTML = `<div class="seg small">${[['all', 'TOUS'], ['fav', `★ FAVORIS${favs.size ? ` (${favs.size})` : ''}`], ['owned', 'POSSÉDÉS'], ['buy', 'À ACHETER'], ...RORDER.map(r => [r, RARITY[r].name.toUpperCase()])].map(([k, l]) => `<button data-cf="${k}" class="${f === k ? 'active' : ''}">${l}</button>`).join('')}</div>
     <select id="coll-set" title="Collection"><option value="">Toutes les collections</option><option value="classic" ${state.collSet === 'classic' ? 'selected' : ''}>Classiques</option>${sets.map(x => `<option value="${esc(x)}" ${state.collSet === x ? 'selected' : ''}>${esc(x)} (${SKINS.filter(s => s.set === x && profile.owned.includes(s.id)).length}/${SKINS.filter(s => s.set === x).length})</option>`).join('')}</select>
     <span class="grow"></span><span class="muted small">${ownedN}/${SKINS.length} possédés</span>
     ${state.collSet && state.collSet !== 'classic' ? (() => { const all = SKINS.filter(s => s.set === state.collSet), have = all.filter(s => profile.owned.includes(s.id)).length, t = TITLES['set_' + setKey(state.collSet)];
@@ -1295,8 +1296,8 @@ function renderCollection() {
     const rar = RARITY[rarityOf(s)];
     const sw = `${swatchCss(s)}${s.glow ? `;box-shadow:0 0 14px -2px ${s.accent}` : ''}`;
     const label = eq ? '<div class="sp eq">ÉQUIPÉ</div>' : owned ? '<div class="sp owned">Possédé — cliquer pour équiper</div>' : s.level ? `<div class="sp lock">🔒 Niveau ${s.level}</div>` : `<div class="sp"><span class="gem small"></span>${s.price}</div>`;
-    return `<div class="skin-card ${s.id === sel ? 'selected' : ''}" data-s="${s.id}" style="border-top-color:${rar.color}"><div class="sw" style="${sw}"></div><div class="sn">${s.name}</div>${s.id !== 'default' ? `<div class="rar small" style="color:${rar.color}">${rar.name}${s.animated ? ' · animé' : ''}${s.set ? `<span class="muted"> · ${esc(s.set)}</span>` : ''}</div>` : ''}${label}</div>`;
-  }).join('') || '<p class="muted">Aucun skin dans cette catégorie.</p>';
+    return `<div class="skin-card ${s.id === sel ? 'selected' : ''}" data-s="${s.id}" style="border-top-color:${rar.color}"><button class="skin-fav ${favs.has(s.id) ? 'on' : ''}" data-sfav="${s.id}" title="${favs.has(s.id) ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${favs.has(s.id) ? '★' : '☆'}</button><div class="sw" style="${sw}"></div><div class="sn">${s.name}</div>${s.id !== 'default' ? `<div class="rar small" style="color:${rar.color}">${rar.name}${s.animated ? ' · animé' : ''}${s.set ? `<span class="muted"> · ${esc(s.set)}</span>` : ''}</div>` : ''}${label}</div>`;
+  }).join('') || `<p class="muted">${f === 'fav' ? 'Aucun favori : clique sur l\'étoile ☆ d\'un skin pour l\'ajouter.' : 'Aucun skin dans cette catégorie.'}</p>`;
   $('coll-title').textContent = `${WEAPONS[state.collWeapon].name.toUpperCase()} · ${SKINS.find(s => s.id === sel).name}`;
   if (!previews.coll) previews.coll = new Preview($('coll-canvas'));
   const w = buildWeapon(WEAPONS[state.collWeapon].model, sel);
@@ -1318,6 +1319,12 @@ $('coll-filters').onclick = e => { const b = e.target.closest('[data-cf]'); if (
 $('coll-filters').onchange = e => { if (e.target.id === 'coll-sort') { state.collSort = e.target.value; renderCollection(); } if (e.target.id === 'coll-set') { state.collSet = e.target.value; renderCollection(); } };
 $('coll-weapons').onclick = e => { const b = e.target.closest('button'); if (b) { state.collWeapon = b.dataset.w; state.collSkin = null; renderCollection(); } };
 $('coll-skins').onclick = e => {
+  const fb = e.target.closest('[data-sfav]');
+  if (fb) { // favoris (1.39) : enregistrés avec les réglages, donc synchronisés sur le compte
+    const id = fb.dataset.sfav, set = new Set(profile.settings.favSkins || []);
+    set.has(id) ? set.delete(id) : set.add(id);
+    profile.settings.favSkins = [...set].slice(-300); save(); document.dispatchEvent(new CustomEvent('settings-changed', { detail: { key: 'favSkins' } })); renderCollection(); return;
+  }
   const c = e.target.closest('.skin-card'); if (!c) return;
   const id = c.dataset.s, skin = SKINS.find(s => s.id === id);
   const owned = profile.owned.includes(id);
