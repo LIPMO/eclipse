@@ -476,6 +476,7 @@ const VIEWS = {
         <div class="card" data-section="acdiscord"><h3>Anti-triche et alertes Discord</h3>
           ${chk('anticheat', 'Anti-triche activé', 'Contrôle des déplacements impossibles et des statistiques de fin de partie. Aussi pilotable depuis l\'onglet Anti-triche.')}
           ${num('acStrikes', 'Infractions de déplacement avant alerte', 2, 50, 1, 'Plus bas = plus sensible (plus de fausses alertes en cas de mauvaise connexion).')}
+          <div class="field"><label>Clé de l'API du bot Discord</label><input data-k="botApiKey" value="${h(c.botApiKey || '')}" maxlength="100" placeholder="au moins 24 caractères (vide = API désactivée)" autocomplete="off"><div class="help">À recopier dans le fichier .env du bot (ECLIPSE_API_KEY). Garde-la secrète.</div></div>
           ${chk('alertSuspectLogin', 'Prévenir le staff quand un compte « Surveillé » ou « Suspect » se connecte')}
           <div class="field"><label>Webhook Discord</label><input data-k="discordWebhook" value="${h(c.discordWebhook || '')}" maxlength="300" placeholder="https://discord.com/api/webhooks/…"><div class="help">Dans Discord : Paramètres du salon → Intégrations → Webhooks → Nouveau webhook → Copier l'URL. Laisse vide pour désactiver.</div></div>
           ${chk('discordCheat', 'Alertes anti-triche')}${chk('discordReports', 'Signalements')}${chk('discordBans', 'Bans')}${chk('discordTournaments', 'Vainqueurs des tournois')}

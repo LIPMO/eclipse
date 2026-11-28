@@ -25,6 +25,8 @@ import { levelOf, TITLES, RADIO, REPORT_REASONS, masteryOf, ROMAN } from '../sha
 import { doPrestige } from './progression.js';
 import { MAP_ORDER, mapsForMode } from '../shared/maps.js';
 import { Creators } from './creators.js';
+import { createBotApi } from './botapi.js';
+import { publicCard } from './progression.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PKG_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '0.0.0'; } })();
@@ -117,6 +119,8 @@ const server = http.createServer((req, res) => {
   const isAdminApi = req.url.startsWith('/admin/api/');
   // connecteur Claude (MCP) : /mcp/<jeton secret>
   { const mm = req.url.match(/^\/mcp\/([A-Za-z0-9_-]{1,100})\/?$/); if (mm) { if (!httpLimit.take(Admin.ipOf(req))) { res.writeHead(429, { 'Retry-After': '10' }); res.end(); return; } mcp.handle(req, res, mm[1]).catch(e => { console.error('Erreur MCP', e); if (!res.headersSent) { res.writeHead(500); res.end('{}'); } }); return; } }
+  // API du bot Discord (1.38), protégée par une clé
+  if (req.url.startsWith('/api/bot/')) { if (!httpLimit.take(Admin.ipOf(req))) { res.writeHead(429); res.end(); return; } botApi(req, res); return; }
   if (!(req.method === 'GET' || req.method === 'HEAD' || (req.method === 'POST' && isAdminApi))) { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
   if (!isAdminApi && !httpLimit.take(Admin.ipOf(req))) { res.writeHead(429, { 'Retry-After': '10' }); res.end('Trop de requêtes'); return; }
   if (req.url.startsWith('/admin/api/')) { admin.handle(req, res).catch(e => { console.error('Erreur admin', e); if (!res.headersSent) { res.writeHead(500); res.end('{}'); } }); return; }
@@ -1075,6 +1079,7 @@ function createTourRoom(t, m, name) {
   return room;
 }
 const tournaments = new Tournaments({ accounts, clients, rooms, send, admin, dataDir: DATA_DIR, createRoom: createTourRoom, joinRoom, startMatch, closeRoom });
+const botApi = createBotApi({ accounts, admin, clients, rooms, social, tournaments, creators, publicCard, roomSummary, dailyShop, createRoom: createOfficialRoom, roomCode, closeRoom, version: PKG_VERSION, fs });
 admin.ctx.tournaments = tournaments;
 accounts.onPurchase = skin => { admin.economy('spend', skin.price); admin.economy('skin', skin.id); };
 for (const a of integrityAlerts) admin.log('securite', a);

@@ -30,7 +30,7 @@ const DEFAULT_CONFIG = {
   // anti-triche (désactivable) : seuil d'infractions de déplacement avant alerte
   anticheat: true, acStrikes: 5,
   // alertes Discord (webhook) et inscriptions
-  discordWebhook: '', discordCheat: true, discordReports: true, discordBans: true, discordTournaments: true, alertSuspectLogin: true, creatorCodes: true, creatorDailyCap: 5000,
+  discordWebhook: '', discordCheat: true, discordReports: true, discordBans: true, discordTournaments: true, alertSuspectLogin: true, creatorCodes: true, creatorDailyCap: 5000, botApiKey: '',
   maxAccountsPerIp: Math.max(0, parseInt(process.env.MAX_ACCOUNTS_PER_IP ?? '3', 10) || 0), weekendXp: false,
   // surveillance des performances, sauvegardes automatiques, limites de débit réglables
   perfAlerts: true, perfTickMs: 30, discordPerf: true, autoBackup: true, backupKeep: 7, rateChat: 5, rateSocial: 12,
@@ -54,7 +54,7 @@ const CONFIG_RULES = {
   xpMul: [0, 10], weaponUnlocks: 'bool', dailyBonus: 'bool',
   eventName: ['str', 60], eventXpMul: [0, 10], eventEclatsMul: [0, 10], eventUntil: [0, 4102444800000],
   slowMode: [0, 120], blockLinks: 'bool', autoMute: 'bool', autoMuteThreshold: [1, 20], autoMuteMinutes: [1, 1440], warnBanAt: [0, 20],
-  anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool', creatorCodes: 'bool', creatorDailyCap: [0, 1000000],
+  anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool', creatorCodes: 'bool', creatorDailyCap: [0, 1000000], botApiKey: ['str', 100],
   alertSuspectLogin: 'bool', maxAccountsPerIp: [0, 50], weekendXp: 'bool',
   perfAlerts: 'bool', perfTickMs: [5, 200], discordPerf: 'bool', autoBackup: 'bool', backupKeep: [1, 30], rateChat: [2, 30], rateSocial: [4, 60], clanMinLevel: [1, 50], slide: 'bool',
   disabledAgents: ['str', 300], disabledMaps: ['str', 300], questMul: [0, 5], trollsOn: 'bool', trollMax: [5, 120], eventBigHead: 'bool', eventLowGrav: 'bool', eventTurbo: 'bool', welcomeMsg: ['str', 300],
@@ -67,7 +67,7 @@ const CONFIG_LABELS = {
   weaponUnlocks: 'Déblocage des armes', dailyBonus: 'Bonus quotidien', eventName: 'Nom de l\'événement', eventXpMul: 'XP de l\'événement', eventEclatsMul: 'Éclats de l\'événement',
   eventUntil: 'Fin de l\'événement', slowMode: 'Mode lent', blockLinks: 'Liens bloqués', autoMute: 'Silence automatique', autoMuteThreshold: 'Seuil du silence auto.',
   autoMuteMinutes: 'Durée du silence auto.', warnBanAt: 'Ban après avertissements', anticheat: 'Anti-triche', acStrikes: 'Seuil anti-triche', discordWebhook: 'Webhook Discord',
-  discordCheat: 'Discord : triche', discordReports: 'Discord : signalements', discordBans: 'Discord : bans', discordTournaments: 'Discord : tournois', creatorCodes: 'Codes créateur', creatorDailyCap: 'Plafond quotidien des créateurs', alertSuspectLogin: 'Alerte compte surveillé',
+  discordCheat: 'Discord : triche', discordReports: 'Discord : signalements', discordBans: 'Discord : bans', discordTournaments: 'Discord : tournois', creatorCodes: 'Codes créateur', botApiKey: 'Clé de l\'API du bot', creatorDailyCap: 'Plafond quotidien des créateurs', alertSuspectLogin: 'Alerte compte surveillé',
   maxAccountsPerIp: 'Comptes par IP', weekendXp: 'XP du week-end', perfAlerts: 'Alertes de lenteur', perfTickMs: 'Seuil de lenteur (ms)', discordPerf: 'Discord : lenteur',
   autoBackup: 'Sauvegarde automatique', backupKeep: 'Sauvegardes conservées', rateChat: 'Limite du chat', rateSocial: 'Limite des actions sociales', clanMinLevel: 'Niveau requis pour créer un clan', slide: 'Glissade',
   disabledAgents: 'Agents désactivés', disabledMaps: 'Cartes désactivées', questMul: 'Récompenses des quêtes', trollsOn: 'Blagues autorisées', trollMax: 'Durée max. des blagues', eventBigHead: 'Événement grosses têtes', eventLowGrav: 'Événement gravité basse', eventTurbo: 'Événement turbo',

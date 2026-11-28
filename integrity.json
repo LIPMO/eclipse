@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-28T12:31:54.238Z",
+ "generated": "2026-11-28T12:54:41.764Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -40,7 +40,7 @@
   "public/img/logo-512.png": "d4c707080b9c2a9235308356f34ceceae9041717c15d33a130d771fa78496e77",
   "public/img/og-image.png": "b6a1d70cb9decebc4029b6cceba08f459ab4b443f1823420b0d95288d3708599",
   "public/index.html": "fae4e175f3a2051aea113030099e174698f151b3ed2e23a0bdbbb2f249ffda68",
-  "public/js/admin.js": "f8dbc88843090b14d19e95bbcfdcc8cfcbb969455a49ff02120c72d728ea21da",
+  "public/js/admin.js": "1403df32473a5c5b26388d2c6fc3587664be14caf314a41089454d0169d8bcca",
   "public/js/audio.js": "1ad182c944f7de74f3b2be6dbac9da62191b01597863ce9771d0b8537024e34e",
   "public/js/clans.js": "dfae1f1c35736a3e05adce0488c507b85fe84fb58125ed3a81734dfb6e598d84",
   "public/js/creator.js": "e3e597f4a6e1b3ea8cf399d8ef44ecb8fd748e2c6fa32f69a86a698b0b3f9df0",

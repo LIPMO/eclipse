@@ -1,0 +1,18 @@
+BOT DISCORD ECLIPSE
+===================
+Programme séparé du jeu : il lit les infos du serveur par l'API sécurisée (clé secrète).
+
+1. Installe Node.js (version LTS) : https://nodejs.org
+2. Crée le bot : https://discord.com/developers/applications → New Application
+   - Onglet « Bot » → Reset Token → copie le jeton (DISCORD_TOKEN)
+   - Onglet « General Information » → copie l'Application ID (DISCORD_CLIENT_ID)
+   - Onglet « OAuth2 » → URL Generator → coche « bot » et « applications.commands »,
+     permissions « Send Messages » + « Embed Links » → ouvre le lien et invite le bot sur ton serveur.
+3. Sur le site : Administration → Configuration → « Clé de l'API du bot Discord »
+   → mets une longue clé (au moins 24 caractères, ex. une suite de lettres et chiffres au hasard) → Enregistrer.
+4. Double-clique sur start.bat : la première fois il crée le fichier .env et l'ouvre.
+   Remplis-le (voir les explications dedans), enregistre, puis relance start.bat.
+5. Dans la fenêtre noire, tu dois voir 3 lignes « ✅ ». Le bot est prêt.
+
+Commandes : /stats /classement /serveur /enligne /salons /creer-partie /boutique /tournois /createur /nouveautes /jouer /aide
+Laisse la fenêtre ouverte : si tu la fermes, le bot s'arrête.

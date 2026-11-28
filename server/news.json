@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.38.0",
+    "date": "2026-11-28",
+    "title": "API pour le bot Discord",
+    "items": [
+      "Nouvelle API sécurisée par une clé, utilisée par le bot Discord officiel : statistiques des joueurs, classements, état du serveur, salons, boutique, tournois, codes créateur, nouveautés et création de salons privés depuis Discord."
+    ]
+  },
+  {
     "version": "1.37.0",
     "date": "2026-11-28",
     "title": "Image plus belle : étalonnage cinéma, anticrénelage, armes détaillées",
