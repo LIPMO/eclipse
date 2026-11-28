@@ -22,6 +22,25 @@ const ENEMY = '#ff4f6d';
 const TROLL_NAMES = { upside: 'écran à l\'envers', spin: 'vertige', drunk: 'caméra ivre', invert: 'commandes inversées', pixel: 'écran pixelisé', rainbow: 'arc-en-ciel', bighead: 'grosse tête', tiny: 'minuscule', duck: 'tirs « coin-coin »', fakeban: 'faux bannissement', fakedc: 'fausse déconnexion', confetti: 'confettis', dance: 'danse', flash: 'flash', freeze: 'gel sur place', mirror: 'écran en miroir', fisheye: 'vision fish-eye', tunnel: 'vision tunnel', grayscale: 'noir et blanc', shake: 'tremblement de terre', blur: 'vision floue', emojis: 'pluie d\'emojis', slowmouse: 'souris au ralenti', giant: 'géant', spinner: 'toupie' };
 const SIGHT_COLORS = { red: '#ff2a2a', green: '#3dff6a', blue: '#3da8ff', yellow: '#ffe14d', pink: '#ff4fd8', white: '#ffffff' };
 const EMOTES = ['👍 GG', '😂 Mdr', '🔥 En feu !', '😮 Oups', '👏 Bien joué', '😎 Trop facile', '🙏 Désolé', '💀 RIP'];
+// émotes animées (1.45) : le personnage danse, visible par tous ; caméra à la 3e personne pour soi
+const ANIMS = ['🕺 Disco', '👋 Salut', '👏 Bravo', '🤣 Fou rire', '💪 Muscles', '🌀 Toupie', '🪑 Pause', '🤖 Robot'];
+function animateEmote(ch, a, t) {
+  const A = ch.arms, Lg = ch.legs, s = Math.sin, c = Math.cos;
+  A[0].rotation.set(0, 0, 0); A[1].rotation.set(0, 0, 0); ch.head.rotation.set(0, 0, 0); ch.upper.rotation.set(0, 0, 0);
+  let y = 0, ry = 0, lx = 0, rx = 0;
+  switch (a) {
+    case 0: A[0].rotation.x = -2.8 + s(t * 8) * 0.4; A[1].rotation.x = -0.4 - s(t * 8) * 0.4; A[0].rotation.z = 0.3; y = Math.abs(s(t * 8)) * 0.12; ry = s(t * 4) * 0.5; lx = s(t * 8) * 0.4; rx = -lx; break;
+    case 1: A[0].rotation.x = -2.9; A[0].rotation.z = 0.4 + s(t * 10) * 0.45; ch.head.rotation.z = s(t * 5) * 0.12; break;
+    case 2: A[0].rotation.x = A[1].rotation.x = -1.4; A[0].rotation.z = 0.35 + Math.abs(s(t * 12)) * 0.5; A[1].rotation.z = -0.35 - Math.abs(s(t * 12)) * 0.5; y = Math.abs(s(t * 6)) * 0.05; break;
+    case 3: ch.upper.rotation.x = 0.35 + s(t * 14) * 0.1; A[0].rotation.x = A[1].rotation.x = -0.6; ch.head.rotation.x = -0.3 + s(t * 14) * 0.15; break;
+    case 4: A[0].rotation.x = A[1].rotation.x = -1.6; A[0].rotation.z = 1.2 + s(t * 3) * 0.15; A[1].rotation.z = -1.2 - s(t * 3) * 0.15; ch.upper.rotation.y = s(t * 1.5) * 0.4; break;
+    case 5: ry = t * 9; A[0].rotation.z = 1.4; A[1].rotation.z = -1.4; y = Math.abs(s(t * 9)) * 0.1; break;
+    case 6: y = -0.45; lx = rx = -1.4; A[0].rotation.x = A[1].rotation.x = -0.5; ch.head.rotation.y = s(t * 0.8) * 0.4; break;
+    case 7: { const k = Math.floor(t * 3) % 4; A[0].rotation.x = k % 2 ? -1.57 : -0.2; A[1].rotation.x = k % 2 ? -0.2 : -1.57; ch.head.rotation.y = [0.5, 0, -0.5, 0][k]; ry = [0, 0.3, 0, -0.3][k]; break; }
+  }
+  Lg[0].rotation.x = lx; Lg[1].rotation.x = rx;
+  return { y, ry };
+}
 const ULTS = new Set(['overdrive', 'megasmoke', 'hunt', 'fortress', 'phantom', 'firestorm', 'blizzard']);
 const TIPS = [
   'Clic molette : marque une position pour ton équipe. Vise un ennemi pour une alerte rouge.',
@@ -999,9 +1018,13 @@ export class Game {
   toggleEmote(v = !this.emoteOpen) {
     this.emoteOpen = v;
     const el = $('emote-menu');
-    if (v) el.innerHTML = `<h4>ÉMOTES <span class="muted">(chiffre ou toucher)</span></h4>` + EMOTES.map((t, i) => `<div data-emote="${i}"><b>${i + 1}</b> ${esc(t)}</div>`).join('');
+    if (v) el.innerHTML = `<h4>ÉMOTES <span class="muted">(chiffre : animation · Maj + chiffre : message)</span></h4>` + ANIMS.map((t, i) => `<div data-emote="${i + 8}"><b>${i + 1}</b> ${esc(t)}</div>`).join('') + `<h4 style="margin-top:8px">MESSAGES</h4>` + EMOTES.map((t, i) => `<div data-emote="${i}"><b>⇧${i + 1}</b> ${esc(t)}</div>`).join('');
     el.classList.toggle('show', v);
-    el.onclick = e => { const d = e.target.closest('[data-emote]'); if (d) { this.net.send('emote', { e: +d.dataset.emote }); this.toggleEmote(false); } };
+    el.onclick = e => { const d = e.target.closest('[data-emote]'); if (d) { this.sendEmote(+d.dataset.emote); this.toggleEmote(false); } };
+  }
+  sendEmote(e) {
+    if (e >= 8 && !this.me?.al) return;
+    this.net.send('emote', { e });
   }
 
   // ---------- signalement en partie ----------
@@ -1111,7 +1134,7 @@ export class Game {
         return;
       }
       if (this.radioOpen && e.code === 'Escape') { this.toggleRadio(false); return; }
-      if (this.emoteOpen && /^(Digit|Numpad)[1-8]$/.test(e.code)) { e.preventDefault(); this.net.send('emote', { e: +e.code.slice(-1) - 1 }); this.toggleEmote(false); return; }
+      if (this.emoteOpen && /^(Digit|Numpad)[1-8]$/.test(e.code)) { e.preventDefault(); this.sendEmote(+e.code.slice(-1) - 1 + (e.shiftKey ? 0 : 8)); this.toggleEmote(false); return; }
       if (this.emoteOpen && e.code === 'Escape') { this.toggleEmote(false); return; }
       if (this.codeMap[e.code] || e.code === 'Tab' || e.code === 'Space') e.preventDefault();
       if (this.spec) { this.specKey(e); return; }
@@ -1765,6 +1788,7 @@ export class Game {
     on('trapGone', m => { const g = this.trapMeshes?.get(m.id); if (g) { this.scene.remove(g); this.trapMeshes.delete(m.id); } });
     on('killcam', m => this.startKillcam(m));
     on('emote', m => this.showEmote(m));
+    on('emoteStop', m => { if (m.i === this.myId) this.selfEmote = null; else { const o = this.others.get(m.i); if (o) o.emote = null; } });
     on('leader', m => { this.leaderId = m.id; $('leader').textContent = m.id && isFfa(this.mode) ? `👑 MENEUR : ${this.nameOf(m.id)}${m.id === this.myId ? ' (toi !)' : ''}` : ''; });
     on('combat', m => { $('combat').innerHTML = `<b>${esc(this.nameOf([...this.roster.values()].find(r => r.name === m.killer)?.id) || m.killer)}</b> à ${m.dist} m · tu lui as infligé <b>${m.dealt}</b> dégâts · il lui restait <b>${m.hp}</b> PV${m.armor ? ` et ${m.armor} d'armure` : ''} · tu as reçu <b>${m.recv}</b> dégâts`; });
     on('voteOpen', m => this.renderVote(m.options));
@@ -2086,7 +2110,7 @@ export class Game {
     if (this.dust?.visible) this.updateDust(dt);
     if (this.composer) this.composer.render(dt);
     else { this.renderer.clear(); this.renderer.render(this.scene, this.camera); }
-    if (this.me?.al && !this.scoped && !this.kc && !this.spec?.third) {
+    if (this.me?.al && !this.scoped && !this.kc && !this.spec?.third && !this.selfEmote) {
       this.renderer.clearDepth();
       this.renderer.render(this.vmScene, this.vmCam);
     }
@@ -2326,6 +2350,13 @@ export class Game {
       ch.head.rotation.x = st.pt * 0.6;
       ch.arms[0].rotation.x = -1.2 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
       ch.arms[1].rotation.x = -1.35 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
+      // émote animée (1.45) : s'arrête dès que le joueur bouge ou tire
+      if (o.emote) {
+        const tn = performance.now() / 1000;
+        if (tn > o.emote.until || (o.speedS || 0) > 0.8 || o.fireT > 0 || !st.al) o.emote = null;
+        else { const r = animateEmote(ch, o.emote.a, tn - o.emote.t0); ch.root.position.y += r.y; ch.root.rotation.y += r.ry; o.emoting = true; }
+      }
+      if (!o.emote && o.emoting) { o.emoting = false; ch.head.rotation.z = 0; ch.upper.rotation.x = 0; }
       // blagues visibles par tous : grosse tête (ou événement serveur), minuscule, danse
       { const hs = this.bigHeadEvent || this.fxOn(o.id, 'bighead') ? 2.3 : 1; ch.head.scale.setScalar(ch.head.scale.x + (hs - ch.head.scale.x) * Math.min(1, dt * 8));
         const rs = this.fxOn(o.id, 'tiny') ? 0.45 : this.fxOn(o.id, 'giant') ? 1.9 : 1;
@@ -2453,6 +2484,7 @@ export class Game {
   }
 
   updateCamera(dt, now) {
+    document.body.classList.toggle('emoting', !!(this.selfEmote && this.me?.al));
     const L = this.local;
     const cam = this.camera;
     let shake = 0;
@@ -2490,7 +2522,22 @@ export class Game {
       L.slideRoll = (L.slideRoll || 0) + ((L.specSlide && !this.spec.third && !ST().reduceMotion ? 0.075 : 0) - (L.slideRoll || 0)) * Math.min(1, dt * 10);
       cam.rotation.set(L.pitch, L.yaw, L.slideRoll);
       $('death-info').innerHTML = this.me && !this.me.al ? `${esc(this.nameOf(this.myId))} est mort${this.me.rs ? ` · réapparition dans ${Math.ceil(this.me.rs)} s` : ''}` : '';
+    } else if (this.selfEmote && this.me?.al) {
+      const E = this.selfEmote, tn = performance.now() / 1000, H = this.held;
+      if (!this.selfCh) { const r = this.roster.get(this.myId); this.selfCh = buildCharacter(r?.agent || 'ignis', ALLY, r?.of); this.scene.add(this.selfCh.root); }
+      const ch = this.selfCh; ch.root.visible = true;
+      ch.root.position.set(L.pos[0], L.pos[1], L.pos[2]); ch.root.rotation.set(0, L.yaw, 0);
+      const r = animateEmote(ch, E.a, tn - E.t0); ch.root.position.y += r.y; ch.root.rotation.y += r.ry;
+      // caméra derrière et au-dessus, on peut tourner autour avec la souris
+      const d = 3.4, cy = L.pos[1] + 1.9, px = L.pos[0] + Math.sin(L.yaw) * d * Math.cos(L.pitch * 0.5), pz = L.pos[2] + Math.cos(L.yaw) * d * Math.cos(L.pitch * 0.5);
+      const hit = raycastBoxes([L.pos[0], cy, L.pos[2]], norm([px - L.pos[0], 0, pz - L.pos[2]]), d, this.boxes).t;
+      const k = Math.min(1, (hit - 0.3) / d);
+      cam.position.set(L.pos[0] + (px - L.pos[0]) * k, cy - L.pitch * 1.2, L.pos[2] + (pz - L.pos[2]) * k);
+      cam.lookAt(L.pos[0], L.pos[1] + 1.2, L.pos[2]);
+      if (tn > E.until || ['forward', 'back', 'left', 'right', 'jump', 'fire', 'crouch'].some(a => H.has(a)) || Math.hypot(L.vel[0], L.vel[2]) > 0.8) { this.selfEmote = null; this.net.send('emoteStop'); }
+      this.specTarget = null;
     } else if (this.me?.al || !this.me) {
+      if (this.selfCh) this.selfCh.root.visible = false;
       const e = this.eyePos();
       cam.position.set(e[0], e[1], e[2]);
       const sliding = L.slideT > 0 && !ST().reduceMotion && ST().slideTilt !== false;
@@ -2795,6 +2842,12 @@ export class Game {
   }
   // ---- émotes ----
   showEmote(m) {
+    if (m.e >= 8) { // animation
+      const a = m.e - 8, until = performance.now() / 1000 + 20;
+      if (m.i === this.myId) { this.selfEmote = { a, t0: performance.now() / 1000, until }; if (this.scoped || this.ads) this.toggleScope(false); }
+      else { const o = this.others.get(m.i); if (o) o.emote = { a, t0: performance.now() / 1000, until }; }
+      return;
+    }
     const text = EMOTES[m.e]; if (!text) return;
     if (ST().hideEmotes && m.i !== this.myId) return;
     if (this.muted.has(this.roster.get(m.i)?.name)) return;

@@ -1444,3 +1444,5 @@ body.br-out #hud::before { content: ''; position: fixed; inset: 0; pointer-event
 
 #slots .bag { border-color: rgba(178,107,255,.55) !important; color: #e3d2ff; }
 #slots .bag.empty { opacity: .45; }
+
+body.emoting #crosshair { visibility: hidden; }

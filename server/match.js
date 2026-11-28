@@ -593,6 +593,7 @@ export class Match {
       case 'interact': p.interact = !!msg.on; if (p.interact) p.interactPos = p.pos.slice(); return;
       case 'mark': return this.handleMark(p, msg);
       case 'emote': return this.handleEmote(p, msg);
+      case 'emoteStop': this.broadcast({ type: 'emoteStop', i: p.id }); return;
     }
   }
 
@@ -1171,9 +1172,10 @@ export class Match {
   // émotes en partie (limitées)
   handleEmote(p, m) {
     const id = Math.round(Number(m.e));
-    if (!(id >= 0 && id < 8)) return;
+    if (!(id >= 0 && id < 16)) return; // 0-7 : bulles, 8-15 : animations (1.45)
+    if (id >= 8 && !p.alive) return;
     const last = this.emoteT.get(p.id) || -9;
-    if (this.time - last < 2) return;
+    if (this.time - last < (id >= 8 ? 0.8 : 2)) return;
     this.emoteT.set(p.id, this.time);
     this.broadcast({ type: 'emote', i: p.id, e: id });
   }

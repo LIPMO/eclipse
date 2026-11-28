@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.45.0",
+    "date": "2026-11-28",
+    "title": "Émotes animées",
+    "items": [
+      "Nouvelles émotes animées : Disco, Salut, Bravo, Fou rire, Muscles, Toupie, Pause et Robot. Ton personnage les joue, tous les joueurs le voient, et ta caméra passe à la 3e personne (tourne autour avec la souris).",
+      "Touche B pour ouvrir les émotes (comme dans les battle royales) : chiffre = animation, Maj + chiffre = message (👍 GG, 😂 Mdr…). Bouger, sauter ou tirer arrête l'émote.",
+      "Le menu d'achat passe sur la touche V. Si tu avais changé ces touches toi-même, tes réglages sont gardés."
+    ]
+  },
+  {
     "version": "1.44.0",
     "date": "2026-11-28",
     "title": "Battle Royale V2 : parachute et sac à dos",
