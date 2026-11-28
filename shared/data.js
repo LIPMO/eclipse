@@ -63,6 +63,8 @@ export const BR = {
   timeLimit: 900, startRadius: 118, chestRange: 2.4,
   // V2 (1.44) : saut en parachute au départ, sac à dos de 3 emplacements (touches 4, 5, 6)
   drop: { height: 55, fall: 6, fastFall: 15, speed: 8.5, botWait: 9 }, bagSize: 3,
+  // 1.47 : potions (touches 7 et 8) et +50 PV par élimination (le surplus devient de l'armure)
+  potions: { heal: { name: 'Potion de soin', hp: 40, time: 1.4, max: 4 }, shield: { name: 'Potion de bouclier', armor: 50, time: 1.8, max: 3 } }, killHeal: 50,
   // attente avant de se resserrer (s), durée du resserrement (s), rayon visé (m), dégâts par seconde hors zone pendant l'étape
   stages: [[50, 30, 58, 1], [40, 25, 36, 2], [35, 20, 20, 4], [25, 15, 9, 7], [20, 15, 0, 10]],
   loot: { common: ['spark', 'viper'], rare: ['hornet', 'brute'], epic: ['tempest', 'lancer'], legendary: ['longbow'] },

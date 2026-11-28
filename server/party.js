@@ -17,7 +17,7 @@ export class Parties {
   info(c, text) { this.ctx.send(c.id, { type: 'chat', from: 'GROUPE', text, system: true }); }
 
   handle(c, msg) {
-    const fn = { partyInvite: this.invite, partyAccept: this.accept, partyDecline: this.decline, partyLeave: this.leave, partyKick: this.kick, partyPromote: this.promote, partyChat: this.chat, partySet: this.setCfg, partyReady: this.setReady, partyCancel: this.cancel }[msg.type];
+    const fn = { partyInvite: this.invite, partyAccept: this.accept, partyDecline: this.decline, partyLeave: this.leave, partyKick: this.kick, partyPromote: this.promote, partyChat: this.chat, partyEmote: this.emote, partySet: this.setCfg, partyReady: this.setReady, partyCancel: this.cancel }[msg.type];
     if (!fn) return false;
     if (!c.account) { this.err(c, 'Crée un compte pour former un groupe.'); return true; }
     fn.call(this, c, msg);
@@ -98,6 +98,13 @@ export class Parties {
     if (!tc) return;
     p.leader = tc.id; this.stopCountdown(p); p.ready.clear(); this.push(p);
     for (const id of p.members) this.info(this.ctx.clients.get(id), `${tc.name} est le nouveau chef du groupe.`);
+  }
+  // émote dans le salon de groupe (1.47) : jouée par le personnage du joueur, vue par tout le groupe
+  emote(c, msg) {
+    const p = this.partyOf(c); if (!p) return;
+    const e = Math.round(Number(msg.e)); if (!(e >= 0 && e < 90)) return;
+    const now = Date.now(); if (now - (c.lastPartyEmote || 0) < 800) return; c.lastPartyEmote = now;
+    for (const id of p.members) this.ctx.send(id, { type: 'partyEmote', name: c.name, e });
   }
   chat(c, msg) {
     const p = this.partyOf(c); if (!p) return this.err(c, 'Tu n\'es dans aucun groupe.');

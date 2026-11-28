@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.47.0",
+    "date": "2026-11-28",
+    "title": "Potions, victoire royale et bras réparés",
+    "items": [
+      "Battle Royale : potions de soin (+40 PV, touche 7) et de bouclier (+50 armure, touche 8) dans les coffres. On boit en un instant, sans pouvoir tirer.",
+      "Battle Royale : +50 PV à chaque élimination (au-delà de 100, le surplus devient de l'armure).",
+      "Victoire royale : le dernier survivant a 5 secondes pour faire une petite danse devant les autres avant l'écran « VICTOIRE ROYALE » et le classement.",
+      "Émotes dans le lobby : touche V ou bouton « 😃 ÉMOTES » sous JOUER, ton groupe voit ton personnage danser.",
+      "Corrigé : les bras des personnages partaient vers l'arrière depuis le début, ils sont maintenant vers l'avant (tenue de l'arme, émotes, lobby)."
+    ]
+  },
+  {
     "version": "1.46.0",
     "date": "2026-11-28",
     "title": "90 émotes",

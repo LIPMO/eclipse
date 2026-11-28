@@ -3,7 +3,7 @@ import { SKINNABLE } from '/shared/data.js';
 const KEY = 'eclipse_profile_v1';
 export const DEFAULT_KEYS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', walk: 'ShiftLeft',
-  fire: 'Mouse0', scope: 'Mouse2', reload: 'KeyR', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', bag1: 'Digit4', bag2: 'Digit5', bag3: 'Digit6',
+  fire: 'Mouse0', scope: 'Mouse2', reload: 'KeyR', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', bag1: 'Digit4', bag2: 'Digit5', bag3: 'Digit6', potHeal: 'Digit7', potShield: 'Digit8',
   abilityQ: 'KeyQ', abilityE: 'KeyE', ult: 'KeyX', interact: 'KeyF', buy: 'KeyB', scoreboard: 'Tab', chat: 'Enter',
   teamChat: 'KeyY', radio: 'KeyT', mark: 'Mouse1', emote: 'KeyV', inspect: 'KeyG', react: 'KeyH',
   drop: 'KeyJ', lastWeapon: 'KeyZ', bigMap: 'KeyM', ready: 'KeyP', rebuy: 'KeyN', muteAll: 'F8', melee: 'KeyK',

@@ -579,7 +579,7 @@ export function buildCharacter(agentId, teamColor, outfitId = null) {
     mesh(new THREE.BoxGeometry(0.12, 0.3, 0.13), mats.suit, 0, -0.42, 0, pivot);
     return pivot;
   });
-  arms[0].rotation.x = -1.2; arms[1].rotation.x = -1.35; arms[0].rotation.z = -0.35; arms[1].rotation.z = 0.15;
+  arms[0].rotation.x = 1.2; arms[1].rotation.x = 1.35; // 1.47 : l'avant est vers -Z, les bras tournent donc dans le sens positif (avant : vers l'arrière) arms[0].rotation.z = -0.35; arms[1].rotation.z = 0.15;
   // accessoire signature
   switch (agentId) {
     case 'ignis': for (let i = 0; i < 4; i++) { const c = mesh(new THREE.ConeGeometry(0.045, 0.2, 6), mats.glow, -0.09 + i * 0.06, 0.18, 0.02 + (i % 2) * 0.04, head); c.rotation.x = 0.4; } break;

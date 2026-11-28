@@ -459,7 +459,7 @@ export class Match {
     p.alive = true; p.hp = 100; p.armor = 50; p.money = 9000; p.reloadEnd = 0; p.knifeOut = false;
     this.projectiles = this.projectiles.filter(pr => !(pr.kind === 'knife' && pr.owner === p.id));
     if (this.mode === 'gungame') { this.gunLoadout(p); p.armor = 0; } // pas d'armure : le couteau final reste jouable
-    else if (this.mode === 'br') { p.weapons = { 1: null, 2: null, 3: { id: 'knife' } }; p.slot = 3; p.armor = 0; p.money = 0; p.bag = []; }
+    else if (this.mode === 'br') { p.weapons = { 1: null, 2: null, 3: { id: 'knife' } }; p.slot = 3; p.armor = 0; p.money = 0; p.bag = []; p.pots = { heal: 0, shield: 0 }; p.drinkEnd = 0; }
     else {
       const prim = p.weapons?.[1]?.id || 'lancer';
       p.weapons = { 1: prim ? this.newWeapon(prim) : null, 2: this.newWeapon(p.weapons?.[2]?.id || 'spark'), 3: { id: 'knife' } };
@@ -524,6 +524,24 @@ export class Match {
     if (cur) p.bag[k] = cur; else p.bag.splice(k, 1);
     p.slot = slot; p.reloadEnd = 0;
   }
+  // potions (1.47) : on boit pendant un court instant (pas de tir), puis le soin ou l'armure s'applique
+  drinkPotion(p, k) {
+    const P = BR.potions[k];
+    if (!P || !p.alive || !p.pots?.[k] || p.drinkEnd > this.time) return;
+    if (k === 'heal' && p.hp >= 100) return;
+    if (k === 'shield' && (p.armor || 0) >= 100) return;
+    p.drinkEnd = this.time + P.time; p.drinkKind = k; p.reloadEnd = 0;
+  }
+  tickPotions() {
+    for (const p of this.players.values()) {
+      if (!p.drinkEnd || this.time < p.drinkEnd) continue;
+      const k = p.drinkKind, P = BR.potions[k]; p.drinkEnd = 0;
+      if (!p.alive || !p.pots?.[k]) continue;
+      p.pots[k]--;
+      if (P.hp) p.hp = Math.min(100, p.hp + P.hp); else p.armor = Math.min(100, (p.armor || 0) + P.armor);
+      this.send(p, { type: 'potionDone', k });
+    }
+  }
   openChest(p, i) {
     const c = this.chests?.[i];
     if (!c || c.open || !p.alive || this.phase !== 'live') return;
@@ -538,11 +556,11 @@ export class Match {
     if (!p.weapons[slot]) { p.weapons[slot] = w; got = 'arme'; this.send(p, { type: 'picked', item: id, slot }); }
     else if (p.bag && p.bag.length < BR.bagSize) { p.bag.push(w); got = 'sac'; }
     else this.drops.push({ id: this.nextId++, w, pos: [c.pos[0] + 0.6, 0, c.pos[2]], from: null, noPick: 0 });
-    const bonus = Math.random();
-    if (bonus < 0.4) p.armor = Math.min(100, (p.armor || 0) + 50);
-    else if (bonus < 0.8) p.hp = Math.min(100, p.hp + 50);
+    const bonus = Math.random(), pk = bonus < 0.45 ? 'heal' : bonus < 0.75 ? 'shield' : null;
+    let potGot = null;
+    if (pk && p.pots) { if (p.pots[pk] < BR.potions[pk].max) { p.pots[pk]++; potGot = pk; } else if (pk === 'heal') p.hp = Math.min(100, p.hp + 25); }
     this.broadcast({ type: 'chestOpen', i, by: p.id });
-    this.send(p, { type: 'chestLoot', w: id, rar, bonus: bonus < 0.4 ? 'armor' : bonus < 0.8 ? 'heal' : null, inSlot: got === 'arme', inBag: got === 'sac' });
+    this.send(p, { type: 'chestLoot', w: id, rar, pot: potGot, inSlot: got === 'arme', inBag: got === 'sac' });
   }
 
   // ---------- Gun Game ----------
@@ -578,6 +596,7 @@ export class Match {
       case 'chest': return this.openChest(p, msg.i);
       case 'spec': return this.setSpec(p, msg.id);
       case 'bagSwap': return this.bagSwap(p, msg.k);
+      case 'potion': return this.drinkPotion(p, msg.k);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'bash': return this.handleBash(p, msg);
@@ -958,6 +977,7 @@ export class Match {
   }
 
   handleShoot(p, msg) {
+    if (p.drinkEnd > this.time) return; // en train de boire une potion
     if (!p.alive || this.phase === 'buy' || this.phase === 'over' || this.phase === 'warmup') return;
     const w = p.weapons[p.slot];
     if (!w) return;
@@ -1072,6 +1092,7 @@ export class Match {
     if (this.mode === 'br') { for (const s of [1, 2]) if (v.weapons[s]) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = null; } } // Battle Royale : tout tombe
     else if (this.dropsOn()) { const s = v.weapons[1] ? 1 : v.weapons[2] && v.weapons[2].id !== 'spark' ? 2 : 0; if (s) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = s === 2 ? this.newWeapon('spark') : null; } }
     if (v.bag?.length) { v.bag.forEach((w, k) => this.drops.push({ id: this.nextId++, w, pos: [v.pos[0] + Math.cos(k * 2.1) * 0.9, 0, v.pos[2] + Math.sin(k * 2.1) * 0.9], from: null, noPick: 0 })); v.bag = []; }
+    if (this.mode === 'br' && a && a !== v && a.alive) { const h = Math.min(100 - a.hp, BR.killHeal); a.hp += h; a.armor = Math.min(100, (a.armor || 0) + BR.killHeal - h); this.send(a, { type: 'killHeal', n: BR.killHeal }); }
     const vStreak = v.streak; v.streak = 0; v.kit = false;
     if (a && a !== v && !this.isEnemy(a, v)) {
       a.score = Math.max(0, a.score - 100);
@@ -1126,6 +1147,8 @@ export class Match {
     if (v.lives <= 0) { v.out = true; v.respawnAt = 0; v.place = alive0; this.broadcast({ type: 'notice', text: this.mode === 'br' ? `${v.name.toUpperCase()} EST ÉLIMINÉ · ${alive0 - 1} JOUEUR(S) EN VIE` : `${v.name.toUpperCase()} EST ÉLIMINÉ DÉFINITIVEMENT` }); }
     const left = [...this.players.values()].filter(p => !p.out);
     if (left.length === 1) left[0].place = 1;
+    // Battle Royale (1.47) : 5 secondes pour que le gagnant fasse sa danse avant l'écran de fin
+    if (this.mode === 'br' && left.length <= 1 && this.phase !== 'over') { if (!this.brWin) { this.brWin = { id: left[0]?.id || null, at: this.time + 5 }; this.broadcast({ type: 'brWin', i: this.brWin.id }); } return; }
     if (left.length <= 1 && this.phase !== 'over') this.matchOver(left[0]?.id || null);
   }
   updateLeader() {
@@ -1463,7 +1486,7 @@ export class Match {
     }
 
     this.pickupDrops();
-    if (this.mode === 'br' && this.phase === 'live') this.tickZone(dt);
+    if (this.mode === 'br' && this.phase === 'live') { if (this.brWin) { if (this.time >= this.brWin.at) this.matchOver(this.brWin.id); } else this.tickZone(dt); this.tickPotions(); }
     if (assault) this.tickAssault(dt);
     else if (this.phase === 'live' && T >= this.phaseEnd) {
       let best = null;
@@ -1692,7 +1715,7 @@ export class Match {
         sm: p.speedMul, rm: p.rateMul, rs: p.respawnAt ? r2(Math.max(0, p.respawnAt - T)) : 0,
         rc: { q: p.recharge.q ? r2(p.recharge.q - T) : 0, e: p.recharge.e ? r2(p.recharge.e - T) : 0 },
         iv: p.invisEnd > T ? 1 : 0, bf: p.buffEnd > T ? 1 : 0, bt: this.buffTimers(p, T),
-        ...(p.bag ? { bg: p.bag.map(w => [w.id, w.mag, w.reserve]) } : {}), ...(p.chuteEnd > T ? { ch: 1 } : {}),
+        ...(p.bag ? { bg: p.bag.map(w => [w.id, w.mag, w.reserve]) } : {}), ...(p.pots ? { po: [p.pots.heal, p.pots.shield], dk: p.drinkEnd > T ? r2(p.drinkEnd - T) : 0 } : {}), ...(p.chuteEnd > T ? { ch: 1 } : {}),
       };
       const meStr = JSON.stringify(me);
       meCache.set(p.id, { meStr, core: JSON.stringify(core) });

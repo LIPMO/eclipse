@@ -2,7 +2,7 @@
 import './i18n.js';
 import * as THREE from 'three';
 import { Net } from './net.js';
-import { Game } from './game.js';
+import { Game, ANIMS, animateEmote } from './game.js';
 import { profile, save, session, setToken, applyServerProfile } from './store.js';
 import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, ROLES, ABILITY_ICONS, OUTFITS, BOXES, boxPool, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
@@ -733,6 +733,30 @@ function buildLobbyStage(members) {
   pv.set(g, [0, 1.55, 7], [0, 1.15, -0.4]);
 }
 // animations : balancement, joie quand on se met PRÊT, silhouettes qui pulsent ; pseudos suivent les têtes
+// émotes du salon (1.47) : touche des émotes (V) ou bouton, visibles par tout le groupe
+lobby.emotes = new Map();
+function lobbyMyName() { return lobby.slots.find(x => x.member?.me)?.member.name || profile.name || session.name; }
+function playLobbyEmote(e) {
+  const name = lobbyMyName(); if (!name) return;
+  lobby.emotes.set(name, { e, t0: performance.now() / 1000, until: performance.now() / 1000 + 8 });
+  net.send('partyEmote', { e });
+  closeLobbyEmotes();
+}
+function closeLobbyEmotes() { document.getElementById('lb-emotes')?.remove(); }
+function openLobbyEmotes() {
+  if (document.getElementById('lb-emotes')) { closeLobbyEmotes(); return; }
+  const el = document.createElement('div'); el.id = 'lb-emotes';
+  el.innerHTML = `<div class="lbe-head"><b>ÉMOTES</b> <span class="muted small">clic pour jouer · tout ton groupe la voit</span><button class="btn small ghost" data-lbe-close>✕</button></div><div class="lbe-grid">${ANIMS.map((n, i) => `<button data-lbe="${i}">${esc(n)}</button>`).join('')}</div>`;
+  el.onclick = ev => { const b = ev.target.closest('[data-lbe]'); if (b) playLobbyEmote(+b.dataset.lbe); if (ev.target.closest('[data-lbe-close]')) closeLobbyEmotes(); };
+  document.getElementById('tab-play').appendChild(el);
+}
+net.on('partyEmote', m => { if (m.name === lobbyMyName()) return; lobby.emotes.set(m.name, { e: m.e, t0: performance.now() / 1000, until: performance.now() / 1000 + 8 }); });
+document.addEventListener('keydown', e => {
+  if (state.game || state.tab !== 'play' || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  if (e.code === profile.settings.keys.emote) { e.preventDefault(); openLobbyEmotes(); }
+  else if (e.code === 'Escape') closeLobbyEmotes();
+});
+
 function lobbyFrame(dt) {
   const pv = previews.lobby; if (!pv) return;
   const cam = pv.camera, t = performance.now() / 1000;
@@ -741,14 +765,17 @@ function lobbyFrame(dt) {
   for (const s of lobby.slots) {
     const ch = s.ch;
     if (!s.member) { ch.root.rotation.y = Math.PI + Math.sin(t * 0.5 + s.phase) * 0.6; if (ch.ghostMat) ch.ghostMat.opacity = 0.07 + Math.sin(t * 2 + s.phase) * 0.04; continue; }
+    const em = lobby.emotes.get(s.member.name);
+    if (em && t < em.until) { const r = animateEmote(ch, em.e, t - em.t0); ch.root.rotation.y = Math.PI + r.ry; ch.root.position.y = r.y; s.emoting = true; continue; }
+    if (s.emoting) { s.emoting = false; lobby.emotes.delete(s.member.name); ch.arms[0].rotation.set(1.2, 0, -0.35); ch.arms[1].rotation.set(1.35, 0, 0.15); ch.legs[0].rotation.set(0, 0, 0); ch.legs[1].rotation.set(0, 0, 0); ch.head.rotation.set(0, 0, 0); ch.upper.rotation.set(0, 0, 0); ch.root.rotation.z = 0; }
     ch.root.rotation.y = Math.PI + Math.sin(t * 0.6 + s.phase) * 0.22;
     ch.root.position.y = Math.sin(t * 1.5 + s.phase) * 0.012;
     if (s.cheer > 0) {
       s.cheer -= dt;
       const k = Math.min(1, s.cheer * 2);
-      ch.arms[0].rotation.x = -2.8 * k + Math.sin(t * 12) * 0.25 * k; ch.arms[1].rotation.x = -2.8 * k - Math.sin(t * 12) * 0.25 * k;
+      ch.arms[0].rotation.x = 1.2 + (1.6 * k) + Math.sin(t * 12) * 0.25 * k; ch.arms[1].rotation.x = 1.35 + (1.45 * k) - Math.sin(t * 12) * 0.25 * k;
       ch.root.position.y += Math.abs(Math.sin(t * 8)) * 0.18 * k;
-      if (s.cheer <= 0) { ch.arms[0].rotation.x = 0; ch.arms[1].rotation.x = 0; }
+      if (s.cheer <= 0) { ch.arms[0].rotation.x = 1.2; ch.arms[1].rotation.x = 1.35; }
     }
   }
   if (lobby.dust) { const a = lobby.dust.geometry.attributes.position; for (let i = 0; i < a.count; i++) { let y = a.getY(i) + dt * 0.25; if (y > 6) y = 0; a.setY(i, y); } a.needsUpdate = true; }
@@ -1517,3 +1544,5 @@ net.connect().then(() => {
   net.startPing();
   if (session.token) net.send('resume', { token: session.token });
 }).catch(() => toast('Impossible de joindre le serveur.'));
+
+document.getElementById('lb-emote-btn')?.addEventListener('click', () => openLobbyEmotes());

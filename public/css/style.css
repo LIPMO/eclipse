@@ -1451,3 +1451,16 @@ body.emoting #crosshair { visibility: hidden; }
 #emote-menu .emo-grid { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)); gap: 2px 8px; max-height: 46vh; overflow-y: auto; pointer-events: auto; }
 #emote-menu .emo-msgs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 8px; }
 #emote-menu .emo-grid div, #emote-menu .emo-msgs div { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+#slots .pot { border-color: rgba(61,255,168,.55) !important; color: #c9ffe6; }
+#slots .pot.sh { border-color: rgba(62,197,255,.55) !important; color: #cdeeff; }
+#slots .pot.empty { opacity: .4; }
+
+/* émotes du salon (1.47) */
+.lb-emote-btn { margin-top: 8px; width: 100%; }
+#lb-emotes { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); width: min(720px, 92vw); max-height: 52vh; display: flex; flex-direction: column; z-index: 20;
+  background: rgba(14,11,28,.94); border: 1px solid rgba(162,89,255,.5); border-radius: 14px; padding: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+#lb-emotes .lbe-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; } #lb-emotes .lbe-head button { margin-left: auto; }
+#lb-emotes .lbe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; overflow-y: auto; }
+#lb-emotes .lbe-grid button { text-align: left; padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.04); color: inherit; cursor: pointer; font: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#lb-emotes .lbe-grid button:hover { background: rgba(162,89,255,.25); border-color: rgba(162,89,255,.6); }

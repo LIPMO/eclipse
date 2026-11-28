@@ -24,8 +24,8 @@ const SIGHT_COLORS = { red: '#ff2a2a', green: '#3dff6a', blue: '#3da8ff', yellow
 const EMOTES = ['👍 GG', '😂 Mdr', '🔥 En feu !', '😮 Oups', '👏 Bien joué', '😎 Trop facile', '🙏 Désolé', '💀 RIP'];
 // émotes animées (1.45, 90 émotes en 1.46) : chacune combine des bras, des jambes, un mouvement du corps et un tempo
 const EMO = [["🕺 Disco", 5, 1, 2, 8], ["👋 Salut", 1, 0, 0, 10], ["👏 Bravo", 3, 0, 3, 12], ["🤣 Fou rire", 14, 0, 4, 14], ["💪 Muscles", 4, 0, 2, 3], ["🌀 Toupie", 15, 0, 1, 9], ["🪑 Pause", 9, 4, 0, 1], ["🤖 Robot", 6, 0, 0, 3], ["🎸 Air guitare", 12, 6, 6, 10], ["🥁 Batteur", 17, 0, 3, 12], ["🎧 DJ", 18, 0, 3, 8], ["🙏 Prière", 19, 0, 4, 2], ["🫡 Garde-à-vous", 13, 0, 0, 1], ["🤷 Bof", 14, 0, 0, 4], ["🤗 Câlin", 15, 0, 2, 3], ["🦅 Aigle", 7, 0, 3, 6], ["🥊 Boxe", 8, 1, 3, 10], ["🦵 Karaté", 8, 2, 0, 7], ["🧘 Méditation", 19, 4, 0, 1], ["🚣 Rameur", 16, 4, 4, 5], ["🙆 Étirement", 2, 0, 5, 2], ["🤸 Grand écart", 15, 7, 0, 2], ["🐔 Poulet", 7, 1, 6, 12], ["🦆 Canard", 7, 5, 5, 8], ["🎉 Fête", 2, 5, 3, 9], ["🙌 Victoire", 2, 0, 3, 7], ["😤 Rage", 10, 1, 6, 14], ["🤯 Explosion", 10, 5, 1, 6], ["😴 Dodo", 9, 4, 4, 1], ["🧊 Glaçon", 13, 0, 0, 0], ["🌊 La vague", 15, 0, 7, 4], ["🎵 Groove", 5, 1, 2, 6], ["💃 Salsa", 15, 1, 2, 8], ["🪩 Boule à facettes", 5, 5, 1, 7], ["🔥 En feu", 2, 3, 6, 11], ["😎 Trop stylé", 9, 1, 2, 4], ["🫶 Cœur", 19, 0, 2, 3], ["👑 Roi", 13, 1, 4, 2], ["🏋️ Haltères", 4, 3, 0, 5], ["🏃 Sur place", 16, 1, 3, 12], ["🐸 Grenouille", 0, 3, 3, 6], ["🦘 Kangourou", 9, 5, 3, 7], ["🐍 Serpent", 7, 0, 7, 5], ["🦩 Flamant rose", 15, 6, 0, 2], ["🐧 Pingouin", 0, 1, 5, 6], ["🦍 Gorille", 17, 3, 3, 8], ["🐒 Singe", 10, 5, 2, 9], ["🦀 Crabe", 8, 1, 5, 9], ["🎯 Visée", 13, 0, 4, 2], ["🧙 Sorcier", 11, 0, 1, 3], ["⚡ Électrique", 6, 5, 6, 16], ["🌪️ Tornade", 11, 5, 1, 12], ["🛸 Ovni", 15, 0, 1, 4], ["🚀 Décollage", 2, 3, 3, 10], ["🎈 Ballon", 15, 5, 5, 3], ["🌈 Arc-en-ciel", 11, 0, 7, 3], ["🥳 Anniversaire", 3, 5, 2, 9], ["🤡 Clown", 10, 2, 5, 9], ["👻 Fantôme", 15, 0, 7, 2], ["🧟 Zombie", 13, 1, 5, 3], ["🧛 Vampire", 9, 0, 4, 2], ["🦸 Héros", 2, 0, 4, 1], ["🕵️ Espion", 9, 1, 5, 4], ["🥷 Ninja", 8, 2, 1, 8], ["🏄 Surf", 15, 3, 5, 3], ["⛷️ Ski", 16, 3, 2, 6], ["🏌️ Golf", 12, 0, 1, 2], ["⚽ Jongle", 0, 2, 3, 9], ["🏀 Dunk", 2, 5, 3, 7], ["🎳 Bowling", 16, 3, 4, 4], ["🏓 Ping-pong", 8, 1, 2, 12], ["🥇 Champion", 2, 0, 1, 2], ["😂 Mort de rire", 14, 3, 4, 16], ["😭 Chagrin", 10, 4, 4, 6], ["😡 Colère", 8, 1, 6, 14], ["🥶 Gelé", 9, 3, 6, 18], ["🥵 Chaud", 7, 1, 5, 10], ["🤢 Malade", 10, 3, 5, 3], ["🫠 Fondu", 14, 3, 4, 1], ["😇 Ange", 19, 0, 3, 2], ["🎤 Chanteur", 12, 1, 2, 5], ["🎻 Violon", 12, 0, 5, 3], ["🎺 Trompette", 18, 1, 4, 6], ["🪘 Djembé", 17, 4, 3, 10], ["🎹 Pianiste", 17, 0, 2, 9], ["📸 Selfie", 1, 0, 5, 2], ["💸 Pluie de billets", 11, 1, 3, 10], ["🏆 Trophée", 2, 5, 1, 4], ["🧹 Balai", 16, 1, 2, 5], ["🍳 Cuisinier", 18, 0, 2, 7]];
-const ANIMS = EMO.map(e => e[0]);
-function animateEmote(ch, a, t) {
+export const ANIMS = EMO.map(e => e[0]);
+export function animateEmote(ch, a, t) {
   const A = ch.arms, Lg = ch.legs, s = Math.sin, e = EMO[a] || EMO[0], w = e[4] || 6, q = s(t * w), aq = Math.abs(q);
   A[0].rotation.set(0, 0, 0); A[1].rotation.set(0, 0, 0); ch.head.rotation.set(0, 0, 0); ch.upper.rotation.set(0, 0, 0);
   let y = 0, ry = 0, rz = 0, lx = 0, rx = 0, lz = 0, rzl = 0;
@@ -68,6 +68,7 @@ function animateEmote(ch, a, t) {
     case 6: ch.head.rotation.x = aq * 0.5 - 0.1; break;
     case 7: ch.upper.rotation.z = q * 0.2; ch.upper.rotation.y = s(t * w * 0.5) * 0.3; break;
   }
+  A[0].rotation.x = -A[0].rotation.x; A[1].rotation.x = -A[1].rotation.x; // bras vers l'avant (l'avant du personnage est vers -Z)
   Lg[0].rotation.set(lx, 0, lz); Lg[1].rotation.set(rx, 0, rzl);
   ch.root.rotation.z = rz;
   return { y, ry };
@@ -1111,6 +1112,7 @@ export class Game {
       case 'slot2': this.switchSlot(2); break;
       case 'slot3': this.switchSlot(3); break;
       case 'bag1': case 'bag2': case 'bag3': this.bagSwap(+a.slice(3) - 1); break;
+      case 'potHeal': case 'potShield': { const k = a === 'potHeal' ? 'heal' : 'shield'; if (this.mode === 'br' && this.me?.al && this.me.po?.[k === 'heal' ? 0 : 1] && !this.me.dk) { this.net.send('potion', { k }); SFX.playUI?.('click'); } break; }
       case 'abilityQ': this.useAbility('q'); break;
       case 'abilityE': this.useAbility('e'); break;
       case 'ult': this.useAbility('x'); break;
@@ -1839,10 +1841,16 @@ export class Game {
     on('whisper', m => this.addWhisper(m));
     on('matchSummary', m => this.onSummary(m));
     on('matchEnd', m => this.onMatchEnd(m));
+    on('brWin', m => {
+      if (m.i === this.myId) { this.banner('VICTOIRE ROYALE !', `Tu es le dernier survivant · ${KB('emote')} pour faire une petite danse`, 'win', 5); SFX.playPromote?.(); }
+      else this.banner(`${this.nameOf(m.i).toUpperCase()}`, 'REMPORTE LA VICTOIRE ROYALE', '', 5);
+    });
+    on('potionDone', m => { this.centerMsg(m.k === 'heal' ? '+40 PV' : '+50 ARMURE', 1.2); SFX.playPromote?.(); });
+    on('killHeal', m => { this.centerMsg(`+${m.n} PV (ÉLIMINATION)`, 1.4); });
     on('chestOpen', m => { const c = this.chestMeshes?.[m.i]; if (c && !c.userData.open) { this.openChestMesh(c); SFX.playUI?.('click'); } });
     on('chestLoot', m => {
       const RAR = { common: ['COMMUN', '#9aa3ad'], rare: ['RARE', '#3d9bff'], epic: ['ÉPIQUE', '#b05cff'], legendary: ['LÉGENDAIRE', '#ffb11f'] }[m.rar] || ['', '#fff'];
-      this.banner(`${WEAPONS[m.w]?.name?.toUpperCase() || m.w}`, `${RAR[0]}${m.inSlot ? '' : m.inBag ? ' · rangée dans le sac (touches 4, 5, 6)' : ' · posée au sol (emplacement et sac pleins)'}${m.bonus === 'armor' ? ' · +50 armure' : m.bonus === 'heal' ? ' · +50 PV' : ''}`, '', 2.2);
+      this.banner(`${WEAPONS[m.w]?.name?.toUpperCase() || m.w}`, `${RAR[0]}${m.inSlot ? '' : m.inBag ? ' · rangée dans le sac (touches 4, 5, 6)' : ' · posée au sol (emplacement et sac pleins)'}${m.pot === 'heal' ? ' · + potion de soin' : m.pot === 'shield' ? ' · + potion de bouclier' : ''}`, '', 2.2);
       SFX.playPromote?.();
       if (m.inSlot && this.local.slot === 3) setTimeout(() => { if (this.me?.wp?.[WEAPONS[m.w].slot]) this.switchSlot(WEAPONS[m.w].slot); }, 150); // prend l'arme trouvée en main
     });
@@ -2256,7 +2264,7 @@ export class Game {
     // « chargeur vide, pas de recharge en cours » et relançait une recharge qui effaçait la précédente (boucle)
     this.finishReload(now);
     // tir
-    if (H.has('fire')) this.tryFire(now);
+    if (H.has('fire') && !this.me?.dk) this.tryFire(now);
     else L.triggerHeld = false;
     // rechargement automatique quand le chargeur est vide
     if (ST().autoReload && def.mag && L.mag <= 0 && L.reserve > 0 && !(L.reloadEnd > now) && now - L.lastShot > 0.12 && this.snap?.ph !== 'buy') this.reload();
@@ -2384,8 +2392,8 @@ export class Game {
       ch.upper.rotation.x += ((slid ? -0.45 : 0) - ch.upper.rotation.x) * Math.min(1, dt * 12);
       ch.lower.scale.y += ((crouch ? 0.58 : 1) - ch.lower.scale.y) * Math.min(1, dt * 12);
       ch.head.rotation.x = st.pt * 0.6;
-      ch.arms[0].rotation.x = -1.2 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
-      ch.arms[1].rotation.x = -1.35 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
+      ch.arms[0].rotation.x = 1.2 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
+      ch.arms[1].rotation.x = 1.35 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
       // émote animée (1.45) : s'arrête dès que le joueur bouge ou tire
       if (o.emote) {
         const tn = performance.now() / 1000;
@@ -2397,7 +2405,7 @@ export class Game {
       { const hs = this.bigHeadEvent || this.fxOn(o.id, 'bighead') ? 2.3 : 1; ch.head.scale.setScalar(ch.head.scale.x + (hs - ch.head.scale.x) * Math.min(1, dt * 8));
         const rs = this.fxOn(o.id, 'tiny') ? 0.45 : this.fxOn(o.id, 'giant') ? 1.9 : 1;
         if (this.fxOn(o.id, 'spinner')) ch.root.rotation.y = st.y + performance.now() / 1000 * 14; ch.root.scale.setScalar(ch.root.scale.x + (rs - ch.root.scale.x) * Math.min(1, dt * 8));
-        if (this.fxOn(o.id, 'dance')) { const tn = performance.now() / 1000; ch.root.rotation.y = st.y + tn * 5; ch.arms[0].rotation.x = -2.9 + Math.sin(tn * 9) * 0.4; ch.arms[1].rotation.x = -2.9 - Math.sin(tn * 9) * 0.4; ch.root.position.y += Math.abs(Math.sin(tn * 9)) * 0.12; } }
+        if (this.fxOn(o.id, 'dance')) { const tn = performance.now() / 1000; ch.root.rotation.y = st.y + tn * 5; ch.arms[0].rotation.x = 2.9 + Math.sin(tn * 9) * 0.4; ch.arms[1].rotation.x = 2.9 - Math.sin(tn * 9) * 0.4; ch.root.position.y += Math.abs(Math.sin(tn * 9)) * 0.12; } }
       ch.hand.position.y = 0.3 + st.pt * 0.3;
       ch.hand.rotation.x = st.pt * 0.9;
       if (o.fireT > 0) o.fireT -= dt;
@@ -2757,6 +2765,7 @@ export class Game {
     }
     // emplacements
     $('slots').innerHTML = [1, 2, 3].filter(i => me.wp[i]).map(i => `<span class="${i === this.local.slot ? 'on' : ''}">${i}·${WEAPONS[me.wp[i][0]].name}</span>`).join('')
+      + (me.po ? `<span class="pot ${me.po[0] ? '' : 'empty'}" title="Potion de soin (+40 PV)">${KB('potHeal')}·🧪 ×${me.po[0]}</span><span class="pot sh ${me.po[1] ? '' : 'empty'}" title="Potion de bouclier (+50 armure)">${KB('potShield')}·🛡 ×${me.po[1]}</span>` : '')
       + (me.bg ? [0, 1, 2].map(k => `<span class="bag ${me.bg[k] ? '' : 'empty'}" title="Sac à dos">${4 + k}·${me.bg[k] ? WEAPONS[me.bg[k][0]].name : '—'}</span>`).join('') : '');
     // menu d'achat
     if (this.buyOpen) {
@@ -2781,7 +2790,8 @@ export class Game {
       else if (s.ph === 'buy') hint = `${KB('buy')} — MENU D'ACHAT`;
     }
     if (this.mode === 'br' && me.al) {
-      if (this.local.chute) hint = `PARACHUTE · ${KB('forward')}${KB('left')}${KB('back')}${KB('right')} POUR TE DIRIGER · ${KB('crouch')} POUR DESCENDRE PLUS VITE · ${Math.round(this.local.pos[1])} m`;
+      if (this.me?.dk) hint = `🧪 TU BOIS UNE POTION… ${this.me.dk.toFixed(1)} s`;
+      else if (this.local.chute) hint = `PARACHUTE · ${KB('forward')}${KB('left')}${KB('back')}${KB('right')} POUR TE DIRIGER · ${KB('crouch')} POUR DESCENDRE PLUS VITE · ${Math.round(this.local.pos[1])} m`;
       else if (this.nearChest() >= 0) hint = `${KB('interact')} — OUVRIR LE COFFRE`;
       const z = s.zone;
       if (z) {
@@ -3385,7 +3395,7 @@ export class Game {
     void mine;
     $('end-title').textContent = win ? 'VICTOIRE' : 'DÉFAITE';
     $('end-title').className = 'end-title ' + (win ? 'win' : 'lose');
-    if (m.mode === 'br') { const pl = mine.place || 1; $('end-title').textContent = pl === 1 ? 'TOP 1 !' : `TOP ${pl}`; $('end-score').textContent = `${pl === 1 ? 'Dernier survivant' : `Vainqueur : ${this.nameOf(m.winner)}`} · ${mine.kills} élimination(s)`; }
+    if (m.mode === 'br') { const pl = mine.place || 1; $('end-title').textContent = pl === 1 ? 'VICTOIRE ROYALE' : `TOP ${pl}`; $('end-score').textContent = `${pl === 1 ? 'Dernier survivant' : `Vainqueur : ${this.nameOf(m.winner)}`} · ${mine.kills} élimination(s)`; }
     else if (isFfa(m.mode)) $('end-score').textContent = `Vainqueur : ${this.nameOf(m.winner)}`;
     else { const a = m.score[meR?.team] ?? 0, b = m.score[meR?.team === 'alpha' ? 'beta' : 'alpha'] ?? 0; $('end-score').textContent = `${a} — ${b}`; }
     $('end-reward').innerHTML = `<span class="gem"></span> +${reward} Éclats`;
