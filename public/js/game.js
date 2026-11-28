@@ -1054,7 +1054,7 @@ export class Game {
       case 'ult': this.useAbility('x'); break;
       case 'interact': { const ci = this.nearChest(); if (ci >= 0) { this.net.send('chest', { i: ci }); break; } this.net.send('interact', { on: true }); this.interacting = true; break; }
       case 'scoreboard': this.showScoreboard(true); break;
-      case 'scope': if (this.curWeaponId() === 'knife') { this.chargeKnife(); break; } ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
+      case 'scope': if (!this.me?.al) { this.specIdx--; break; } if (this.curWeaponId() === 'knife') { this.chargeKnife(); break; } ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
       case 'drop': if (this.me?.al && !this.ended) this.net.send('drop'); break;
       case 'lastWeapon': if (this.prevSlot && this.me?.wp?.[this.prevSlot]) this.switchSlot(this.prevSlot); break;
       case 'bigMap': $('minimap').classList.add('big'); break;
@@ -1065,7 +1065,7 @@ export class Game {
       case 'emote': this.toggleEmote(); break;
       case 'inspect': if (this.me?.al) this.inspectT = 1.8; break;
       case 'react': this.sendReaction(); break;
-      case 'fire': if (!this.me?.al && !isFfa(this.mode)) this.specIdx++; break;
+      case 'fire': if (!this.me?.al) this.specIdx++; break;
     }
   }
 
@@ -2474,13 +2474,21 @@ export class Game {
       cam.rotation.set(L.pitch + L.recoil + tp + (Math.random() - 0.5) * shake, L.yaw + (Math.random() - 0.5) * shake, roll);
       this.specTarget = null;
     } else {
-      // mode spectateur
+      // mode spectateur (1.43) : coéquipiers en vie d'abord ; s'il n'en reste aucun (ou en chacun pour soi), tous les joueurs en vie,
+      // en commençant par celui qui t'a éliminé. Clic gauche : suivant, clic droit : précédent.
       let target = null;
-      if (!isFfa(this.mode)) {
-        const me = this.roster.get(this.myId);
-        const allies = [...this.others.values()].filter(o => o.cur?.al && this.roster.get(o.id)?.team === me?.team);
-        if (allies.length) target = allies[this.specIdx % allies.length];
+      const me = this.roster.get(this.myId);
+      const alive = [...this.others.values()].filter(o => o.cur?.al && !o.cur.au && o.cur.p);
+      const allies = isFfa(this.mode) ? [] : alive.filter(o => this.roster.get(o.id)?.team === me?.team);
+      let pool = allies;
+      if (!pool.length) {
+        pool = alive.slice().sort((a, b) => (b.id === this.killedBy) - (a.id === this.killedBy) || String(a.id).localeCompare(String(b.id)));
+        // tant que le serveur n'a pas confirmé, seuls les joueurs déjà visibles sont dans la liste ; la cible choisie est retenue
+        if (this.specWant && !pool.some(o => o.id === this.specWant)) { const w = this.others.get(this.specWant); if (w?.cur?.al) pool.unshift(w); }
       }
+      if (pool.length) target = pool[((this.specIdx % pool.length) + pool.length) % pool.length];
+      const wantId = target?.id || null;
+      if (wantId !== this.specSent && (!this.specSentT || performance.now() - this.specSentT > 250)) { this.specSent = wantId; this.specSentT = performance.now(); this.specWant = wantId; this.net.send('spec', { id: wantId }); }
       if (target) {
         const st = target.cur;
         cam.position.set(st.p[0], st.p[1] + (st.c ? PLAYER.eyeCrouch : PLAYER.eye), st.p[2]);
@@ -2488,7 +2496,9 @@ export class Game {
         this.specTarget = target.id;
         const tp = this.snap?.players.find(p => p.i === target.id);
         const info = tp && tp.hp !== undefined ? ` · <span class="spec-hp">✚ ${tp.hp}</span>${tp.ar ? ` <span class="muted">⛉ ${tp.ar}</span>` : ''} · ${esc(WEAPONS[tp.w]?.name || '')}${tp.$ !== undefined ? ` · <span class="gold">${tp.$}</span>` : ''}` : '';
-        $('death-info').innerHTML = `SPECTATEUR : <b style="color:${ALLY}">${esc(this.nameOf(target.id))}</b>${info} <span class="muted">(clic pour changer)</span>`;
+        const isAlly = allies.includes(target), left = isLastStand(this.mode) ? (this.snap?.alive ?? this.snap?.players.filter(p => p.al && (p.lv ?? 1) > 0).length ?? 0) : 0;
+        const respawn = isFfa(this.mode) && !isLastStand(this.mode) && this.me?.rs ? ` · RÉAPPARITION DANS ${Math.ceil(this.me.rs)} s` : '';
+        $('death-info').innerHTML = `SPECTATEUR : <b style="color:${isAlly ? ALLY : ST().enemyColor}">${esc(this.nameOf(target.id))}</b>${target.id === this.killedBy ? ' <span class="muted">(t\'a éliminé)</span>' : ''}${info}${left ? ` · ${left} EN VIE` : ''}${respawn} <span class="muted">(clic gauche / droit : changer)</span>`;
       } else {
         this.specTarget = null;
         const e = this.eyePos();

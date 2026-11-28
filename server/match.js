@@ -563,6 +563,7 @@ export class Match {
       case 'slide': return this.handleSlide(p);
       case 'wallJump': return this.handleWallJump(p);
       case 'chest': return this.openChest(p, msg.i);
+      case 'spec': return this.setSpec(p, msg.id);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'bash': return this.handleBash(p, msg);
@@ -1571,9 +1572,19 @@ export class Match {
     return false;
   }
 
+  // spectateur (1.43) : un joueur mort suit ses coéquipiers en vie ; s'il n'en reste aucun (ou en chacun pour soi),
+  // il peut suivre n'importe quel joueur en vie et voit alors ce que ce joueur voit
+  specAllies(r) { return [...this.players.values()].filter(a => a.alive && a !== r && !this.isEnemy(r, a)); }
+  setSpec(p, id) {
+    const q = typeof id === 'string' ? this.players.get(id) : null;
+    if (p.alive || !q || !q.alive || q === p) { p.specId = null; return; }
+    if (this.isEnemy(p, q) && this.specAllies(p).length) return; // des coéquipiers sont encore en vie : seulement eux
+    p.specId = q.id;
+  }
   visibility(r, q, T) {
     if (q.revealEnd > T) return 'full';
-    const viewers = r.alive ? [r] : [...this.players.values()].filter(a => a.alive && a !== r && !this.isEnemy(r, a));
+    let viewers = r.alive ? [r] : this.specAllies(r);
+    if (!r.alive && !viewers.length && r.specId) { const sp = this.players.get(r.specId); if (sp?.alive) viewers = [sp]; }
     r.visUntil = r.visUntil || new Map();
     if (viewers.some(v => this.losFrom(v, q, T))) { r.visUntil.set(q.id, T + 1.0); return 'full'; } // 1.34 : 1 s de marge (avant 0,5)
     if ((r.visUntil.get(q.id) || 0) > T) return 'full';

@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.43.0",
+    "date": "2026-11-28",
+    "title": "Vrai mode spectateur",
+    "items": [
+      "Quand tu es éliminé, la vue suit tes coéquipiers en vie. S'il n'en reste plus, ou dans les modes chacun pour soi (Mêlée, Gun Game, Dernier debout, Battle Royale), elle passe sur les autres joueurs en vie, en commençant par celui qui t'a éliminé.",
+      "Clic gauche : joueur suivant. Clic droit : joueur précédent. Le bandeau affiche le joueur suivi, s'il t'a éliminé, et le nombre de joueurs encore en vie.",
+      "Tu vois ce que voit le joueur suivi (tant qu'un coéquipier est en vie, tu ne peux suivre que tes coéquipiers, pour éviter la triche)."
+    ]
+  },
+  {
     "version": "1.42.0",
     "date": "2026-11-28",
     "title": "Nouveau mode : Battle Royale",
