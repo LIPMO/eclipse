@@ -1128,7 +1128,7 @@ function renderShopTab() {
       <div><div class="sh-kick">BOUTIQUE DU JOUR</div><h1>THÈME : ${esc((d.theme || '').toUpperCase())}</h1><div class="sh-sub">Les skins de la collection ${esc(d.theme || '')} sont à l'honneur aujourd'hui.</div></div>
       <div class="sh-clock"><span>NOUVELLE BOUTIQUE DANS</span><b id="shop-timer">${shopTimer()}</b></div>
     </div>
-    ${state.guest ? '<p class="muted small">Crée un compte pour acheter des skins avec tes Éclats.</p>' : ''}
+    ${state.guest ? '<p class="muted small">Crée un compte pour acheter des skins avec tes Éclats.</p>' : creatorBox()}
     <div class="sh-sec"><h2>EN VEDETTE <small>-${d.featured[0]?.off || 25} %</small></h2><div class="sh-grid big">${d.featured.map(i => shopTile(i, true)).join('')}
       ${b ? `<div class="sh-tile big sh-pack" style="--rc:#ffcf5a;--b1:${ref.body || '#222'};--b2:${ref.accent || '#8b5cff'}">
         <div class="sh-pack-art">${bSkins.map(x => `<i class="${profile.owned.includes(x.id) ? 'got' : ''}" style="${swatchCss(x)}" title="${esc(x.name)}"></i>`).join('')}</div>
@@ -1140,7 +1140,41 @@ function renderShopTab() {
     <div class="sh-sec"><h2>QUOTIDIEN <small>-${d.daily[0]?.off || 40} %</small></h2><div class="sh-grid">${d.daily.map(i => shopTile(i, false)).join('')}</div></div>
     <p class="muted small">Un skin acheté est débloqué pour toutes les armes. La boutique change chaque jour à ${new Date(d.resetAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.</p>`;
 }
+// ---- codes créateur (1.35) : soutenir un créateur, qui reçoit 50 % des Éclats dépensés ----
+function creatorBox() {
+  const sp = state.creatorSupport;
+  if (sp && sp.enabled === false) return '';
+  const cur = sp?.support, pv = state.creatorPreview;
+  const card = c => `<div class="cr-card" style="--cc:${esc(c.color)}"><b class="cr-code">${esc(c.code)}</b><span class="cr-by">par ${esc(c.name)} · niv. ${c.level}</span>${c.slogan ? `<i class="cr-slogan">« ${esc(c.slogan)} »</i>` : ''}</div>`;
+  return `<div class="cr-box">
+    <div class="cr-left"><div class="cr-kick">SOUTIENS UN CRÉATEUR</div>
+      ${cur ? `${card(cur)}<div class="muted small">Tu soutiens ce créateur : il reçoit <b>${sp.share} %</b> de ce que tu dépenses dans la boutique, sans rien te coûter de plus.</div>`
+        : `<div class="muted small">Entre le code d'un créateur : il recevra <b>${sp?.share ?? 50} %</b> des Éclats que tu dépenses, sans que tes prix changent.</div>`}
+    </div>
+    <div class="cr-right">
+      <div class="cr-form"><input id="cr-input" maxlength="16" placeholder="CODE CRÉATEUR" value="${esc(state.creatorInput || '')}" autocomplete="off" spellcheck="false"><button class="btn small primary" data-shp="crUse">${cur ? 'CHANGER' : 'UTILISER'}</button>${cur ? '<button class="btn small ghost" data-shp="crClear">RETIRER</button>' : ''}</div>
+      ${pv && pv.code === (state.creatorInput || '').toUpperCase() ? (pv.creator ? `<div class="cr-prev">${card(pv.creator)}</div>` : '<div class="cr-err">Code introuvable.</div>') : ''}
+      <a class="cr-link" href="/createur" target="_blank" rel="noopener">Toi aussi, crée ton code créateur →</a>
+    </div></div>`;
+}
+net.on('creatorSupport', m => { if (state.crPending && m.support) toast(`💜 Tu soutiens maintenant ${m.support.name} (code ${m.support.code}). Merci !`, 4000); if (state.crPending) { state.creatorInput = ''; state.creatorPreview = null; } state.crPending = false; state.creatorSupport = m; if (state.tab === 'shop') renderShopTab(); });
+net.on('creatorLookup', m => { state.creatorPreview = m; if (state.tab === 'shop') { const v = $('cr-input')?.value; renderShopTab(); const i = $('cr-input'); if (i) { i.focus(); i.setSelectionRange(v.length, v.length); } } });
+net.on('creatorError', m => { state.crPending = false; toast(m.text, 4000); });
+// lien partagé par un créateur : eclipseee.online/?soutien=CODE → boutique avec le code prérempli
+{ const q = new URLSearchParams(location.search).get('soutien'); if (q && /^[A-Za-z0-9_-]{3,16}$/.test(q)) {
+  net.on('welcome', m => { if (m.guest || state.creatorLinkDone) return; state.creatorLinkDone = true; state.creatorInput = q.toUpperCase(); net.send('creatorLookup', { code: state.creatorInput }); setTimeout(() => showTab('shop'), 600); });
+} }
+net.on('creatorSale', m => { notify({ kind: 'CODE CRÉATEUR', text: `💜 Quelqu'un a acheté avec ton code ${m.code} : +${m.gain} Éclats !`, ms: 6000 }); SFX.playNotify?.(); });
+document.addEventListener('input', e => {
+  if (e.target.id !== 'cr-input') return;
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  state.creatorInput = e.target.value;
+  clearTimeout(creatorBox.t);
+  if (state.creatorInput.length >= 3) creatorBox.t = setTimeout(() => net.send('creatorLookup', { code: state.creatorInput }), 350);
+});
+document.addEventListener('keydown', e => { if (e.target.id === 'cr-input' && e.key === 'Enter') document.querySelector('[data-shp="crUse"]')?.click(); });
 function openShopTab() {
+  if (!state.guest) net.send('creatorSupportGet');
   if (!state.shop || !state.shop.featured || Date.now() > state.shop.resetAt) net.send('shop');
   try { localStorage.setItem('eclipse_shop_seen', shopDay()); } catch { /* */ }
   $('shop-badge').textContent = '';
@@ -1150,6 +1184,8 @@ function openShopTab() {
 }
 $('shop-root').onclick = e => {
   const b = e.target.closest('[data-shp]'); if (!b) return;
+  if (b.dataset.shp === 'crUse') { const v = ($('cr-input')?.value || '').trim(); if (v.length < 3) { toast('Entre un code créateur.'); return; } state.crPending = true; net.send('creatorSupport', { code: v }); return; }
+  if (b.dataset.shp === 'crClear') { net.send('creatorSupport', { code: null }); return; }
   const d = state.shop; if (!d) return;
   if (b.dataset.shp === 'preview') { const s = SKINS.find(x => x.id === b.dataset.id); state.collSkin = b.dataset.id; state.collFilter = 'all'; state.collSet = s?.set || ''; showTab('collection'); return; }
   if (b.dataset.shp === 'buy') {

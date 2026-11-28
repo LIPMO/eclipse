@@ -24,6 +24,7 @@ import { dailyLogin, eloUpdate, checkAchievements } from './progression.js';
 import { levelOf, TITLES, RADIO, REPORT_REASONS, masteryOf, ROMAN } from '../shared/progress.js';
 import { doPrestige } from './progression.js';
 import { MAP_ORDER, mapsForMode } from '../shared/maps.js';
+import { Creators } from './creators.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PKG_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '0.0.0'; } })();
@@ -101,10 +102,10 @@ function withBuild(data, page) {
     .replace(/(src|href)="\/(js|css)\/([\w.-]+\.(?:js|css))"/g, `$1="${VP}/$2/$3"`);
   if (/<script type="importmap">[\s\S]*?<\/script>/.test(s)) s = s.replace(/<script type="importmap">[\s\S]*?<\/script>/, () => `<script type="importmap">${IMPORTMAP}</script>`);
   else s = s.replace('</head>', () => `<script type="importmap">${IMPORTMAP}</script>\n</head>`);
-  if (page === 'admin') s = s.replace("script-src 'self'", `script-src 'self' 'sha256-${IMPORTMAP_HASH}'`);
+  if (page === 'admin' || page === 'creator') s = s.replace("script-src 'self'", `script-src 'self' 'sha256-${IMPORTMAP_HASH}'`);
   return Buffer.from(s, 'utf8');
 }
-const HTML_PAGE = { '/index.html': 'game', '/admin.html': 'admin' };
+const HTML_PAGE = { '/index.html': 'game', '/admin.html': 'admin', '/createur.html': 'creator' };
 
 const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 
@@ -175,6 +176,7 @@ const server = http.createServer((req, res) => {
   { const seo = seoRoute(url, admin.newsPath()); if (seo) { res.writeHead(200, { 'Content-Type': seo.type, 'Cache-Control': 'public, max-age=600', ...(seo.type.startsWith('text/html') ? { 'Content-Security-Policy': SEO_CSP } : {}) }); res.end(req.method === 'HEAD' ? undefined : seo.body); return; } }
   if (url === '/') url = '/index.html';
   if (url === '/admin' || url === '/admin/') url = '/admin.html';
+  if (/^\/(createur|créateur|creator)\/?$/i.test(url)) { if (url !== '/createur') { res.writeHead(301, { Location: '/createur', 'Cache-Control': 'public, max-age=86400' }); res.end(); return; } url = '/createur.html'; }
   if (url.includes('\0') || /(^|\/)\./.test(url)) { res.writeHead(404); res.end('Introuvable'); return; }
   // fichier versionné : /v/<empreinte>/js/main.js → /js/main.js, gardé en cache un an s'il s'agit de la version actuelle
   let versioned = null;
@@ -562,6 +564,28 @@ function lobbyLaunch(c, cfg, party) {
   fillRoom(room); room.autoRoom = true; armAutoStart(room);
   return true;
 }
+function creatorPage(c, msg) {
+  if (msg.type === 'creatorAuth') {
+    const wait = authFails.blocked(c.ip);
+    if (wait) { send(c.id, { type: 'creatorAuthError', text: `Trop de tentatives. Réessaie dans ${Math.ceil(wait / 60000)} min.` }); return; }
+    let user = null, token = null;
+    if (typeof msg.token === 'string') { user = accounts.resume(msg.token); if (!user) { send(c.id, { type: 'creatorAuthError', expired: true, text: 'Session expirée, reconnecte-toi.' }); return; } }
+    else {
+      const r = accounts.login(msg.name, msg.password);
+      if (r.error) { authFails.fail(c.ip); send(c.id, { type: 'creatorAuthError', text: r.error }); return; }
+      authFails.reset(c.ip); user = r.user; token = r.token;
+    }
+    const b = admin.activeBan('account', accounts.key(user.name));
+    if (b) { send(c.id, { type: 'creatorAuthError', text: admin.banText(b) }); return; }
+    c.creatorKey = accounts.key(user.name);
+    send(c.id, { type: 'creatorAuthed', name: user.name, token, eclats: user.eclats });
+    send(c.id, creators.dashboard(user));
+    return;
+  }
+  if (!c.creatorKey) return;
+  if (/^(creatorSave|creatorLookup)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'creatorError', text: 'Doucement : attends un instant.' }); return; }
+  creators.handle(c, msg);
+}
 function fillRoom(room) { while (room.members.size < room.maxPlayers) { const before = room.members.size; addBot(room, pickTeam(room)); if (room.members.size === before) break; } }
 
 function handleLobby(c, msg) {
@@ -640,8 +664,10 @@ function handleLobby(c, msg) {
     case 'buySkin': case 'equipSkin': {
       const u = c.account && accounts.get(c.account);
       if (!u) break;
+      const before = u.eclats;
       const err = msg.type === 'buySkin' ? accounts.buySkin(u, msg.skin) : accounts.equip(u, msg.weapon, msg.skin);
       if (err) send(c.id, { type: 'error', text: err });
+      if (msg.type === 'buySkin' && !err && before > u.eclats) creators.payout(u, before - u.eclats, SKINS.find(x => x.id === msg.skin)?.name || 'Skin');
       if (msg.type === 'buySkin' && !err) achNotify(c, u);
       send(c.id, { type: 'profile', profile: accounts.publicProfile(u) });
       if (msg.type === 'equipSkin') handleLobby(c, { type: 'setSkins', skins: u.equipped });
@@ -975,8 +1001,9 @@ function handleLobby(c, msg) {
       break;
     }
     default:
-      if (typeof msg.type === 'string' && /^(party|clan|tour|gift$|endorse$|setProfile$|buyShop$|pinFriend$|recent$|shop$)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
+      if (typeof msg.type === 'string' && /^(party|clan|tour|gift$|endorse$|setProfile$|buyShop$|pinFriend$|recent$|shop$|creatorSave$|creatorSupport$|creatorLookup$)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
       if (social.handle(c, msg)) break;
+      if (/^creator/.test(msg.type) && creators.handle(c, msg)) break;
       if (parties.handle(c, msg)) break;
       if (clans.handle(c, msg) || tournaments.handle(c, msg)) break;
       if (r && r.match) r.match.handle(c.id, msg);
@@ -1028,6 +1055,8 @@ const admin = new Admin({
 admin.applyConfig();
 const social = new Social({ accounts, clients, rooms, send, joinRoom, admin, chatLimit, cleanPreset });
 admin.ctx.social = social;
+const creators = new Creators({ accounts, clients, send, admin });
+social.ctx.creators = creators; admin.ctx.creators = creators;
 const clans = new Clans({ accounts, clients, send, admin, chatLimit, social, onTagChange: c => { const r = c.roomId && rooms.get(c.roomId); const m = r && r.members.get(c.id); if (m) { m.clan = c.clanTag || null; pushRoom(r); r.match?.updateMember(m); } } });
 admin.ctx.clans = clans; social.clans = clans;
 const mcp = new Mcp({ admin, accounts, clients, rooms, social, version: PKG_VERSION, build: BUILD, integrityAlerts, newsPath: () => admin.newsPath() });
@@ -1080,6 +1109,8 @@ wss.on('connection', (ws, req) => {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
     if (!msg || typeof msg.type !== 'string') return;
+    // page eclipseee.online/createur : connexion à part, qui ne déconnecte pas le jeu ouvert sur le même compte
+    if (!c.name && /^creator/.test(msg.type)) { try { creatorPage(c, msg); } catch (e) { console.error('Erreur créateur', e); } return; }
     if (!c.name && !['hello', 'register', 'login', 'resume', 'ping'].includes(msg.type)) return;
     try { handleLobby(c, msg); } catch (e) { console.error('Erreur message', msg.type, e); admin.error(`Erreur sur le message « ${String(msg.type).slice(0, 20)} » : ${e.message}`); }
   });

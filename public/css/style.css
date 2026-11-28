@@ -1289,6 +1289,16 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 .sh-clock b { font-family: var(--head); font-size: 30px; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
 .sh-sec h2 { font-family: var(--head); letter-spacing: .14em; font-size: 20px; margin: 18px 0 10px; }
 .sh-sec h2 small { font-size: 13px; color: #ffcf5a; margin-left: 8px; letter-spacing: .05em; }
+.cr-box { display: flex; gap: 18px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 14px 18px; margin: 4px 0 6px; border-radius: 14px;
+  background: linear-gradient(120deg, rgba(162,89,255,.16), rgba(255,79,216,.08) 60%, rgba(255,255,255,.02)); border: 1px solid rgba(162,89,255,.35); }
+.cr-left { flex: 1 1 280px; min-width: 0; } .cr-right { flex: 0 1 360px; display: flex; flex-direction: column; gap: 6px; }
+.cr-kick { font-family: var(--head); letter-spacing: .22em; font-size: 12px; color: #c9a6ff; margin-bottom: 6px; }
+.cr-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 12px; margin-bottom: 6px; border-radius: 10px; background: rgba(0,0,0,.25); border-left: 3px solid var(--cc, #a259ff); }
+.cr-code { font-family: var(--head); font-size: 20px; letter-spacing: .1em; color: var(--cc, #a259ff); text-shadow: 0 0 14px color-mix(in srgb, var(--cc, #a259ff) 50%, transparent); }
+.cr-by { font-size: 12px; opacity: .8; } .cr-slogan { flex-basis: 100%; font-size: 12px; opacity: .85; }
+.cr-form { display: flex; gap: 6px; } .cr-form input { flex: 1; min-width: 0; text-transform: uppercase; letter-spacing: .12em; font-family: var(--head); }
+.cr-prev .cr-card { margin: 0; } .cr-err { color: #ff6b7d; font-size: 12px; }
+.cr-link { font-size: 12px; color: #c9a6ff; text-decoration: none; align-self: flex-end; } .cr-link:hover { text-decoration: underline; }
 .sh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .sh-grid.big { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .sh-tile { position: relative; display: flex; flex-direction: column; background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 22%, #0e1322) 0%, #0b0f1b 70%); border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent); border-bottom: 3px solid var(--rc); transition: transform .15s, box-shadow .15s; min-height: 220px; }

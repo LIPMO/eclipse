@@ -114,7 +114,7 @@ function pNews(newsPath) {
 function sitemap(newsPath) {
   let last = new Date().toISOString().slice(0, 10);
   try { const n = JSON.parse(fs.readFileSync(newsPath, 'utf8')); if (n[0]?.date) last = n[0].date; } catch { /* */ }
-  const urls = [['/', '1.0', 'weekly'], ['/jeu', '0.9', 'weekly'], ['/agents', '0.8', 'weekly'], ...AGENT_ORDER.map(id => ['/agents/' + slug(id), '0.6', 'monthly']), ['/modes', '0.7', 'monthly'], ['/cartes', '0.7', 'monthly'], ['/guide', '0.7', 'monthly'], ['/nouveautes', '0.6', 'weekly'], ['/telecharger', '0.7', 'weekly'],
+  const urls = [['/', '1.0', 'weekly'], ['/jeu', '0.9', 'weekly'], ['/agents', '0.8', 'weekly'], ...AGENT_ORDER.map(id => ['/agents/' + slug(id), '0.6', 'monthly']), ['/modes', '0.7', 'monthly'], ['/cartes', '0.7', 'monthly'], ['/guide', '0.7', 'monthly'], ['/nouveautes', '0.6', 'weekly'], ['/telecharger', '0.7', 'weekly'], ['/createur', '0.5', 'monthly'],
     ['/mentions-legales.html', '0.2', 'yearly'], ['/cgu.html', '0.2', 'yearly'], ['/confidentialite.html', '0.2', 'yearly']];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(([p, pr, f]) => `  <url><loc>${SITE}${p}</loc><lastmod>${last}</lastmod><changefreq>${f}</changefreq><priority>${pr}</priority></url>`).join('\n')}\n</urlset>\n`;
 }

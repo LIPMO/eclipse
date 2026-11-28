@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.35.0",
+    "date": "2026-11-28",
+    "title": "Ennemis invisibles (vraie cause) et codes créateur",
+    "items": [
+      "Corrigé (cause trouvée) : un ennemi que tu entendais derrière un mur, puis qui apparaissait, pouvait devenir invisible jusqu'à la fin de la partie. Le passage « entendu » → « visible » produisait une orientation invalide qui empêchait d'afficher son modèle. Le jeu repart maintenant d'une position propre et répare toute valeur invalide.",
+      "Nouveau : codes créateur. Chaque joueur avec un compte peut créer son code sur eclipseee.online/createur : code, couleur, message pour ses fans, liens YouTube / Twitch / TikTok, lien à partager, statistiques et graphique des gains sur 30 jours.",
+      "Dans la BOUTIQUE, saisis le code d'un créateur pour le soutenir : il reçoit 50 % des Éclats que tu dépenses en skins (boutique du jour, packs, collection), sans que tes prix changent.",
+      "Protections : impossible d'utiliser son propre code ou celui d'un compte qui joue depuis la même connexion, achats comptés à partir de 3 parties jouées, plafond de 5 000 Éclats par jour et par créateur. Le staff peut désactiver un code (Administration → Économie)."
+    ]
+  },
+  {
     "version": "1.34.1",
     "date": "2026-11-28",
     "title": "Barres de défilement aux couleurs du jeu",

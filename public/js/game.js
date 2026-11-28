@@ -1765,7 +1765,9 @@ export class Game {
       // ennemi hors de vue : le serveur ne transmet plus sa position (anti-wallhack)
       if (p.h) { o.buf.length = 0; o.hiddenSnap = true; continue; }
       const lastB = o.buf[o.buf.length - 1];
-      if (o.hiddenSnap || (lastB && s.t - lastB.t > 400)) { o.buf.length = 0; o.lastPos = null; }
+      // 1.35 : passage « entendu » ↔ « visible » : on repart d'un tampon propre (les entrées « entendu » n'ont ni orientation ni arme,
+      // les interpoler avec une entrée complète donnait une rotation NaN et rendait l'ennemi invisible jusqu'à la fin de la partie)
+      if (o.hiddenSnap || (lastB && (s.t - lastB.t > 400 || !!lastB.au !== !!p.au))) { o.buf.length = 0; o.lastPos = null; }
       o.hiddenSnap = false;
       o.buf.push({ t: s.t, ...p });
       if (o.buf.length > 30) o.buf.shift();
@@ -2127,6 +2129,7 @@ export class Game {
       if (b[i].t <= renderT) {
         const a = b[i], c = b[i + 1];
         if (!c) return a;
+        if (a.au || c.au || !Number.isFinite(a.y) || !Number.isFinite(c.y)) return renderT - a.t < c.t - renderT ? a : c;
         const k = (renderT - a.t) / Math.max(1, c.t - a.t);
         return {
           ...c, p: [a.p[0] + (c.p[0] - a.p[0]) * k, a.p[1] + (c.p[1] - a.p[1]) * k, a.p[2] + (c.p[2] - a.p[2]) * k],
@@ -2154,6 +2157,11 @@ export class Game {
         if (o.speedS > 4.3) { o.stepT -= dt; if (o.stepT <= 0) { SFX.playStep(st.p, false, this.surfaceAt(st.p)); o.stepT = 0.36; if (this.isEnemyId(o.id)) this.caption('Pas ennemis', st.p, 'step', 22); } }
         continue;
       }
+      // 1.35 : garde-fou : une valeur invalide (NaN) ne doit jamais rendre un joueur invisible
+      if (!st.p || !st.p.every(Number.isFinite)) { ch.root.visible = false; continue; }
+      if (!Number.isFinite(st.y)) st.y = Number.isFinite(o.bodyYaw) ? o.bodyYaw : 0;
+      if (!Number.isFinite(st.pt)) st.pt = 0;
+      if (!Number.isFinite(o.bodyYaw)) o.bodyYaw = null;
       ch.root.visible = true;
       this.setOtherWeapon(o, st.w);
       ch.root.position.set(st.p[0], st.p[1], st.p[2]);

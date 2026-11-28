@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="eclipse-build" content="dev">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self' ws: wss:">
+<meta name="description" content="Crée ton code créateur ECLIPSE : tes fans le saisissent dans la boutique et tu reçois 50 % des Éclats qu'ils dépensent.">
+<title>ECLIPSE — Espace créateur</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link href="/css/fonts.css" rel="stylesheet">
+<link rel="stylesheet" href="/css/creator.css">
+</head>
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+<header class="top">
+  <a class="brand" href="/"><img src="/img/logo-180.png" alt="" width="34" height="34"><span>ECLIPSE</span><small>CRÉATEURS</small></a>
+  <div class="who" id="who"></div>
+</header>
+
+<main>
+  <!-- présentation + connexion -->
+  <section id="v-login" class="view hidden">
+    <div class="hero">
+      <div class="kick">PROGRAMME CRÉATEURS</div>
+      <h1>Ton code. Tes fans.<br><span class="grad">50 % pour toi.</span></h1>
+      <p class="lead">Crée ton code créateur, partage-le. Chaque joueur qui le saisit dans la boutique te reverse <b>la moitié des Éclats</b> qu'il dépense en skins, sans payer plus cher.</p>
+      <div class="steps">
+        <div><b>1</b><span>Choisis ton code et ta couleur</span></div>
+        <div><b>2</b><span>Partage ton lien à ta communauté</span></div>
+        <div><b>3</b><span>Reçois 50 % de leurs achats</span></div>
+      </div>
+    </div>
+    <form class="card login" id="login-form">
+      <h2>Connexion</h2>
+      <p class="muted">Utilise ton compte de joueur ECLIPSE.</p>
+      <input id="l-name" placeholder="Pseudo" autocomplete="username" maxlength="16" required>
+      <input id="l-pass" type="password" placeholder="Mot de passe" autocomplete="current-password" maxlength="72" required>
+      <div class="err" id="l-err"></div>
+      <button class="btn primary wide" type="submit">SE CONNECTER</button>
+      <p class="muted small">Pas encore de compte ? <a href="/">Crée-le dans le jeu</a>, puis reviens ici.</p>
+    </form>
+  </section>
+
+  <!-- création du code -->
+  <section id="v-create" class="view hidden">
+    <div class="card create">
+      <div class="kick">BIENVENUE, <span id="c-name"></span></div>
+      <h1>Crée ton code créateur</h1>
+      <p class="lead">Il sera affiché dans la boutique de tous les joueurs qui te soutiennent. Tu pourras le changer une fois par semaine.</p>
+      <div class="big-input"><input id="c-code" maxlength="16" placeholder="TONCODE" autocomplete="off" spellcheck="false"></div>
+      <div class="muted small">3 à 16 caractères : lettres, chiffres, _ ou -. Pas le pseudo d'un autre joueur.</div>
+      <div class="err" id="c-err"></div>
+      <button class="btn primary wide" id="c-go">CRÉER MON CODE</button>
+    </div>
+  </section>
+
+  <!-- tableau de bord -->
+  <section id="v-dash" class="view hidden">
+    <div class="banner warn hidden" id="d-disabled">Ton code a été désactivé par l'équipe ECLIPSE : il ne rapporte plus d'Éclats. Contacte le staff si tu penses que c'est une erreur.</div>
+    <div class="banner warn hidden" id="d-off">Les codes créateur sont mis en pause sur le serveur pour le moment.</div>
+    <div class="dash-hero" id="d-hero">
+      <div>
+        <div class="kick">TON CODE CRÉATEUR</div>
+        <div class="code" id="d-code"></div>
+        <div class="slogan" id="d-slogan"></div>
+      </div>
+      <div class="share">
+        <div class="kick">TON LIEN À PARTAGER</div>
+        <div class="share-row"><input id="d-link" readonly><button class="btn" id="d-copy">COPIER</button></div>
+        <div class="muted small">Ce lien ouvre le jeu avec ton code déjà saisi dans la boutique.</div>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="k-earned">0</div><div class="l">Éclats gagnés au total</div></div>
+      <div class="kpi"><div class="v" id="k-today">0</div><div class="l">Aujourd'hui</div><div class="s" id="k-cap"></div></div>
+      <div class="kpi"><div class="v" id="k-week">0</div><div class="l">7 derniers jours</div></div>
+      <div class="kpi"><div class="v" id="k-sup">0</div><div class="l">Joueurs qui te soutiennent</div></div>
+      <div class="kpi"><div class="v" id="k-sales">0</div><div class="l">Achats avec ton code</div><div class="s" id="k-spent"></div></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Éclats gagnés · 30 jours</h2>
+        <div class="chart" id="d-chart"></div>
+      </div>
+      <div class="card">
+        <h2>Derniers achats</h2>
+        <div id="d-recent" class="recent"></div>
+      </div>
+    </div>
+
+    <div class="card edit">
+      <h2>Personnaliser</h2>
+      <div class="edit-grid">
+        <div>
+          <label>Code créateur</label>
+          <input id="e-code" maxlength="16" autocomplete="off" spellcheck="false">
+          <div class="muted small" id="e-code-help"></div>
+          <label>Couleur</label>
+          <div class="colors" id="e-colors"></div>
+          <label>Message pour tes fans <span class="muted small">(90 caractères, affiché dans la boutique)</span></label>
+          <input id="e-slogan" maxlength="90" placeholder="Merci pour le soutien ! GG à tous">
+        </div>
+        <div>
+          <label>YouTube</label><div class="pre"><span>youtube.com/@</span><input id="e-youtube" maxlength="31" placeholder="tachaine"></div>
+          <label>Twitch</label><div class="pre"><span>twitch.tv/</span><input id="e-twitch" maxlength="31" placeholder="tachaine"></div>
+          <label>TikTok</label><div class="pre"><span>tiktok.com/@</span><input id="e-tiktok" maxlength="31" placeholder="toncompte"></div>
+          <label>Aperçu dans la boutique</label>
+          <div class="preview" id="e-preview"></div>
+        </div>
+      </div>
+      <div class="err" id="e-err"></div>
+      <div class="row"><button class="btn primary" id="e-save">ENREGISTRER</button><span class="ok-msg" id="e-ok"></span></div>
+    </div>
+
+    <div class="card rules">
+      <h2>Comment ça marche</h2>
+      <ul>
+        <li>Un joueur saisit ton code dans l'onglet <b>BOUTIQUE</b> du jeu (ou ouvre ton lien). Il te soutient jusqu'à ce qu'il le retire ou en change.</li>
+        <li>À chaque achat de skin (boutique du jour, packs, collection), tu reçois <b><span class="share-pct">50</span> %</b> des Éclats dépensés. Son prix ne change pas.</li>
+        <li>Les achats comptent à partir de <b id="r-min">3</b> parties jouées par le joueur, pour éviter les doubles comptes.</li>
+        <li>On ne peut pas utiliser son propre code, ni celui d'un compte qui joue depuis la même connexion.</li>
+        <li>Gains plafonnés à <b id="r-cap">5 000</b> Éclats par jour. Tout abus peut entraîner la désactivation du code.</li>
+      </ul>
+    </div>
+  </section>
+
+  <div id="v-loading" class="view loading">Connexion…</div>
+</main>
+<footer class="foot"><a href="/">Jouer à ECLIPSE</a> · <a href="/cgu.html">CGU</a> · <a href="/confidentialite.html">Confidentialité</a></footer>
+<script src="/js/creator.js"></script>
+</body>
+</html>

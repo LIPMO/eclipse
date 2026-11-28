@@ -500,6 +500,7 @@ export class Social {
     if (u.owned.includes(item.id)) return this.err(c, 'Tu possèdes déjà ce skin.');
     if (u.eclats < item.price) return this.err(c, 'Pas assez d\'Éclats.');
     u.eclats -= item.price; u.owned.push(item.id); this.A.save();
+    this.ctx.creators?.payout(u, item.price, item.name);
     this.ctx.admin.economy?.('spend', item.price); this.ctx.admin.economy?.('skin', item.id);
     this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
     this.info(c, `${item.name} ajouté à ta collection (-${item.off} %) !`);
@@ -517,6 +518,7 @@ export class Social {
     if (u.eclats < price) return this.err(c, 'Pas assez d\'Éclats.');
     u.eclats -= price; for (const s of missing) u.owned.push(s.id);
     this.A.save();
+    this.ctx.creators?.payout(u, price, b.name);
     this.ctx.admin.economy?.('spend', price); for (const s of missing) this.ctx.admin.economy?.('skin', s.id);
     this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
     this.ctx.send(c.id, { type: 'bundleBought', name: b.name, count: missing.length, price });

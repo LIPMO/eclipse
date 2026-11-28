@@ -453,6 +453,8 @@ const VIEWS = {
           <div class="row">${num('buyTime', 'Achat (Assaut)', 5, 120)}${num('roundTime', 'Manche (Assaut)', 20, 600)}${num('fuseTime', 'Noyau posé', 10, 180)}</div>
           <div class="row">${num('duelBuyTime', 'Achat (Duel)', 3, 60)}${num('duelRoundTime', 'Manche (Duel)', 15, 600)}</div>
           ${chk('slide', 'Glissade autorisée (s\'accroupir en courant)', 'Décoche pour la désactiver dans les nouvelles parties.')}
+          ${chk('creatorCodes', 'Codes créateur activés', 'Les joueurs qui soutiennent un créateur lui reversent 50 % de leurs achats de skins.')}
+          ${num('creatorDailyCap', 'Plafond d\'Éclats gagnés par créateur et par jour', 0, 1000000, 100)}
           <p class="muted small">S'applique aux nouvelles manches, sans redémarrage.</p>
           <button class="btn primary" data-act="cfgSave" data-section="eco">Enregistrer</button></div>
         <div class="card" style="grid-column:1/-1"><h3>Équilibrage des armes</h3>
@@ -707,6 +709,9 @@ const VIEWS = {
           <div class="field"><label>Destinataires</label><select id="gift-target"><option value="all">Tous les comptes</option><option value="online">Joueurs connectés uniquement</option></select></div>
           <div class="field"><label>Message (facultatif)</label><input id="gift-msg" maxlength="200" placeholder="Merci de jouer à ECLIPSE !"></div>
           <button class="btn primary" data-act="gift">Envoyer le cadeau</button></div>
+        <div class="card" style="grid-column:1/-1"><h3>Codes créateur <span class="badge ${e.creatorCodes ? 'ok' : 'danger'}">${e.creatorCodes ? 'ACTIVÉS' : 'DÉSACTIVÉS'}</span></h3>
+          <p class="muted small">Chaque joueur peut créer son code sur <b>/createur</b>. Ceux qui le soutiennent dans la boutique lui reversent 50 % de leurs dépenses (plafond : ${(+e.creatorDailyCap).toLocaleString('fr-FR')} Éclats par jour et par créateur ; réglable dans Configuration).</p>
+          ${e.creators.length ? `<table><thead><tr><th>Code</th><th>Joueur</th><th>Soutiens</th><th>Achats</th><th>Gagné</th><th>Aujourd'hui</th><th></th></tr></thead><tbody>${e.creators.slice(0, 100).map(c => `<tr><td><b>${h(c.code)}</b>${c.disabled ? ' <span class="badge danger">DÉSACTIVÉ</span>' : ''}</td><td><a data-act="openAccount" data-name="${h(c.name)}">${h(c.name)}</a></td><td>${c.supporters}</td><td>${c.sales}</td><td>${c.earned.toLocaleString('fr-FR')}</td><td>${c.today.toLocaleString('fr-FR')}</td><td><button class="btn small ${c.disabled ? '' : 'danger'}" data-act="creatorToggle" data-code="${h(c.code)}" data-off="${c.disabled ? '' : '1'}">${c.disabled ? 'Réactiver' : 'Désactiver'}</button></td></tr>`).join('')}</tbody></table>` : '<p class="muted">Aucun code créateur pour le moment.</p>'}</div>
       </div>`;
     },
   },
@@ -888,6 +893,7 @@ const ACT = {
   pollCreate: () => { const opts = [1, 2, 3, 4].map(i => $('poll-o' + i).value.trim()).filter(Boolean); act('pollCreate', { question: $('poll-q').value.trim(), options: opts }, 'Sondage publié'); },
   async pollClose() { if (await confirmBox('Clore le sondage en cours ?')) act('pollClose', {}, 'Sondage clos'); },
   openAccount: d => openAccount(d.name),
+  async creatorToggle(d) { if (!d.off || await confirmBox(`Désactiver le code ${d.code} ? Ses soutiens ne lui rapporteront plus rien.`)) act('creatorToggle', { code: d.code, off: !!d.off }, d.off ? 'Code désactivé' : 'Code réactivé'); },
   openRoom: d => openRoom(d.id),
   // comptes
   accFilter: d => { S.acc.filter = d.v; S.acc.page = 1; show('accounts'); },
