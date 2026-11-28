@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.48.0",
+    "date": "2026-11-28",
+    "title": "Soins en Battle Royale et nouveau panneau d'émotes",
+    "items": [
+      "Battle Royale : petite boutique de soin sur la touche d'achat (B) : +50 PV pour 300. L'argent vient des coffres (+150) et des éliminations (+300), affiché dans le bandeau de zone.",
+      "Battle Royale : 6 distributeurs de soin dans les rues (croix verte, aussi sur la mini-carte). Touche d'interaction : PV au maximum, puis 45 s de recharge.",
+      "Nouveau panneau d'émotes au lobby : grandes tuiles, recherche, onglets Toutes / Favoris / Récentes. Épingle tes émotes avec ☆ : tes 8 premiers favoris vont sur les touches 1 à 8 en partie."
+    ]
+  },
+  {
     "version": "1.47.0",
     "date": "2026-11-28",
     "title": "Potions, victoire royale et bras réparés",

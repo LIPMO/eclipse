@@ -456,6 +456,19 @@ export class Game {
         c.userData = { lid, glow, band: b1, open: false };
         S.add(c); this.chestMeshes.push(c);
       }
+      // distributeurs de soin (1.48) : borne blanche avec une croix verte lumineuse
+      this.dispMeshes = [];
+      const body = new THREE.MeshStandardMaterial({ color: '#e8edf2', roughness: 0.4, metalness: 0.3 }), cross = new THREE.MeshBasicMaterial({ color: '#3dffa8', toneMapped: false });
+      for (const [ci, cj] of BR.dispensers) {
+        let b = null, bd = 1e9; for (const [fi, fj] of m.floor) { if (m.grid[fj][fi] !== '.') continue; const d = Math.hypot(fi - ci, fj - cj); if (d < bd) { bd = d; b = [fi, fj]; } }
+        const g = new THREE.Group(); g.position.set((b[0] + 0.5) * CELL, 0, (b[1] + 0.5) * CELL);
+        const k = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2, 0.6), body); k.position.y = 1; g.add(k);
+        for (const [w, h] of [[0.42, 0.12], [0.12, 0.42]]) for (const z of [0.31, -0.31]) { const c = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.02), cross); c.position.set(0, 1.35, z); g.add(c); }
+        if (!this.dispGlowTex) { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const gx = cv.getContext('2d'), gr = gx.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(61,255,168,0.8)'); gr.addColorStop(1, 'rgba(61,255,168,0)'); gx.fillStyle = gr; gx.fillRect(0, 0, 64, 64); this.dispGlowTex = new THREE.CanvasTexture(cv); }
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.dispGlowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.set(3, 3, 1); glow.position.y = 1.4; g.add(glow);
+        g.userData = { glow, cross: g.children.filter(x => x.material === cross) };
+        S.add(g); this.dispMeshes.push(g);
+      }
       const zm = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 60, 96, 1, true), new THREE.MeshBasicMaterial({ color: '#b26bff', transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
       zm.position.y = 30; zm.renderOrder = 3; S.add(zm); this.zoneMesh = zm;
       const nz = new THREE.Mesh(new THREE.RingGeometry(0.985, 1, 128), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
@@ -1103,7 +1116,7 @@ export class Game {
     this.held.add(a);
     if (this.kc && (a === 'jump' || a === 'fire')) { this.endKillcam(); return; }
     switch (a) {
-      case 'buy': this.toggleBuy(); break;
+      case 'buy': if (this.mode === 'br') { this.toggleBrShop(); break; } this.toggleBuy(); break;
       case 'chat': this.openChat(false); break;
       case 'teamChat': this.openChat(true); break;
       case 'radio': this.toggleRadio(); break;
@@ -1116,7 +1129,7 @@ export class Game {
       case 'abilityQ': this.useAbility('q'); break;
       case 'abilityE': this.useAbility('e'); break;
       case 'ult': this.useAbility('x'); break;
-      case 'interact': { const ci = this.nearChest(); if (ci >= 0) { this.net.send('chest', { i: ci }); break; } this.net.send('interact', { on: true }); this.interacting = true; break; }
+      case 'interact': { const ci = this.nearChest(); if (ci >= 0) { this.net.send('chest', { i: ci }); break; } const di = this.nearDispenser(); if (di >= 0) { this.net.send('dispense', { i: di }); break; } this.net.send('interact', { on: true }); this.interacting = true; break; }
       case 'scoreboard': this.showScoreboard(true); break;
       case 'scope': if (!this.me?.al) { this.specIdx--; break; } if (this.curWeaponId() === 'knife') { this.chargeKnife(); break; } ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
       case 'drop': if (this.me?.al && !this.ended) this.net.send('drop'); break;
@@ -1172,7 +1185,9 @@ export class Game {
         return;
       }
       if (this.radioOpen && e.code === 'Escape') { this.toggleRadio(false); return; }
-      if (this.emoteOpen && /^(Digit|Numpad)[1-8]$/.test(e.code)) { e.preventDefault(); this.sendEmote(+e.code.slice(-1) - 1 + (e.shiftKey ? 0 : 8)); this.toggleEmote(false); return; }
+      if (this.brShopOpen && (e.code === 'Digit1' || e.code === 'Numpad1')) { e.preventDefault(); this.net.send('buy', { item: 'brHeal' }); return; }
+      if (this.brShopOpen && e.code === 'Escape') { this.toggleBrShop(false); return; }
+      if (this.emoteOpen && /^(Digit|Numpad)[1-8]$/.test(e.code)) { e.preventDefault(); { const k = +e.code.slice(-1) - 1, fav = (ST().favEmotes || []).filter(i => ANIMS[i]); this.sendEmote(e.shiftKey ? k : (fav[k] ?? k) + 8); } this.toggleEmote(false); return; }
       if (this.emoteOpen && e.code === 'Escape') { this.toggleEmote(false); return; }
       if (this.codeMap[e.code] || e.code === 'Tab' || e.code === 'Space') e.preventDefault();
       if (this.spec) { this.specKey(e); return; }
@@ -1845,6 +1860,8 @@ export class Game {
       if (m.i === this.myId) { this.banner('VICTOIRE ROYALE !', `Tu es le dernier survivant · ${KB('emote')} pour faire une petite danse`, 'win', 5); SFX.playPromote?.(); }
       else this.banner(`${this.nameOf(m.i).toUpperCase()}`, 'REMPORTE LA VICTOIRE ROYALE', '', 5);
     });
+    on('brBought', m => { this.centerMsg(m.full ? 'SOIN COMPLET !' : `+${m.hp} PV`, 1.2); SFX.playPromote?.(); });
+    on('dispUsed', m => { const d = this.dispMeshes?.[m.i]; if (d) d.userData.cd = BR.dispenserCooldown; });
     on('potionDone', m => { this.centerMsg(m.k === 'heal' ? '+40 PV' : '+50 ARMURE', 1.2); SFX.playPromote?.(); });
     on('killHeal', m => { this.centerMsg(`+${m.n} PV (ÉLIMINATION)`, 1.4); });
     on('chestOpen', m => { const c = this.chestMeshes?.[m.i]; if (c && !c.userData.open) { this.openChestMesh(c); SFX.playUI?.('click'); } });
@@ -1936,6 +1953,7 @@ export class Game {
       this.nextZoneMesh.visible = s.zone.nr > 0 && s.zone.nr < s.zone.r - 0.5;
       this.nextZoneMesh.scale.set(Math.max(0.1, s.zone.nr), Math.max(0.1, s.zone.nr), 1); this.nextZoneMesh.position.x = s.zone.nc[0]; this.nextZoneMesh.position.z = s.zone.nc[1];
     }
+    if (s.dsp && this.dispMeshes?.length) s.dsp.forEach((t, i) => { const d = this.dispMeshes[i]; if (!d) return; d.userData.cd = t; d.userData.glow.visible = !t; for (const c of d.userData.cross) c.visible = !t || Math.floor(performance.now() / 400) % 2 === 0; });
     if (s.cho && this.chestMeshes?.length) for (const i of s.cho) { const c = this.chestMeshes[i]; if (c && !c.userData.open) this.openChestMesh(c); }
     // murs de glace
     const wallIds = new Set(s.walls.map(w => w.i));
@@ -2299,6 +2317,24 @@ export class Game {
   openChestMesh(c) {
     c.userData.open = true; c.userData.lid.rotation.x = -1.9; c.userData.glow.visible = false;
     c.userData.band.material = c.userData.band.material.clone(); c.userData.band.material.emissiveIntensity = 0.05;
+  }
+  // petite boutique du Battle Royale (1.48) : seulement du soin, payé avec l'argent des coffres et des éliminations
+  toggleBrShop(v = !this.brShopOpen) {
+    this.brShopOpen = v && !!this.me?.al;
+    let el = $('br-shop'); if (!el) { el = document.createElement('div'); el.id = 'br-shop'; $('hud').appendChild(el); }
+    el.classList.toggle('show', this.brShopOpen);
+    this.renderBrShop();
+  }
+  renderBrShop() {
+    const el = $('br-shop'); if (!el || !this.brShopOpen) return;
+    const it = BR.shop.heal, money = this.me?.$ ?? 0, ok = money >= it.price && (this.me?.hp ?? 100) < 100;
+    el.innerHTML = `<h4>BOUTIQUE · <span class="gold">💰 ${money}</span></h4><div class="brs-item ${ok ? '' : 'off'}"><b>1</b> ✚ +${it.hp} PV <span class="gold">${it.price}</span></div><div class="muted small">Coffre : +${BR.money.chest} · Élimination : +${BR.money.kill} · ${KB('buy')} pour fermer</div>`;
+  }
+  nearDispenser() {
+    if (this.mode !== 'br' || !this.dispMeshes?.length || !this.me?.al) return -1;
+    let best = -1, bd = BR.chestRange;
+    this.dispMeshes.forEach((d, i) => { const dd = Math.hypot(d.position.x - this.local.pos[0], d.position.z - this.local.pos[2]); if (dd < bd) { bd = dd; best = i; } });
+    return best;
   }
   nearChest() {
     if (this.mode !== 'br' || !this.chestMeshes?.length || !this.me?.al) return -1;
@@ -2793,6 +2829,7 @@ export class Game {
       if (this.me?.dk) hint = `🧪 TU BOIS UNE POTION… ${this.me.dk.toFixed(1)} s`;
       else if (this.local.chute) hint = `PARACHUTE · ${KB('forward')}${KB('left')}${KB('back')}${KB('right')} POUR TE DIRIGER · ${KB('crouch')} POUR DESCENDRE PLUS VITE · ${Math.round(this.local.pos[1])} m`;
       else if (this.nearChest() >= 0) hint = `${KB('interact')} — OUVRIR LE COFFRE`;
+      else if (this.nearDispenser() >= 0) { const cd = this.dispMeshes[this.nearDispenser()].userData.cd; hint = cd ? `DISTRIBUTEUR EN RECHARGE · ${cd} s` : me.hp >= 100 ? 'DISTRIBUTEUR : TU AS DÉJÀ TOUS TES PV' : `${KB('interact')} — DISTRIBUTEUR : SOIN COMPLET`; }
       const z = s.zone;
       if (z) {
         const out = Math.hypot(this.local.pos[0] - z.c[0], this.local.pos[2] - z.c[1]) > z.r;
@@ -2803,7 +2840,8 @@ export class Game {
     if (this.mode === 'br' && s.zone) {
       let zb = $('br-zone'); if (!zb) { zb = document.createElement('div'); zb.id = 'br-zone'; $('hud').appendChild(zb); }
       const z = s.zone, mm = Math.floor(z.t / 60), ss = String(Math.floor(z.t % 60)).padStart(2, '0');
-      zb.innerHTML = `<b>ZONE ${z.st + 1}/${BR.stages.length}</b> · ${z.sh ? `SE RESSERRE <span class="warn">${mm}:${ss}</span>` : z.t > 9999 ? 'DERNIÈRE ZONE' : `RESSERREMENT DANS ${mm}:${ss}`} · <b>${s.alive ?? '?'}</b> EN VIE`;
+      zb.innerHTML = `<b>ZONE ${z.st + 1}/${BR.stages.length}</b> · ${z.sh ? `SE RESSERRE <span class="warn">${mm}:${ss}</span>` : z.t > 9999 ? 'DERNIÈRE ZONE' : `RESSERREMENT DANS ${mm}:${ss}`} · <b>${s.alive ?? '?'}</b> EN VIE · <span class="gold">💰 ${this.me?.$ ?? 0}</span>`;
+      if (this.brShopOpen) this.renderBrShop();
     }
     $('core-hint').textContent = hint;
     $('core-hint').classList.toggle('warn', hint.startsWith('⚠'));
@@ -3314,6 +3352,7 @@ export class Game {
     for (const d of this.allyDeaths) { const [x, y] = P(d.p[0], d.p[2]); g.strokeStyle = ALLY; g.globalAlpha = 0.9 - (tn - d.t) / 25; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 4, y - 4); g.lineTo(x + 4, y + 4); g.moveTo(x + 4, y - 4); g.lineTo(x - 4, y + 4); g.stroke(); g.globalAlpha = 1; }
     // Battle Royale : coffres fermés, zone actuelle et prochaine
     if (this.mode === 'br') {
+      for (const d of this.dispMeshes || []) { const [x, y] = P(d.position.x, d.position.z); g.fillStyle = d.userData.cd ? '#ff6b7d' : '#3dffa8'; g.fillRect(x - 1, y - 4, 2, 8); g.fillRect(x - 4, y - 1, 8, 2); }
       for (const c of this.chestMeshes) if (!c.userData.open) { const [x, y] = P(c.position.x, c.position.z); g.fillStyle = '#ffcf5a'; g.fillRect(x - 2.5, y - 2.5, 5, 5); }
       const z = snap.zone;
       if (z) {

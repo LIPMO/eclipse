@@ -740,21 +740,51 @@ function playLobbyEmote(e) {
   const name = lobbyMyName(); if (!name) return;
   lobby.emotes.set(name, { e, t0: performance.now() / 1000, until: performance.now() / 1000 + 8 });
   net.send('partyEmote', { e });
+  profile.settings.recentEmotes = [e, ...recentEmotes().filter(x => x !== e)].slice(0, 12); saveEmoSettings();
   closeLobbyEmotes();
 }
 function closeLobbyEmotes() { document.getElementById('lb-emotes')?.remove(); }
+// panneau des émotes (1.48) : grandes tuiles, recherche, favoris (★, touches 1 à 8 en partie) et récentes
+const emoState = { tab: 'all', q: '' };
+const favEmotes = () => (profile.settings.favEmotes || []).filter(i => ANIMS[i]);
+const recentEmotes = () => (profile.settings.recentEmotes || []).filter(i => ANIMS[i]);
+function saveEmoSettings() { save(); document.dispatchEvent(new CustomEvent('settings-changed', { detail: { key: 'favEmotes' } })); }
+function renderLobbyEmotes() {
+  const el = document.getElementById('lb-emotes'); if (!el) return;
+  const fav = new Set(favEmotes()), q = emoState.q.trim().toLowerCase();
+  let ids = emoState.tab === 'fav' ? [...fav] : emoState.tab === 'recent' ? recentEmotes() : ANIMS.map((_, i) => i);
+  if (q) ids = ids.filter(i => ANIMS[i].toLowerCase().includes(q));
+  const tile = i => { const [emo, ...rest] = ANIMS[i].split(' '); const k = favEmotes().indexOf(i);
+    return `<button class="lbe-tile ${fav.has(i) ? 'fav' : ''}" data-lbe="${i}" title="${esc(ANIMS[i])}"><span class="lbe-emo">${emo}</span><span class="lbe-name">${esc(rest.join(' '))}</span>${k >= 0 && k < 8 ? `<span class="lbe-key">${k + 1}</span>` : ''}<span class="lbe-star" data-lbe-fav="${i}" title="${fav.has(i) ? 'Retirer des favoris' : 'Ajouter aux favoris (touches 1 à 8 en partie)'}">${fav.has(i) ? '★' : '☆'}</span></button>`; };
+  el.querySelector('.lbe-grid').innerHTML = ids.map(tile).join('') || `<p class="muted lbe-empty">${emoState.tab === 'fav' ? 'Aucun favori : clique sur l\'étoile ☆ d\'une émote.' : emoState.tab === 'recent' ? 'Aucune émote jouée récemment.' : 'Aucune émote ne correspond.'}</p>`;
+  el.querySelectorAll('[data-lbe-tab]').forEach(b => b.classList.toggle('on', b.dataset.lbeTab === emoState.tab));
+  el.querySelector('[data-lbe-tab="fav"]').textContent = `★ FAVORIS (${fav.size})`;
+}
 function openLobbyEmotes() {
   if (document.getElementById('lb-emotes')) { closeLobbyEmotes(); return; }
   const el = document.createElement('div'); el.id = 'lb-emotes';
-  el.innerHTML = `<div class="lbe-head"><b>ÉMOTES</b> <span class="muted small">clic pour jouer · tout ton groupe la voit</span><button class="btn small ghost" data-lbe-close>✕</button></div><div class="lbe-grid">${ANIMS.map((n, i) => `<button data-lbe="${i}">${esc(n)}</button>`).join('')}</div>`;
-  el.onclick = ev => { const b = ev.target.closest('[data-lbe]'); if (b) playLobbyEmote(+b.dataset.lbe); if (ev.target.closest('[data-lbe-close]')) closeLobbyEmotes(); };
-  document.getElementById('tab-play').appendChild(el);
+  el.innerHTML = `<div class="lbe-box">
+    <div class="lbe-head"><b>ÉMOTES</b><span class="muted small">${ANIMS.length} danses et gestes · ton groupe les voit</span><button class="lbe-x" data-lbe-close title="Fermer (Échap)">✕</button></div>
+    <div class="lbe-bar"><div class="lbe-tabs"><button data-lbe-tab="all">TOUTES</button><button data-lbe-tab="fav">★ FAVORIS</button><button data-lbe-tab="recent">RÉCENTES</button></div>
+      <input class="lbe-search" placeholder="Rechercher une émote…" value="${esc(emoState.q)}" autocomplete="off"></div>
+    <div class="lbe-grid"></div>
+    <div class="lbe-foot muted small">Clic : jouer · ☆ : favori (tes 8 premiers favoris vont sur les touches 1 à 8 en partie) · ${esc(keyName(profile.settings.keys.emote))} ou Échap : fermer</div></div>`;
+  el.onclick = ev => {
+    if (ev.target === el || ev.target.closest('[data-lbe-close]')) { closeLobbyEmotes(); return; }
+    const st = ev.target.closest('[data-lbe-fav]');
+    if (st) { ev.stopPropagation(); const i = +st.dataset.lbeFav, f = favEmotes(); profile.settings.favEmotes = f.includes(i) ? f.filter(x => x !== i) : [...f, i].slice(-24); saveEmoSettings(); renderLobbyEmotes(); return; }
+    const tb = ev.target.closest('[data-lbe-tab]'); if (tb) { emoState.tab = tb.dataset.lbeTab; renderLobbyEmotes(); return; }
+    const b = ev.target.closest('[data-lbe]'); if (b) playLobbyEmote(+b.dataset.lbe);
+  };
+  el.querySelector('.lbe-search').oninput = e => { emoState.q = e.target.value; renderLobbyEmotes(); };
+  document.body.appendChild(el); renderLobbyEmotes();
+  setTimeout(() => el.querySelector('.lbe-search')?.focus(), 30);
 }
 net.on('partyEmote', m => { if (m.name === lobbyMyName()) return; lobby.emotes.set(m.name, { e: m.e, t0: performance.now() / 1000, until: performance.now() / 1000 + 8 }); });
 document.addEventListener('keydown', e => {
+  if (e.code === 'Escape' && document.getElementById('lb-emotes')) { closeLobbyEmotes(); return; }
   if (state.game || state.tab !== 'play' || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
   if (e.code === profile.settings.keys.emote) { e.preventDefault(); openLobbyEmotes(); }
-  else if (e.code === 'Escape') closeLobbyEmotes();
 });
 
 function lobbyFrame(dt) {

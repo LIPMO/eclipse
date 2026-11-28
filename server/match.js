@@ -480,6 +480,12 @@ export class Match {
   initBR() {
     const [mw, mh] = this.map.size;
     this.chests = this.map.chests.map(([x, z], i) => ({ id: i, pos: [x, 0, z], open: false }));
+    // distributeurs : sur la case de sol la plus proche de chaque emplacement prévu
+    this.dispensers = BR.dispensers.map(([ci, cj], i) => {
+      let b = null, bd = 1e9;
+      for (const [fi, fj] of this.map.floor) { if (this.map.grid[fj][fi] !== '.') continue; const d = Math.hypot(fi - ci, fj - cj); if (d < bd) { bd = d; b = [fi, fj]; } }
+      return { id: i, pos: [(b[0] + 0.5) * CELL, 0, (b[1] + 0.5) * CELL], readyAt: 0 };
+    });
     this.zone = { c: [mw / 2, mh / 2], r: BR.startRadius, stage: 0, shrinking: false, until: this.time + BR.stages[0][0] };
     this.pickNextZone();
   }
@@ -542,6 +548,14 @@ export class Match {
       this.send(p, { type: 'potionDone', k });
     }
   }
+  useDispenser(p, i) {
+    const d = this.dispensers?.[i];
+    if (!d || !p.alive || this.phase !== 'live' || this.time < d.readyAt || p.hp >= 100) return;
+    if (Math.hypot(p.pos[0] - d.pos[0], p.pos[2] - d.pos[2]) > BR.chestRange + 0.4) return;
+    p.hp = 100; d.readyAt = this.time + BR.dispenserCooldown;
+    this.broadcast({ type: 'dispUsed', i, by: p.id });
+    this.send(p, { type: 'brBought', hp: 100, full: true });
+  }
   openChest(p, i) {
     const c = this.chests?.[i];
     if (!c || c.open || !p.alive || this.phase !== 'live') return;
@@ -559,6 +573,7 @@ export class Match {
     const bonus = Math.random(), pk = bonus < 0.45 ? 'heal' : bonus < 0.75 ? 'shield' : null;
     let potGot = null;
     if (pk && p.pots) { if (p.pots[pk] < BR.potions[pk].max) { p.pots[pk]++; potGot = pk; } else if (pk === 'heal') p.hp = Math.min(100, p.hp + 25); }
+    p.money = (p.money || 0) + BR.money.chest;
     this.broadcast({ type: 'chestOpen', i, by: p.id });
     this.send(p, { type: 'chestLoot', w: id, rar, pot: potGot, inSlot: got === 'arme', inBag: got === 'sac' });
   }
@@ -597,6 +612,7 @@ export class Match {
       case 'spec': return this.setSpec(p, msg.id);
       case 'bagSwap': return this.bagSwap(p, msg.k);
       case 'potion': return this.drinkPotion(p, msg.k);
+      case 'dispense': return this.useDispenser(p, msg.i);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'bash': return this.handleBash(p, msg);
@@ -769,7 +785,14 @@ export class Match {
   }
 
   handleBuy(p, item) {
-    if (!p.alive || this.mode === 'gungame' || this.mode === 'br' || this.knifeRound) return;
+    if (this.mode === 'br') { // 1.48 : en Battle Royale, la boutique ne vend que du soin
+      const it = BR.shop[item === 'brHeal' ? 'heal' : ''];
+      if (!it || !p.alive || p.hp >= 100 || (p.money || 0) < it.price) return;
+      p.money -= it.price; p.hp = Math.min(100, p.hp + it.hp);
+      this.send(p, { type: 'brBought', hp: it.hp });
+      return;
+    }
+    if (!p.alive || this.mode === 'gungame' || this.knifeRound) return;
     const ffa = isFfa(this.mode);
     if (!ffa && this.phase !== 'buy') return;
     if (WEAPONS[item] && item !== 'knife') {
@@ -1092,6 +1115,7 @@ export class Match {
     if (this.mode === 'br') { for (const s of [1, 2]) if (v.weapons[s]) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = null; } } // Battle Royale : tout tombe
     else if (this.dropsOn()) { const s = v.weapons[1] ? 1 : v.weapons[2] && v.weapons[2].id !== 'spark' ? 2 : 0; if (s) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = s === 2 ? this.newWeapon('spark') : null; } }
     if (v.bag?.length) { v.bag.forEach((w, k) => this.drops.push({ id: this.nextId++, w, pos: [v.pos[0] + Math.cos(k * 2.1) * 0.9, 0, v.pos[2] + Math.sin(k * 2.1) * 0.9], from: null, noPick: 0 })); v.bag = []; }
+    if (this.mode === 'br' && a && a !== v) a.money = (a.money || 0) + BR.money.kill;
     if (this.mode === 'br' && a && a !== v && a.alive) { const h = Math.min(100 - a.hp, BR.killHeal); a.hp += h; a.armor = Math.min(100, (a.armor || 0) + BR.killHeal - h); this.send(a, { type: 'killHeal', n: BR.killHeal }); }
     const vStreak = v.streak; v.streak = 0; v.kit = false;
     if (a && a !== v && !this.isEnemy(a, v)) {
@@ -1686,7 +1710,7 @@ export class Match {
       fires: this.fires.map(f => ({ i: f.id, p: f.pos.map(r2), r: f.r, k: f.kind, u: r2(f.end - T) })),
       walls: this.walls.map(w => ({ i: w.wallId, min: w.min.map(r2), max: w.max.map(r2), hp: w.hp })),
       drops: this.drops.map(d => ({ i: d.id, w: d.w.id, p: d.pos.map(r2) })),
-      ...(this.zone ? { zone: { c: this.zone.c.map(r2), r: r2(this.zone.r), nc: this.zone.nc.map(r2), nr: r2(this.zone.nr), st: this.zone.stage, sh: this.zone.shrinking ? 1 : 0, t: r2(Math.max(0, this.zone.until - T)) }, cho: this.chests.filter(c => c.open).map(c => c.id), alive: [...this.players.values()].filter(p => !p.out).length } : {}),
+      ...(this.zone ? { zone: { c: this.zone.c.map(r2), r: r2(this.zone.r), nc: this.zone.nc.map(r2), nr: r2(this.zone.nr), st: this.zone.stage, sh: this.zone.shrinking ? 1 : 0, t: r2(Math.max(0, this.zone.until - T)) }, cho: this.chests.filter(c => c.open).map(c => c.id), dsp: this.dispensers.map(d => Math.max(0, Math.ceil(d.readyAt - T))), alive: [...this.players.values()].filter(p => !p.out).length } : {}),
     };
     const commonStr = JSON.stringify(common).slice(1);
     const meCache = new Map();

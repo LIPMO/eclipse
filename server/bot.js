@@ -333,6 +333,8 @@ export class BotBrain {
     if (m.mode === 'br' && m.chests && p.alive && (this.chestT = (this.chestT || 0) - dt) <= 0) {
       this.chestT = 0.4;
       for (const c of m.chests) if (!c.open && Math.hypot(c.pos[0] - p.pos[0], c.pos[2] - p.pos[2]) < 2.2) { m.openChest(p, c.id); break; }
+      if (p.hp < 100) for (const d of m.dispensers || []) if (Math.hypot(d.pos[0] - p.pos[0], d.pos[2] - p.pos[2]) < 2.2) { m.useDispenser(p, d.id); break; }
+      if (p.hp <= 50 && (p.money || 0) >= 300 && !this.target) m.handleBuy(p, 'brHeal');
       if (p.slot === 3 && (p.weapons[1] || p.weapons[2])) p.slot = p.weapons[1] ? 1 : 2; // prend l'arme trouvée en main
     }
     if (m.mode === 'br' && p.pots && !this.target && !(p.drinkEnd > T)) { if (p.hp < 60 && p.pots.heal) m.drinkPotion(p, 'heal'); else if ((p.armor || 0) < 50 && p.pots.shield) m.drinkPotion(p, 'shield'); }
