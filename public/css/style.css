@@ -1370,3 +1370,12 @@ body.pad-mode #click-to-play { display: none !important; } body.pad-mode { curso
 @media (max-width: 600px) { #launcher-upd { flex-wrap: wrap; } }
 #launcher-upd a { color: #fff; text-decoration: none; }
 body.settings-open .mark-tag { display: none; }
+
+/* menus animés (1.34) : fond vivant et transitions entre onglets */
+/* #menu est en position fixe (contexte d'empilement) : z-index -1 = au-dessus de son fond, sous tout le contenu */
+#menu-bg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: .9; }
+.tab.active { animation: tabIn .32s cubic-bezier(.2, .8, .2, 1); }
+@keyframes tabIn { from { opacity: 0; transform: translateY(10px) scale(.995); } to { opacity: 1; transform: none; } }
+.nav button { transition: color .2s, background-color .2s, box-shadow .2s; }
+.nav button.active { box-shadow: inset 0 -2px 0 var(--accent, #8b5cff); }
+body.reduce-motion .tab.active { animation: none; }

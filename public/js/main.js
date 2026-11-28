@@ -562,6 +562,39 @@ function exitGame() {
 }
 net.on('backToRoom', () => { if (state.game) { state.game.destroy(); exitGame(); } });
 
+// ======================= FOND ANIMÉ DES MENUS (1.34) =======================
+// Lueurs qui dérivent lentement et poussières lumineuses ; 30 images/s au plus, arrêté en partie et
+// figé avec « Réduire les mouvements ».
+(() => {
+  const cv = $('menu-bg'); if (!cv) return;
+  const g = cv.getContext('2d');
+  const dots = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.8, vx: (Math.random() - 0.5) * 0.008, vy: -0.004 - Math.random() * 0.012, a: 0.2 + Math.random() * 0.5, c: Math.random() < 0.5 ? '139,92,255' : Math.random() < 0.5 ? '25,227,196' : '255,79,163' }));
+  const glows = [{ x: 0.2, y: 0.3, r: 0.55, c: '139,92,255', s: 0.05 }, { x: 0.8, y: 0.7, r: 0.5, c: '25,227,196', s: 0.04 }, { x: 0.6, y: 0.15, r: 0.35, c: '255,79,163', s: 0.06 }];
+  let last = 0, t = 0;
+  const draw = now => {
+    requestAnimationFrame(draw);
+    if (state.game || document.hidden || !$('menu').classList.contains('active')) return;
+    if (now - last < 33) return;
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    const still = document.body.classList.contains('reduce-motion') || document.body.classList.contains('theme-light');
+    t += still ? 0 : dt;
+    const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    g.clearRect(0, 0, w, h);
+    for (const gl of glows) {
+      const x = (gl.x + Math.sin(t * gl.s * 2 + gl.r * 9) * 0.08) * w, y = (gl.y + Math.cos(t * gl.s * 1.6 + gl.r * 5) * 0.07) * h, r = gl.r * Math.max(w, h);
+      const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${gl.c},.13)`); gr.addColorStop(1, `rgba(${gl.c},0)`);
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    }
+    for (const d of dots) {
+      if (!still) { d.x += d.vx * dt; d.y += d.vy * dt; if (d.y < -0.02) { d.y = 1.02; d.x = Math.random(); } if (d.x < -0.02) d.x = 1.02; if (d.x > 1.02) d.x = -0.02; }
+      g.fillStyle = `rgba(${d.c},${d.a * (0.7 + Math.sin(t * 2 + d.x * 20) * 0.3)})`;
+      g.beginPath(); g.arc(d.x * w, d.y * h, d.r, 0, 6.283); g.fill();
+    }
+  };
+  requestAnimationFrame(draw);
+})();
+
 // ======================= APERÇUS 3D =======================
 class Preview {
   constructor(canvas) {

@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.34.0",
+    "date": "2026-11-28",
+    "title": "Graphismes et ennemis invisibles corrigés",
+    "items": [
+      "Corrigé : des ennemis pouvaient rester invisibles. Au-delà de 95 m ils n'étaient jamais affichés (les grandes cartes font environ 130 m), et un ennemi qui sortait d'un angle apparaissait parfois trop tard. Celui qui te tire dessus est maintenant toujours visible pour toi pendant 2 s.",
+      "Éclairage : lanternes (Dune), néons (Néon, Cube), cristaux (Glacier, Igloo) et torches qui vacillent (Temple, Fosse), avec halos sur les murs et flaques de lumière au sol ; les sols de Néon et de glace reflètent les lumières.",
+      "Ombres de contact au pied des murs et des caisses : les cartes ont plus de relief.",
+      "Impacts de balles : étincelles, nuage de poussière et trous de balle qui restent 10 s. Douilles éjectées à chaque tir (cartouches rouges au fusil à pompe).",
+      "Ambiance : sable qui vole, neige qui tombe, braises qui montent, lucioles de néon. Ciel animé avec nuages et soleil (étoiles et lune la nuit).",
+      "Textures des cartes en haute définition. Fumées en volutes, feu avec braises et lumière, ondes de choc des explosions et des flashs, traînées des grenades.",
+      "Menus : fond animé et transitions entre les onglets.",
+      "Le préréglage « PC faible » coupe les effets les plus lourds."
+    ]
+  },
+  {
     "version": "1.33.0",
     "date": "2026-11-28",
     "title": "Référencement : une seule adresse par page",

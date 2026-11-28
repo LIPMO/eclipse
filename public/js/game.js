@@ -6,8 +6,9 @@ const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [
 import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower, recoilX, RECOIL_PATTERNS, INTERP_DELAY, reloadTime, partialShells, BASH, SCOPE_LEVELS } from '/shared/data.js';
 import { tr } from './i18n.js';
 import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm, groundHeight } from '/shared/physics.js';
-import { envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
+import { setTextureQuality, envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
 import * as SFX from './audio.js';
+import { Fx, themeOf } from './fx.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 import { pad } from './gamepad.js';
 import { emojify, isFriendName, openFeedback } from './hub.js';
@@ -108,7 +109,9 @@ export class Game {
     this.muted = new Set(); this.dropMeshes = new Map(); this.allyDeaths = []; this.prevSlot = null; this.lastLoadout = null; this.bought = {}; this.readyN = null;
 
     this.initRenderer();
+    setTextureQuality(ST().gfxPreset !== 'low' && ST().quality !== 'low');
     this.buildMap();
+    this.fx = new Fx(this); this.fx.build(); // effets visuels (1.34)
     this.setupBloom();
     this.initViewmodel();
     this.initHUD();
@@ -183,11 +186,12 @@ export class Game {
     const p = this.camera.position, g = this.dust.geometry.attributes.position, a = g.array, t = performance.now() / 1000;
     this.dust.position.set(0, 0, 0);
     for (let i = 0; i < a.length; i += 3) {
-      a[i] += Math.sin(t * 0.3 + i) * 0.12 * dt; a[i + 1] += (Math.cos(t * 0.21 + i * 0.7) * 0.08 - 0.02) * dt; a[i + 2] += Math.cos(t * 0.25 + i) * 0.12 * dt;
+      const ds = this.dustStyle || { wind: [0, 0, 0], vy: -0.02 };
+      a[i] += (Math.sin(t * 0.3 + i) * 0.12 + ds.wind[0]) * dt; a[i + 1] += (Math.cos(t * 0.21 + i * 0.7) * 0.08 + ds.vy) * dt; a[i + 2] += (Math.cos(t * 0.25 + i) * 0.12 + ds.wind[2]) * dt;
       // les particules restent dans un cube de 50 m autour du joueur
       if (a[i] - p.x > 25) a[i] -= 50; else if (a[i] - p.x < -25) a[i] += 50;
       if (a[i + 2] - p.z > 25) a[i + 2] -= 50; else if (a[i + 2] - p.z < -25) a[i + 2] += 50;
-      if (a[i + 1] < 0) a[i + 1] += 7; else if (a[i + 1] > 7) a[i + 1] -= 7;
+      if (a[i + 1] < 0) a[i + 1] += 9; else if (a[i + 1] > 9) a[i + 1] -= 9;
     }
     g.needsUpdate = true;
   }
@@ -293,7 +297,7 @@ export class Game {
     const floorTex = envTexture(th.floor, th.accent).clone();
     floorTex.needsUpdate = true;
     floorTex.repeat.set(W / 6, H / 6);
-    const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: th.floor === 'snow' ? 0.6 : 0.95 });
+    const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: th.floor === 'snow' ? 0.5 : th.floor === 'neonfloor' ? 0.42 : 0.92, metalness: th.floor === 'neonfloor' ? 0.35 : th.floor === 'snow' ? 0.08 : 0 }); // 1.34 : reflets des lumières au sol
     if (relief) { const n = normalMapFor(envTexture(th.floor, th.accent), th.floor === 'snow' ? 1.2 : 2.2); if (n) { floorMat.normalMap = n.clone(); floorMat.normalMap.needsUpdate = true; floorMat.normalMap.repeat.copy(floorTex.repeat); } }
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, H), floorMat);
     floor.rotation.x = -Math.PI / 2; floor.position.set(W / 2, 0, H / 2);
@@ -369,10 +373,12 @@ export class Game {
     this.softTex = new THREE.CanvasTexture(pc);
     // particules d'ambiance : poussière de jour, lucioles colorées la nuit (suivent la caméra)
     {
-      const N = 420, pos = new Float32Array(N * 3);
-      for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 50; pos[i * 3 + 1] = Math.random() * 7; pos[i * 3 + 2] = (Math.random() - 0.5) * 50; }
+      // 1.34 : sable qui vole (désert), neige qui tombe (glace), braises qui montent (temple), lucioles colorées (néon)
+      const ds = themeOf(th).dust; this.dustStyle = ds;
+      const N = ds.n, pos = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 50; pos[i * 3 + 1] = Math.random() * 9; pos[i * 3 + 2] = (Math.random() - 0.5) * 50; }
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const mat = new THREE.PointsMaterial({ map: this.softTex, size: th.night ? 0.16 : 0.07, color: th.night ? th.accent : '#fff4dc', transparent: true, opacity: th.night ? 0.75 : 0.45, depthWrite: false, blending: th.night ? THREE.AdditiveBlending : THREE.NormalBlending, sizeAttenuation: true });
+      const mat = new THREE.PointsMaterial({ map: this.softTex, size: ds.size, color: ds.color || th.accent, transparent: true, opacity: ds.opacity, depthWrite: false, blending: ds.add ? THREE.AdditiveBlending : THREE.NormalBlending, sizeAttenuation: true });
       this.dust = new THREE.Points(geo, mat); this.dust.frustumCulled = false; this.dust.renderOrder = 2;
       this.dust.visible = ST().particles !== false && ST().gfxPreset !== 'low';
       S.add(this.dust);
@@ -1478,7 +1484,9 @@ export class Game {
         const vmMuzzle = new THREE.Vector3(...eye).add(new THREE.Vector3(...d).multiplyScalar(0.8)).add(new THREE.Vector3(0, -0.12, 0));
         this.addTracer(vmMuzzle, new THREE.Vector3(...end.p));
         this.addImpact(end.p, end.player ? '#ff3355' : '#ffe0a0');
+        this.fx?.impact(eye, end.p, end.player);
       }
+      this.fx?.casing(def);
     }
   }
 
@@ -1626,9 +1634,10 @@ export class Game {
       this.local.flashDur = 1.2;
       this.shake = 1;
       this.addImpact(m.p, '#ff2f6d', 12, 1.2);
+      this.fx?.shockwave(m.p, '#ff5a3a', 14);
     });
     on('flash', m => { const now = performance.now() / 1000; this.local.flashUntil = now + m.d; this.local.flashDur = m.d; });
-    on('flashBang', m => { SFX.playFlashBang(m.p); this.addImpact(m.p, '#ffffff', 5, 0.3); this.caption('Flash', m.p, 'flash'); });
+    on('flashBang', m => { SFX.playFlashBang(m.p); this.addImpact(m.p, '#ffffff', 5, 0.3); this.fx?.shockwave(m.p, '#ffffff', 7); this.caption('Flash', m.p, 'flash'); });
     on('ability', m => {
       if (m.i !== this.myId) SFX.playAbility(m.k, m.p);
       if (m.i !== this.myId && m.p) this.caption(this.isEnemyId(m.i) ? 'Capacité ennemie' : 'Capacité alliée', m.p, 'ab' + (this.isEnemyId(m.i) ? 'e' : 'a'), 45);
@@ -1806,6 +1815,7 @@ export class Game {
         const core = new THREE.Mesh(new THREE.SphereGeometry(sm.r * 0.92, 20, 14), mat); g.add(core);
         g.position.set(...sm.p); g.userData = { mat, r: sm.r, born: performance.now() / 1000, p: sm.p };
         g.scale.setScalar(0.2);
+        this.fx?.decorateSmoke(g, sm);
         this.scene.add(g); this.smokeMeshes.set(sm.i, g);
         SFX.playSmoke(sm.p);
       }
@@ -1830,6 +1840,7 @@ export class Game {
           g.add(sp); flames.push(sp);
         }
         g.position.set(...f.p); g.userData = { flames, disc, kind: f.k };
+        this.fx?.decorateFire(g, f);
         this.scene.add(g); this.fireMeshes.set(f.i, g);
         if (f.k === 'frost') SFX.playFrost?.(f.p); else SFX.playFire(f.p);
       }
@@ -1893,7 +1904,7 @@ export class Game {
       start = o.ch.weapon.localToWorld(o.ch.weapon.userData.muzzle.clone());
       o.fireT = 0.06;
     }
-    if (type !== 'melee') for (const e of m.e) { this.addTracer(start, new THREE.Vector3(...e)); this.addImpact(e, '#ffe0a0'); }
+    if (type !== 'melee') for (const e of m.e) { this.addTracer(start, new THREE.Vector3(...e)); this.addImpact(e, '#ffe0a0'); if (m.o) this.fx?.impact(m.o, e, false); }
     this.shotSeen.set(m.i, performance.now() / 1000);
   }
 
@@ -2262,8 +2273,10 @@ export class Game {
       g.userData.disc.material.opacity = 0.25 + Math.sin(now * 12) * 0.06;
     }
     for (const g of this.dropMeshes.values()) { g.userData.wm.rotation.y += dt * 1.2; g.userData.ring.material.opacity = 0.35 + Math.sin(now * 4) * 0.2; }
+    this.fx?.update(dt, now);
     for (const m of this.projMeshes.values()) {
       const tg = m.userData.target;
+      if (!m.userData.knife && this.fx && (m.userData.trailT = (m.userData.trailT || 0) - dt) <= 0) { m.userData.trailT = 0.04; const lp = m.userData.lastTrail; if (!lp || m.position.distanceTo(lp) > 0.08) { this.fx.trail(m.position.toArray(), '#ffd9a0'); m.userData.lastTrail = m.position.clone(); } }
       if (tg) m.position.lerp(new THREE.Vector3(...tg), Math.min(1, dt * 15));
       if (m.userData.knife) {
         const pv = m.userData.pivot;

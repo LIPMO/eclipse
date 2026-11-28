@@ -929,6 +929,20 @@ export class Match {
       ends.push([r2(origin[0] + dir[0] * bestT), r2(origin[1] + dir[1] * bestT), r2(origin[2] + dir[2] * bestT)]);
     }
     if (dmgAcc.size && d.type !== 'melee') p.hits++;
+    // 1.34 : celui qui te tire dessus n'est jamais invisible pour toi ; l'éclair du tir le révèle aux ennemis qui voient l'arme
+    if (d.type !== 'melee') {
+      for (const q of this.players.values()) {
+        if (q === p || !q.alive || !this.isEnemy(q, p) || q.isBot) continue;
+        q.visUntil ||= new Map();
+        if (dmgAcc.has(q)) { q.visUntil.set(p.id, this.time + 2); continue; }
+        const qe = this.eye(q), dist = Math.hypot(origin[0] - qe[0], origin[2] - qe[2]);
+        if (dist > 120 || p.invisEnd > this.time) continue;
+        const dir = [(origin[0] - qe[0]) / (dist || 1), 0, (origin[2] - qe[2]) / (dist || 1)];
+        const len = Math.hypot(origin[0] - qe[0], origin[1] - qe[1], origin[2] - qe[2]) || 1;
+        const nd = [(origin[0] - qe[0]) / len, (origin[1] - qe[1]) / len, (origin[2] - qe[2]) / len];
+        if (raycastBoxes(qe, nd, len - 0.3, this.allBoxes()).t >= len - 0.35) q.visUntil.set(p.id, this.time + 1.2);
+      }
+    }
     for (const [q, acc] of dmgAcc) this.damage(q, acc.dmg, p, w.id, acc.head);
     this.broadcast({ type: 'shot', i: p.id, w: w.id, o: origin.map(r2), e: ends.slice(0, 4) });
     (p.shotLog ||= []).push([r2(this.time), w.id, ends[0]]);
@@ -1446,19 +1460,23 @@ export class Match {
   losFrom(viewer, q, T) {
     const e = this.eye(viewer);
     const v = viewer.snapVel || [0, 0];
-    const eyes = [e, [e[0] + v[0] * 0.15, e[1], e[2] + v[1] * 0.15]]; // anticipe un léger déplacement (pas d'apparition brutale au coin)
+    // 1.34 : anticipation plus longue (latence + affichage différé) et regard depuis les deux côtés de la tête
+    const eyes = [e, [e[0] + v[0] * 0.25, e[1], e[2] + v[1] * 0.25], [e[0] + v[0] * 0.12, e[1], e[2] + v[1] * 0.12]];
     const h = q.crouch ? PLAYER.hCrouch : PLAYER.h;
     const qv = q.snapVel || [0, 0];
     const dx = q.pos[0] - e[0], dz = q.pos[2] - e[2];
     const dist = Math.hypot(dx, dz);
     if (q.invisEnd > T) return dist < 4;
     if (dist < 5) return true;
-    if (dist > 95) return false;
+    if (dist > 220) return false; // 1.34 : avant 95 m, les grandes cartes (≈ 130 m) avaient des ennemis invisibles au loin
     const px = -dz / dist * 0.55, pz = dx / dist * 0.55; // décalage latéral (épaules)
     const pts = [
       [q.pos[0], q.pos[1] + h - 0.15, q.pos[2]], [q.pos[0], q.pos[1] + h * 0.55, q.pos[2]], [q.pos[0], q.pos[1] + 0.3, q.pos[2]],
       [q.pos[0] + px, q.pos[1] + h * 0.6, q.pos[2] + pz], [q.pos[0] - px, q.pos[1] + h * 0.6, q.pos[2] - pz],
       [q.pos[0] + qv[0] * 0.2, q.pos[1] + h * 0.6, q.pos[2] + qv[1] * 0.2],
+      // 1.34 : côtés de la tête et position anticipée de la tête (un ennemi qui sort d'un angle apparaît à temps)
+      [q.pos[0] + px * 0.5, q.pos[1] + h - 0.12, q.pos[2] + pz * 0.5], [q.pos[0] - px * 0.5, q.pos[1] + h - 0.12, q.pos[2] - pz * 0.5],
+      [q.pos[0] + qv[0] * 0.3, q.pos[1] + h - 0.15, q.pos[2] + qv[1] * 0.3],
     ];
     const boxes = this.allBoxes();
     for (const o of eyes) for (const t of pts) {
@@ -1478,7 +1496,7 @@ export class Match {
     if (q.revealEnd > T) return 'full';
     const viewers = r.alive ? [r] : [...this.players.values()].filter(a => a.alive && a !== r && !this.isEnemy(r, a));
     r.visUntil = r.visUntil || new Map();
-    if (viewers.some(v => this.losFrom(v, q, T))) { r.visUntil.set(q.id, T + 0.5); return 'full'; }
+    if (viewers.some(v => this.losFrom(v, q, T))) { r.visUntil.set(q.id, T + 1.0); return 'full'; } // 1.34 : 1 s de marge (avant 0,5)
     if ((r.visUntil.get(q.id) || 0) > T) return 'full';
     // bruit de pas : un ennemi qui court à moins de 26 m s'entend (comme dans le jeu)
     const sp = q.snapVel ? Math.hypot(q.snapVel[0], q.snapVel[1]) : 0;

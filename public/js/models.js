@@ -15,6 +15,26 @@ function canvasTex(size, draw, repeat = 1) {
   t.anisotropy = 4;
   return t;
 }
+// textures des cartes en haute définition (1.34) : dessinées au double de la taille, puis une couche de détail fin
+// (grain, usure, rayures) ; désactivé en « PC faible »
+let texHD = true;
+export function setTextureQuality(hd) { if (texHD !== !!hd) { texHD = !!hd; for (const k of Object.keys(texCache)) delete texCache[k]; } }
+function canvasTexHD(size, draw, repeat = 1) {
+  if (!texHD) return canvasTex(size, draw, repeat);
+  const k = 2, S = size * k;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.save(); g.scale(k, k); draw(g, size); g.restore();
+  // grain fin
+  for (let i = 0; i < S * S / 60; i++) { const v = Math.random() < 0.5 ? 255 : 0; g.fillStyle = `rgba(${v},${v},${v},${Math.random() * 0.05})`; g.fillRect(Math.random() * S, Math.random() * S, 1, 1); }
+  // petites rayures et taches d'usure
+  g.lineWidth = 1;
+  for (let i = 0; i < 40; i++) { g.strokeStyle = `rgba(0,0,0,${0.04 + Math.random() * 0.06})`; const x = Math.random() * S, y = Math.random() * S, a = Math.random() * 6.28, l = 6 + Math.random() * 26; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+  for (let i = 0; i < 14; i++) { const x = Math.random() * S, y = Math.random() * S, r = 8 + Math.random() * 30; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(0,0,0,${0.05 + Math.random() * 0.06})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
 const rnd = (a, b) => a + Math.random() * (b - a);
 function noise(g, s, alpha, n = 3000, light = true) {
   for (let i = 0; i < n; i++) {
@@ -63,7 +83,7 @@ export function envTexture(kind, accent = '#00e5ff') {
   if (texCache[key]) return texCache[key];
   let t;
   switch (kind) {
-    case 'sand': t = canvasTex(256, (g, s) => {
+    case 'sand': t = canvasTexHD(256, (g, s) => {
       g.fillStyle = '#c9a476'; g.fillRect(0, 0, s, s);
       noise(g, s, 0.08, 5000); noise(g, s, 0.08, 3000, false);
       g.strokeStyle = 'rgba(90,60,30,.35)'; g.lineWidth = 3;
@@ -72,13 +92,13 @@ export function envTexture(kind, accent = '#00e5ff') {
         for (let x = off; x < s; x += 128) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 64); g.stroke(); } }
       g.fillStyle = 'rgba(255,240,210,.12)'; g.fillRect(0, 0, s, 8);
     }); break;
-    case 'sandfloor': t = canvasTex(256, (g, s) => {
+    case 'sandfloor': t = canvasTexHD(256, (g, s) => {
       g.fillStyle = '#d8b585'; g.fillRect(0, 0, s, s);
       noise(g, s, 0.1, 9000); noise(g, s, 0.07, 6000, false);
       g.strokeStyle = 'rgba(120,85,45,.25)'; g.lineWidth = 2;
       for (let i = 0; i <= s; i += 128) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, s); g.moveTo(0, i); g.lineTo(s, i); g.stroke(); }
     }); break;
-    case 'neon': t = canvasTex(256, (g, s) => {
+    case 'neon': t = canvasTexHD(256, (g, s) => {
       g.fillStyle = '#1a1838'; g.fillRect(0, 0, s, s);
       noise(g, s, 0.05, 2000);
       g.strokeStyle = '#0c0b1f'; g.lineWidth = 4;
@@ -93,13 +113,13 @@ export function envTexture(kind, accent = '#00e5ff') {
       g.fillStyle = '#ff3fa4'; g.fillRect(0, 20, s, 2);
       for (let i = 0; i < 4; i++) { g.fillStyle = Math.random() < 0.5 ? accent : '#ff3fa4'; g.fillRect(rnd(0, s), rnd(40, s - 40), rnd(20, 60), 3); }
     }); break;
-    case 'neonfloor': t = canvasTex(256, (g, s) => {
+    case 'neonfloor': t = canvasTexHD(256, (g, s) => {
       g.fillStyle = '#15132b'; g.fillRect(0, 0, s, s);
       noise(g, s, 0.05, 4000);
       g.strokeStyle = 'rgba(0,229,255,.35)'; g.lineWidth = 2;
       for (let i = 0; i <= s; i += 64) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, s); g.moveTo(0, i); g.lineTo(s, i); g.stroke(); }
     }); break;
-    case 'ice': t = canvasTex(256, (g, s) => {
+    case 'ice': t = canvasTexHD(256, (g, s) => {
       const gr = g.createLinearGradient(0, 0, 0, s); gr.addColorStop(0, '#e9f5ff'); gr.addColorStop(1, '#b7d6ee');
       g.fillStyle = gr; g.fillRect(0, 0, s, s);
       noise(g, s, 0.12, 3000);
@@ -108,11 +128,11 @@ export function envTexture(kind, accent = '#00e5ff') {
       g.strokeStyle = 'rgba(60,100,150,.4)'; g.lineWidth = 3;
       for (let y = 0; y <= s; y += 128) { g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke(); }
     }); break;
-    case 'snow': t = canvasTex(256, (g, s) => {
+    case 'snow': t = canvasTexHD(256, (g, s) => {
       g.fillStyle = '#eef6fc'; g.fillRect(0, 0, s, s);
       noise(g, s, 0.08, 9000, false); noise(g, s, 0.3, 3000);
     }); break;
-    case 'temple': t = canvasTex(256, (g, s) => {
+    case 'temple': t = canvasTexHD(256, (g, s) => {
       g.fillStyle = '#7c8270'; g.fillRect(0, 0, s, s);
       for (let y = 0; y < s; y += 42) for (let x = ((y / 42) % 2) * 40; x < s + 80; x += 80) {
         g.fillStyle = shade('#868b77', rnd(0.8, 1.1)); g.fillRect(x - 78, y + 2, 76, 38);
@@ -120,7 +140,7 @@ export function envTexture(kind, accent = '#00e5ff') {
       noise(g, s, 0.1, 5000, false);
       for (let i = 0; i < 25; i++) { g.fillStyle = `rgba(70,120,50,${rnd(0.2, 0.5)})`; g.beginPath(); g.arc(rnd(0, s), rnd(0, s), rnd(4, 18), 0, 7); g.fill(); }
     }); break;
-    case 'moss': t = canvasTex(256, (g, s) => {
+    case 'moss': t = canvasTexHD(256, (g, s) => {
       g.fillStyle = '#6f7a5a'; g.fillRect(0, 0, s, s);
       for (let y = 0; y < s; y += 64) for (let x = 0; x < s; x += 64) { g.fillStyle = shade('#7b8466', rnd(0.85, 1.1)); g.fillRect(x + 2, y + 2, 60, 60); }
       for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(60,110,40,${rnd(0.2, 0.5)})`; g.beginPath(); g.arc(rnd(0, s), rnd(0, s), rnd(3, 14), 0, 7); g.fill(); }
