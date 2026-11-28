@@ -1,5 +1,5 @@
 // Logique de partie autoritaire côté serveur
-import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, SNAP_EVERY, STATS_EVERY, KNIFE_THROW, lossBonus, knifePower, TIMEOUT, reloadTime, partialShells, FALL, BASH } from '../shared/data.js';
+import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, isLastStand, BR, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, SNAP_EVERY, STATS_EVERY, KNIFE_THROW, lossBonus, knifePower, TIMEOUT, reloadTime, partialShells, FALL, BASH } from '../shared/data.js';
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
@@ -85,7 +85,7 @@ export class Match {
       interact: false, prog: 0, progKind: null, interactPos: null,
       respawnAt: 0, diedAt: 0, roundsWon: 0, account: m.account || null, lastDamagedBy: null, lastDamagedAt: -10, joinedMidRound: false,
       level: m.isBot ? 999 : (m.level || 1), prestige: m.isBot ? 0 : (m.prestige || 0), title: m.title || null, clan: m.clan || null, gun: 0,
-      streak: 0, bestStreak: 0, lives: this.mode === 'lives' ? (this.target || 3) : 0, out: false, weaponKills: {}, roundDmg: 0,
+      streak: 0, bestStreak: 0, lives: this.mode === 'lives' ? (this.target || 3) : this.mode === 'br' ? 1 : 0, out: false, weaponKills: {}, roundDmg: 0,
       // statistiques détaillées (progression, quêtes, anti-triche)
       dmg: 0, hsKills: 0, knifeKills: 0, shots: 0, hits: 0, plants: 0, defuses: 0, aces: 0, multi3: 0, abilities: 0, ults: 0, roundKills: 0,
       slides: 0, adsShots: 0,
@@ -170,7 +170,8 @@ export class Match {
     if (isFfa(this.mode)) {
       for (const p of this.players.values()) this.spawnFFA(p);
       this.phase = 'live';
-      this.phaseEnd = this.time + (this.opts.timeLimit || (this.mode === 'gungame' ? FFA.gunTimeLimit : FFA.timeLimit));
+      this.phaseEnd = this.time + (this.mode === 'br' ? BR.timeLimit : this.opts.timeLimit || (this.mode === 'gungame' ? FFA.gunTimeLimit : FFA.timeLimit));
+      if (this.mode === 'br') this.initBR();
     } else {
       this.phase = 'warmup';
       this.phaseEnd = this.time + 2;
@@ -413,13 +414,14 @@ export class Match {
     // MVP : meilleur score de la partie
     let mvp = null;
     for (const p of this.players.values()) if (!mvp || p.score > mvp.score) mvp = p;
-    const stats = [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score, bot: p.isBot, dmg: Math.round(p.dmg), hs: p.hsKills, title: p.title, shots: p.shots, hits: p.hits, best: p.bestStreak, fav: Object.entries(p.weaponKills || {}).sort((x, y) => y[1] - x[1])[0]?.[0] || null, lives: this.mode === 'lives' ? p.lives : undefined }));
+    const stats = [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score, bot: p.isBot, dmg: Math.round(p.dmg), hs: p.hsKills, title: p.title, shots: p.shots, hits: p.hits, best: p.bestStreak, fav: Object.entries(p.weaponKills || {}).sort((x, y) => y[1] - x[1])[0]?.[0] || null, lives: this.mode === 'lives' ? p.lives : undefined, place: this.mode === 'br' ? (p.place || 1) : undefined }));
     const rewards = {}, results = [];
     const scoreLine = isFfa(this.mode) ? '' : `${this.score.alpha}-${this.score.beta}`;
     for (const p of this.players.values()) {
       if (p.isBot) continue;
       const won = isFfa(this.mode) ? winner === p.id : winner === p.team;
-      rewards[p.id] = Math.round((REWARDS.matchPlayed + p.kills * REWARDS.kill + p.roundsWon * REWARDS.roundWin + (won ? REWARDS.matchWin : 0)) * (this.io.rewardMul ? this.io.rewardMul() : 1));
+      const brBonus = this.mode === 'br' ? Math.max(0, 9 - (p.place || 1)) * 20 : 0; // classement : 160 Éclats au 1er … 20 au 8e
+      rewards[p.id] = Math.round((REWARDS.matchPlayed + p.kills * REWARDS.kill + p.roundsWon * REWARDS.roundWin + (won ? REWARDS.matchWin : 0) + brBonus) * (this.io.rewardMul ? this.io.rewardMul() : 1));
       results.push({
         id: p.id, account: p.account, name: p.name, team: p.team, reward: rewards[p.id], won, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score,
         mode: this.mode, mapId: this.map.id, agent: p.agent, dmg: p.dmg, hsKills: p.hsKills, knifeKills: p.knifeKills, shots: p.shots, hits: p.hits,
@@ -457,6 +459,7 @@ export class Match {
     p.alive = true; p.hp = 100; p.armor = 50; p.money = 9000; p.reloadEnd = 0; p.knifeOut = false;
     this.projectiles = this.projectiles.filter(pr => !(pr.kind === 'knife' && pr.owner === p.id));
     if (this.mode === 'gungame') { this.gunLoadout(p); p.armor = 0; } // pas d'armure : le couteau final reste jouable
+    else if (this.mode === 'br') { p.weapons = { 1: null, 2: null, 3: { id: 'knife' } }; p.slot = 3; p.armor = 0; p.money = 0; }
     else {
       const prim = p.weapons?.[1]?.id || 'lancer';
       p.weapons = { 1: prim ? this.newWeapon(prim) : null, 2: this.newWeapon(p.weapons?.[2]?.id || 'spark'), 3: { id: 'knife' } };
@@ -468,6 +471,65 @@ export class Match {
     const [mw, mh] = this.map.size;
     this.teleport(p, best, Math.atan2(-(mw / 2 - best[0]), -(mh / 2 - best[2])));
     if (p.brain) p.brain.onRoundStart();
+  }
+
+  // ---------- Battle Royale (1.42) ----------
+  initBR() {
+    const [mw, mh] = this.map.size;
+    this.chests = this.map.chests.map(([x, z], i) => ({ id: i, pos: [x, 0, z], open: false }));
+    this.zone = { c: [mw / 2, mh / 2], r: BR.startRadius, stage: 0, shrinking: false, until: this.time + BR.stages[0][0] };
+    this.pickNextZone();
+  }
+  pickNextZone() {
+    const z = this.zone, st = BR.stages[Math.min(z.stage, BR.stages.length - 1)];
+    z.nr = st[2];
+    // le prochain cercle est entièrement dans l'actuel, centré sur une case praticable
+    for (let k = 0; k < 30; k++) {
+      const a = Math.random() * Math.PI * 2, d = Math.random() * Math.max(0, Math.min(z.r, 70) - z.nr);
+      const x = z.c[0] + Math.cos(a) * d, y = z.c[1] + Math.sin(a) * d;
+      if (this.map.walkable(Math.floor(x / CELL), Math.floor(y / CELL)) || k === 29) { z.nc = [x, y]; break; }
+    }
+  }
+  tickZone(dt) {
+    const z = this.zone, T = this.time, st = BR.stages[Math.min(z.stage, BR.stages.length - 1)];
+    if (!z.shrinking && T >= z.until) {
+      z.shrinking = true; z.from = { c: z.c.slice(), r: z.r, t: T }; z.until = T + st[1];
+      this.broadcast({ type: 'notice', text: 'LA ZONE SE RESSERRE !' });
+    } else if (z.shrinking) {
+      const k = Math.min(1, (T - z.from.t) / st[1]);
+      z.r = z.from.r + (z.nr - z.from.r) * k;
+      z.c = [z.from.c[0] + (z.nc[0] - z.from.c[0]) * k, z.from.c[1] + (z.nc[1] - z.from.c[1]) * k];
+      if (k >= 1) {
+        z.shrinking = false;
+        if (z.stage < BR.stages.length - 1) { z.stage++; z.until = T + BR.stages[z.stage][0]; this.pickNextZone(); }
+        else z.until = Infinity;
+      }
+    }
+    // dégâts hors de la zone (ceux de l'étape en cours)
+    const dps = BR.stages[Math.min(z.stage, BR.stages.length - 1)][3];
+    for (const p of this.players.values()) {
+      if (!p.alive || p.out) continue;
+      if (Math.hypot(p.pos[0] - z.c[0], p.pos[2] - z.c[1]) > z.r) this.damage(p, dps * dt, null, 'zone', false, true);
+    }
+  }
+  openChest(p, i) {
+    const c = this.chests?.[i];
+    if (!c || c.open || !p.alive || this.phase !== 'live') return;
+    if (Math.hypot(p.pos[0] - c.pos[0], p.pos[2] - c.pos[2]) > BR.chestRange + 0.4) return;
+    c.open = true;
+    let roll = Math.random() * 100, rar = 'common';
+    for (const [r, pct] of Object.entries(BR.lootOdds)) { rar = r; if ((roll -= pct) < 0) break; }
+    const pool = BR.loot[rar], id = pool[(Math.random() * pool.length) | 0], slot = WEAPONS[id].slot;
+    const w = this.newWeapon(id);
+    if (w.reserve != null) w.reserve += Math.round((WEAPONS[id].mag || 10) * 1.5);
+    let got = '';
+    if (!p.weapons[slot]) { p.weapons[slot] = w; got = 'arme'; this.send(p, { type: 'picked', item: id, slot }); }
+    else this.drops.push({ id: this.nextId++, w, pos: [c.pos[0] + 0.6, 0, c.pos[2]], from: null, noPick: 0 });
+    const bonus = Math.random();
+    if (bonus < 0.4) p.armor = Math.min(100, (p.armor || 0) + 50);
+    else if (bonus < 0.8) p.hp = Math.min(100, p.hp + 50);
+    this.broadcast({ type: 'chestOpen', i, by: p.id });
+    this.send(p, { type: 'chestLoot', w: id, rar, bonus: bonus < 0.4 ? 'armor' : bonus < 0.8 ? 'heal' : null, inSlot: !!got });
   }
 
   // ---------- Gun Game ----------
@@ -500,6 +562,7 @@ export class Match {
       case 'input': return this.handleInput(p, msg);
       case 'slide': return this.handleSlide(p);
       case 'wallJump': return this.handleWallJump(p);
+      case 'chest': return this.openChest(p, msg.i);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'bash': return this.handleBash(p, msg);
@@ -670,7 +733,7 @@ export class Match {
   }
 
   handleBuy(p, item) {
-    if (!p.alive || this.mode === 'gungame' || this.knifeRound) return;
+    if (!p.alive || this.mode === 'gungame' || this.mode === 'br' || this.knifeRound) return;
     const ffa = isFfa(this.mode);
     if (!ffa && this.phase !== 'buy') return;
     if (WEAPONS[item] && item !== 'knife') {
@@ -1029,7 +1092,7 @@ export class Match {
     this.io.onEvent?.('kill', { weapon: wpn, head: !!head, killer: a && a !== v ? a.name : null, victim: v.name });
     if (isFfa(this.mode)) {
       v.respawnAt = this.time + (this.opts.respawn || FFA.respawn);
-      if (this.mode === 'lives') return this.livesKill(v);
+      if (isLastStand(this.mode)) return this.livesKill(v);
       if (this.mode === 'gungame') this.gunKill(v, a, wpn);
       else if (a && a !== v && a.kills >= this.target && this.phase !== 'over') this.matchOver(a.id);
     }
@@ -1038,8 +1101,10 @@ export class Match {
   // Dernier debout : chaque joueur a quelques vies ; le dernier encore en jeu gagne
   livesKill(v) {
     v.lives = Math.max(0, v.lives - 1);
-    if (v.lives <= 0) { v.out = true; v.respawnAt = 0; this.broadcast({ type: 'notice', text: `${v.name.toUpperCase()} EST ÉLIMINÉ DÉFINITIVEMENT` }); }
+    const alive0 = [...this.players.values()].filter(p => !p.out).length;
+    if (v.lives <= 0) { v.out = true; v.respawnAt = 0; v.place = alive0; this.broadcast({ type: 'notice', text: this.mode === 'br' ? `${v.name.toUpperCase()} EST ÉLIMINÉ · ${alive0 - 1} JOUEUR(S) EN VIE` : `${v.name.toUpperCase()} EST ÉLIMINÉ DÉFINITIVEMENT` }); }
     const left = [...this.players.values()].filter(p => !p.out);
+    if (left.length === 1) left[0].place = 1;
     if (left.length <= 1 && this.phase !== 'over') this.matchOver(left[0]?.id || null);
   }
   updateLeader() {
@@ -1376,6 +1441,7 @@ export class Match {
     }
 
     this.pickupDrops();
+    if (this.mode === 'br' && this.phase === 'live') this.tickZone(dt);
     if (assault) this.tickAssault(dt);
     else if (this.phase === 'live' && T >= this.phaseEnd) {
       let best = null;
@@ -1565,6 +1631,7 @@ export class Match {
       fires: this.fires.map(f => ({ i: f.id, p: f.pos.map(r2), r: f.r, k: f.kind, u: r2(f.end - T) })),
       walls: this.walls.map(w => ({ i: w.wallId, min: w.min.map(r2), max: w.max.map(r2), hp: w.hp })),
       drops: this.drops.map(d => ({ i: d.id, w: d.w.id, p: d.pos.map(r2) })),
+      ...(this.zone ? { zone: { c: this.zone.c.map(r2), r: r2(this.zone.r), nc: this.zone.nc.map(r2), nr: r2(this.zone.nr), st: this.zone.stage, sh: this.zone.shrinking ? 1 : 0, t: r2(Math.max(0, this.zone.until - T)) }, cho: this.chests.filter(c => c.open).map(c => c.id), alive: [...this.players.values()].filter(p => !p.out).length } : {}),
     };
     const commonStr = JSON.stringify(common).slice(1);
     const meCache = new Map();

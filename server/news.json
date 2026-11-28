@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.42.0",
+    "date": "2026-11-28",
+    "title": "Nouveau mode : Battle Royale",
+    "items": [
+      "Nouveau mode BATTLE ROYALE : 16 joueurs (complétés par des bots), une seule vie, le dernier survivant gagne.",
+      "Nouvelle carte BOURG : une petite ville au crépuscule de 160 m de côté, avec des rues, des maisons ouvertes, une place centrale et 32 coffres.",
+      "Tout le monde part au couteau. Ouvre les coffres avec la touche d'interaction (F par défaut) : une arme de rareté commune à légendaire, des munitions, et souvent +50 armure ou +50 PV.",
+      "La zone violette se resserre en 5 étapes. Le prochain cercle est affiché en blanc sur la mini-carte et au sol. Hors de la zone, tu perds des PV de plus en plus vite.",
+      "Bandeau de zone avec le compte à rebours et le nombre de joueurs en vie. En fin de partie : ton classement (TOP 1, TOP 2…) et un bonus d'Éclats selon ta place.",
+      "Les bots ouvrent les coffres, fuient la zone et se battent."
+    ]
+  },
+  {
     "version": "1.41.0",
     "date": "2026-11-28",
     "title": "Saut mural",

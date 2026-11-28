@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
-import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower, recoilX, RECOIL_PATTERNS, INTERP_DELAY, reloadTime, partialShells, BASH, SCOPE_LEVELS } from '/shared/data.js';
+import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, isLastStand, BR, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower, recoilX, RECOIL_PATTERNS, INTERP_DELAY, reloadTime, partialShells, BASH, SCOPE_LEVELS } from '/shared/data.js';
 import { tr } from './i18n.js';
 import { collideMove, overlaps, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm, groundHeight } from '/shared/physics.js';
 import { setTextureQuality, envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
@@ -388,6 +388,26 @@ export class Game {
       }
     }
     S.add(this.barriers);
+    // Battle Royale (1.42) : coffres et mur de la zone
+    this.chestMeshes = [];
+    if (this.mode === 'br') {
+      const wood = new THREE.MeshStandardMaterial({ color: '#7a4a24', roughness: 0.8 }), band = new THREE.MeshStandardMaterial({ color: '#ffcf5a', emissive: '#ffb11f', emissiveIntensity: 0.9, metalness: 0.6, roughness: 0.3 });
+      for (const [x, z] of m.chests) {
+        const c = new THREE.Group(); c.position.set(x, 0, z);
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.55, 0.7), wood); body.position.y = 0.28; c.add(body);
+        const lid = new THREE.Group(); lid.position.set(0, 0.55, -0.35); c.add(lid);
+        const top = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.22, 0.74), wood); top.position.set(0, 0.11, 0.35); lid.add(top);
+        const b1 = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.06, 0.76), band); b1.position.set(0, 0.04, 0.35); lid.add(b1);
+        const lock = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.05), band); lock.position.set(0, 0.42, 0.37); c.add(lock);
+        const glow = new THREE.PointLight('#ffcf5a', 1.4, 5, 2); glow.position.y = 1; c.add(glow);
+        c.userData = { lid, glow, band: b1, open: false };
+        S.add(c); this.chestMeshes.push(c);
+      }
+      const zm = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 60, 96, 1, true), new THREE.MeshBasicMaterial({ color: '#b26bff', transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
+      zm.position.y = 30; zm.renderOrder = 3; S.add(zm); this.zoneMesh = zm;
+      const nz = new THREE.Mesh(new THREE.RingGeometry(0.985, 1, 128), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
+      nz.rotation.x = -Math.PI / 2; nz.position.y = 0.06; S.add(nz); this.nextZoneMesh = nz;
+    }
     // noyau
     const coreG = new THREE.Group();
     const coreMat = new THREE.MeshStandardMaterial({ color: '#2a0f2f', emissive: '#ff2f6d', emissiveIntensity: 1.6, metalness: 0.6, roughness: 0.3 });
@@ -841,7 +861,7 @@ export class Game {
     if (!el.isConnected) return;
     let a = 0, b = 0;
     if (this.mode === 'gungame') { a = ((this.self?.gl || 0)) / (GUN_LADDER.length - 1); b = Math.max(0, ...s.players.filter(p => p.i !== this.myId).map(p => p.gl || 0)) / (GUN_LADDER.length - 1); }
-    else if (this.mode === 'lives') { el.style.display = 'none'; return; }
+    else if (isLastStand(this.mode)) { el.style.display = 'none'; return; }
     else if (isFfa(this.mode)) { a = (this.self?.k ?? 0) / this.target; b = Math.max(0, ...s.players.filter(p => p.i !== this.myId).map(p => p.k)) / this.target; }
     else { a = (s.sc[myTeam] ?? 0) / this.target; b = (s.sc[myTeam === 'alpha' ? 'beta' : 'alpha'] ?? 0) / this.target; }
     el.style.display = '';
@@ -876,7 +896,7 @@ export class Game {
   addKillfeed(m) {
     const kf = $('killfeed');
     const cls = id => id === this.myId ? 'ally' : this.isEnemyId(id) ? 'enemy' : 'ally';
-    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', core: 'Noyau', admin: 'Admin', fall: 'Chute', bash: 'Coup de crosse' }[m.w] || m.w;
+    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', core: 'Noyau', admin: 'Admin', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone' }[m.w] || m.w;
     const div = document.createElement('div');
     div.className = 'kf' + (m.k === this.myId || m.v === this.myId ? ' mine' : '');
     div.innerHTML = (m.k ? `<span class="${cls(m.k)}">${esc(this.nameOf(m.k))}</span>` : '') +
@@ -1032,7 +1052,7 @@ export class Game {
       case 'abilityQ': this.useAbility('q'); break;
       case 'abilityE': this.useAbility('e'); break;
       case 'ult': this.useAbility('x'); break;
-      case 'interact': this.net.send('interact', { on: true }); this.interacting = true; break;
+      case 'interact': { const ci = this.nearChest(); if (ci >= 0) { this.net.send('chest', { i: ci }); break; } this.net.send('interact', { on: true }); this.interacting = true; break; }
       case 'scoreboard': this.showScoreboard(true); break;
       case 'scope': if (this.curWeaponId() === 'knife') { this.chargeKnife(); break; } ST().scopeHold ? this.toggleScope(true) : this.toggleScope(); break;
       case 'drop': if (this.me?.al && !this.ended) this.net.send('drop'); break;
@@ -1294,7 +1314,7 @@ export class Game {
 
   renderScoreboard() {
     if (!this.snap) return;
-    const gun = this.mode === 'gungame', lives = this.mode === 'lives';
+    const gun = this.mode === 'gungame', lives = isLastStand(this.mode);
     const players = this.snap.players.slice().sort((a, b) => gun ? (b.gl || 0) - (a.gl || 0) || b.k - a.k : lives ? (b.lv || 0) - (a.lv || 0) || b.k - a.k : b.sc - a.sc);
     const me = this.roster.get(this.myId);
     const row = p => {
@@ -1308,7 +1328,7 @@ export class Game {
     let html;
     if (this.mode === 'duel') html = `<h2>DUEL 1v1 — premier à ${this.target} manches</h2><br>${head}${players.map(row).join('')}`;
     else if (gun) html = `<h2>GUN GAME — chaque élimination donne l'arme suivante, le couteau pour finir</h2><br>${head}${players.map(row).join('')}`;
-    else if (lives) html = `<h2>DERNIER DEBOUT — ${this.target} vie(s) par joueur, le dernier en jeu gagne</h2><br>${head}${players.map(row).join('')}`;
+    else if (lives) html = `<h2>${this.mode === 'br' ? 'BATTLE ROYALE — une seule vie, reste dans la zone, le dernier survivant gagne' : `DERNIER DEBOUT — ${this.target} vie(s) par joueur, le dernier en jeu gagne`}</h2><br>${head}${players.map(row).join('')}`;
     else if (isFfa(this.mode)) html = `<h2>MÊLÉE — premier à ${this.target} éliminations</h2><br>${head}${players.map(row).join('')}`;
     else {
       const ally = players.filter(p => this.roster.get(p.i)?.team === me?.team);
@@ -1748,6 +1768,13 @@ export class Game {
     on('whisper', m => this.addWhisper(m));
     on('matchSummary', m => this.onSummary(m));
     on('matchEnd', m => this.onMatchEnd(m));
+    on('chestOpen', m => { const c = this.chestMeshes?.[m.i]; if (c && !c.userData.open) { this.openChestMesh(c); SFX.playUI?.('click'); } });
+    on('chestLoot', m => {
+      const RAR = { common: ['COMMUN', '#9aa3ad'], rare: ['RARE', '#3d9bff'], epic: ['ÉPIQUE', '#b05cff'], legendary: ['LÉGENDAIRE', '#ffb11f'] }[m.rar] || ['', '#fff'];
+      this.banner(`${WEAPONS[m.w]?.name?.toUpperCase() || m.w}`, `${RAR[0]}${m.inSlot ? '' : ' · posée au sol (emplacement déjà pris)'}${m.bonus === 'armor' ? ' · +50 armure' : m.bonus === 'heal' ? ' · +50 PV' : ''}`, '', 2.2);
+      SFX.playPromote?.();
+      if (m.inSlot && this.local.slot === 3) setTimeout(() => { if (this.me?.wp?.[WEAPONS[m.w].slot]) this.switchSlot(WEAPONS[m.w].slot); }, 150); // prend l'arme trouvée en main
+    });
   }
 
   onSnap(s) {
@@ -1824,6 +1851,13 @@ export class Game {
   }
 
   syncDynamic(s) {
+    if (s.zone && this.zoneMesh) {
+      this.zone = s.zone;
+      this.zoneMesh.scale.set(Math.max(0.1, s.zone.r), 1, Math.max(0.1, s.zone.r)); this.zoneMesh.position.x = s.zone.c[0]; this.zoneMesh.position.z = s.zone.c[1];
+      this.nextZoneMesh.visible = s.zone.nr > 0 && s.zone.nr < s.zone.r - 0.5;
+      this.nextZoneMesh.scale.set(Math.max(0.1, s.zone.nr), Math.max(0.1, s.zone.nr), 1); this.nextZoneMesh.position.x = s.zone.nc[0]; this.nextZoneMesh.position.z = s.zone.nc[1];
+    }
+    if (s.cho && this.chestMeshes?.length) for (const i of s.cho) { const c = this.chestMeshes[i]; if (c && !c.userData.open) this.openChestMesh(c); }
     // murs de glace
     const wallIds = new Set(s.walls.map(w => w.i));
     let wallsChanged = false;
@@ -2172,6 +2206,17 @@ export class Game {
     this.net.send('slide');
   }
 
+  openChestMesh(c) {
+    c.userData.open = true; c.userData.lid.rotation.x = -1.9; c.userData.glow.intensity = 0;
+    c.userData.band.material = c.userData.band.material.clone(); c.userData.band.material.emissiveIntensity = 0.05;
+  }
+  nearChest() {
+    if (this.mode !== 'br' || !this.chestMeshes?.length || !this.me?.al) return -1;
+    let best = -1, bd = BR.chestRange;
+    this.chestMeshes.forEach((c, i) => { if (c.userData.open) return; const d = Math.hypot(c.position.x - this.local.pos[0], c.position.z - this.local.pos[2]); if (d < bd) { bd = d; best = i; } });
+    return best;
+  }
+
   // normale du mur touché (le joueur est en l'air, à moins de 0,25 m d'une paroi), ou null
   wallNormal(pos) {
     const hw = PLAYER.hw + 0.25;
@@ -2510,7 +2555,12 @@ export class Game {
       const best = Math.max(0, ...s.players.filter(p => p.i !== this.myId).map(p => p.k));
       // classement en direct : position du joueur
       const pos = 1 + s.players.filter(p => p.i !== this.myId && p.k > myK).length;
-      if (this.mode === 'lives') {
+      if (this.mode === 'br') {
+        const inGame = s.alive ?? s.players.filter(p => (p.lv ?? 1) > 0).length;
+        $('score-left').textContent = this.self?.k ?? 0;
+        $('score-right').textContent = inGame;
+        $('round-label').textContent = `${inGame} EN VIE · ${this.self?.k ?? 0} ÉLIM.`;
+      } else if (this.mode === 'lives') {
         const inGame = s.players.filter(p => (p.lv ?? 1) > 0).length;
         $('score-left').textContent = this.self?.lv ?? 0;
         $('score-right').textContent = inGame;
@@ -2598,6 +2648,20 @@ export class Game {
       else if (me.side === 'def' && s.ph === 'planted' && s.core.f < ROUND.defuseTime) hint = '⚠ PLUS ASSEZ DE TEMPS POUR DÉSAMORCER : METS-TOI À L\'ABRI !';
       else if (me.side === 'def' && s.ph === 'planted' && s.core.p && Math.hypot(s.core.p[0] - this.local.pos[0], s.core.p[2] - this.local.pos[2]) < 2.3) hint = `MAINTENEZ ${KB('interact')} POUR DÉSAMORCER`;
       else if (s.ph === 'buy') hint = `${KB('buy')} — MENU D'ACHAT`;
+    }
+    if (this.mode === 'br' && me.al) {
+      if (this.nearChest() >= 0) hint = `${KB('interact')} — OUVRIR LE COFFRE`;
+      const z = s.zone;
+      if (z) {
+        const out = Math.hypot(this.local.pos[0] - z.c[0], this.local.pos[2] - z.c[1]) > z.r;
+        if (out && !hint) hint = '⚠ HORS DE LA ZONE : RETOURNE DANS LE CERCLE !';
+        document.body.classList.toggle('br-out', out);
+      }
+    } else document.body.classList.remove('br-out');
+    if (this.mode === 'br' && s.zone) {
+      let zb = $('br-zone'); if (!zb) { zb = document.createElement('div'); zb.id = 'br-zone'; $('hud').appendChild(zb); }
+      const z = s.zone, mm = Math.floor(z.t / 60), ss = String(Math.floor(z.t % 60)).padStart(2, '0');
+      zb.innerHTML = `<b>ZONE ${z.st + 1}/${BR.stages.length}</b> · ${z.sh ? `SE RESSERRE <span class="warn">${mm}:${ss}</span>` : z.t > 9999 ? 'DERNIÈRE ZONE' : `RESSERREMENT DANS ${mm}:${ss}`} · <b>${s.alive ?? '?'}</b> EN VIE`;
     }
     $('core-hint').textContent = hint;
     $('core-hint').classList.toggle('warn', hint.startsWith('⚠'));
@@ -2973,7 +3037,7 @@ export class Game {
     const ghost = buildCharacter(r?.agent || 'ignis', ALLY);
     this.scene.add(ghost.root);
     this.kc = { m, t0, dur: t1 - t0, start: performance.now() / 1000 + 0.35, ghost, shotIdx: 0 };
-    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse' }[m.w] || '';
+    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone' }[m.w] || '';
     $('kc-who').innerHTML = `Éliminé par <b style="color:${ENEMY}">${esc(m.kn || '?')}</b>${wn ? ` · ${esc(wn)}` : ''}${m.h ? ' · <b>tête</b>' : ''} <span class="muted">(${m.hp} PV restants)</span>`;
     $('kc-skip').textContent = `${KB('jump')} ou clic pour passer`;
     $('killcam').classList.add('on');
@@ -3100,6 +3164,17 @@ export class Game {
     const tn = performance.now() / 1000;
     this.allyDeaths = this.allyDeaths.filter(d => tn - d.t < 15);
     for (const d of this.allyDeaths) { const [x, y] = P(d.p[0], d.p[2]); g.strokeStyle = ALLY; g.globalAlpha = 0.9 - (tn - d.t) / 25; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 4, y - 4); g.lineTo(x + 4, y + 4); g.moveTo(x + 4, y - 4); g.lineTo(x - 4, y + 4); g.stroke(); g.globalAlpha = 1; }
+    // Battle Royale : coffres fermés, zone actuelle et prochaine
+    if (this.mode === 'br') {
+      for (const c of this.chestMeshes) if (!c.userData.open) { const [x, y] = P(c.position.x, c.position.z); g.fillStyle = '#ffcf5a'; g.fillRect(x - 2.5, y - 2.5, 5, 5); }
+      const z = snap.zone;
+      if (z) {
+        const [cx, cy] = P(z.c[0], z.c[1]), R = (z.r / CELL) * s;
+        g.save(); g.fillStyle = 'rgba(120,40,200,.35)'; g.beginPath(); g.rect(-2000, -2000, 4400, 4400); g.arc(cx, cy, Math.max(0.5, R), 0, Math.PI * 2, true); g.fill('evenodd'); g.restore();
+        g.strokeStyle = '#c58bff'; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, Math.max(0.5, R), 0, 7); g.stroke();
+        if (z.nr > 0 && z.nr < z.r - 0.5) { const [nx, ny] = P(z.nc[0], z.nc[1]); g.setLineDash([4, 3]); g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.beginPath(); g.arc(nx, ny, (z.nr / CELL) * s, 0, 7); g.stroke(); g.setLineDash([]); }
+      }
+    }
     // armes au sol
     for (const d of this.dropMeshes.values()) { const [x, y] = P(d.position.x, d.position.z); g.fillStyle = '#ffd84a'; g.fillRect(x - 2, y - 2, 4, 4); }
     for (const sm of this.smokeMeshes.values()) { const [x, y] = P(sm.position.x, sm.position.z); g.fillStyle = 'rgba(200,205,230,.75)'; g.beginPath(); g.arc(x, y, (sm.userData.r / CELL) * s, 0, 7); g.fill(); }
@@ -3172,14 +3247,15 @@ export class Game {
     void mine;
     $('end-title').textContent = win ? 'VICTOIRE' : 'DÉFAITE';
     $('end-title').className = 'end-title ' + (win ? 'win' : 'lose');
-    if (isFfa(m.mode)) $('end-score').textContent = `Vainqueur : ${this.nameOf(m.winner)}`;
+    if (m.mode === 'br') { const pl = mine.place || 1; $('end-title').textContent = pl === 1 ? 'TOP 1 !' : `TOP ${pl}`; $('end-score').textContent = `${pl === 1 ? 'Dernier survivant' : `Vainqueur : ${this.nameOf(m.winner)}`} · ${mine.kills} élimination(s)`; }
+    else if (isFfa(m.mode)) $('end-score').textContent = `Vainqueur : ${this.nameOf(m.winner)}`;
     else { const a = m.score[meR?.team] ?? 0, b = m.score[meR?.team === 'alpha' ? 'beta' : 'alpha'] ?? 0; $('end-score').textContent = `${a} — ${b}`; }
     $('end-reward').innerHTML = `<span class="gem"></span> +${reward} Éclats`;
     const mvp = m.stats.find(s => s.id === m.mvp);
     $('end-mvp').innerHTML = mvp ? `<span class="mvp-badge">MVP</span> ${agentIconHTML(mvp.agent, 'sm')} <b>${esc(mvp.name)}</b> <span class="muted">${mvp.score} pts · ${mvp.kills}/${mvp.deaths}/${mvp.assists} · ${mvp.dmg} dégâts</span>` : '';
     $('end-progress').innerHTML = this.isGuest ? '<div class="muted">Crée un compte pour gagner de l\'XP, monter de niveau et accomplir des quêtes.</div>' : '<div class="muted">Calcul de la progression…</div>';
     const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
-    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse' }[id] || '—';
+    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone' }[id] || '—';
     const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
     $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span>ARME FAVORITE</span></div>${rows}`;
     this.myVote = null; this.myRematch = false;

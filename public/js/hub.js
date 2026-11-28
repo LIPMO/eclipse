@@ -17,7 +17,7 @@ const ENDORSE_HTML = (e = {}) => Object.entries(ENDORSE).map(([k, l]) => `<span 
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const MODE = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout' };
+const MODE = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout', br: 'Battle Royale' };
 const LB_LABEL = { level: 'XP', week: 'XP cette semaine', elo: 'Elo', kills: 'Éliminations', wins: 'Victoires' };
 const fmtDate = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `il y a ${Math.max(1, m)} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`; };

@@ -289,10 +289,11 @@ const MODE_CFG = {
   ffa: { max: 8, target: 25, tmin: 5, tmax: 60 },
   gungame: { max: 8, target: GUN_LADDER.length, tmin: GUN_LADDER.length, tmax: GUN_LADDER.length },
   lives: { max: 8, target: 3, tmin: 1, tmax: 10 },
+  br: { max: 16, target: 1, tmin: 1, tmax: 1 }, // Battle Royale (1.42)
 };
 // ---------- parties personnalisées (1.16) ----------
 // tailles possibles d'un salon selon le mode (Assaut : 1v1 à 5v5)
-const sizeOptions = mode => mode === 'duel' ? [2] : mode === 'assault' ? [2, 4, 6, 8, 10] : [2, 3, 4, 5, 6, 7, 8];
+const sizeOptions = mode => mode === 'br' ? [4, 8, 12, 16] : mode === 'duel' ? [2] : mode === 'assault' ? [2, 4, 6, 8, 10] : [2, 3, 4, 5, 6, 7, 8];
 // partie perso enregistrée ou envoyée par le client : seules des valeurs prévues sont gardées
 function cleanPreset(p) {
   p = p && typeof p === 'object' ? p : {};
@@ -551,7 +552,7 @@ function lobbyLaunch(c, cfg, party) {
   if (cfg.fill && cfg.mode !== 'duel') {
     // avec d'autres joueurs : une partie publique de ce mode avec assez de place pour tout le groupe
     const open = [...rooms.values()].find(x => x.mode === cfg.mode && !x.private && !x.password && !x.tournament && !x.quick && !x.custom && (!mapId || x.mapId === mapId)
-      && humansOf(x) + size <= x.maxPlayers && (x.state === 'lobby' || (x.match && x.match.phase !== 'over')));
+      && humansOf(x) + size <= x.maxPlayers && (x.state === 'lobby' || (x.mode !== 'br' && x.match && x.match.phase !== 'over')));
     if (open) {
       if (c.roomId) leaveRoom(c);
       joinRoom(c, open);
@@ -561,7 +562,7 @@ function lobbyLaunch(c, cfg, party) {
   }
   const deny = admin.canCreateRoom(c); if (deny) { send(c.id, { type: 'error', text: deny }); return false; }
   if (c.roomId) leaveRoom(c);
-  const label = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout' }[cfg.mode];
+  const label = { assault: 'Assaut', duel: 'Duel', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout', br: 'Battle Royale' }[cfg.mode];
   const room = newRoom(c, { name: `${label} — ${party ? 'groupe de ' : ''}${c.name}`, mode: cfg.mode, mapId, difficulty: cfg.diff, priv: !cfg.fill });
   joinRoom(c, room);
   // duel entre les deux membres du groupe (le suivi automatique ne concerne pas les salons à deux)

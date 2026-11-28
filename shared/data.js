@@ -55,7 +55,17 @@ export const STEP_LOUD = 4.3;
 
 export const FFA = { respawn: 3, timeLimit: 600, gunTimeLimit: 480, abilityRecharge: 18 };
 // modes « chacun pour soi » (pas d'équipes, réapparition) : Mêlée et Gun Game
-export const isFfa = mode => mode === 'ffa' || mode === 'gungame' || mode === 'lives';
+export const isFfa = mode => mode === 'ffa' || mode === 'gungame' || mode === 'lives' || mode === 'br';
+// dernier debout : une ou plusieurs vies, le dernier en jeu gagne (Dernier debout, Battle Royale)
+export const isLastStand = mode => mode === 'lives' || mode === 'br';
+// Battle Royale (1.42) : zone qui se resserre par étapes, coffres à ouvrir (touche d'interaction), une seule vie
+export const BR = {
+  timeLimit: 900, startRadius: 118, chestRange: 2.4,
+  // attente avant de se resserrer (s), durée du resserrement (s), rayon visé (m), dégâts par seconde hors zone pendant l'étape
+  stages: [[50, 30, 58, 1], [40, 25, 36, 2], [35, 20, 20, 4], [25, 15, 9, 7], [20, 15, 0, 10]],
+  loot: { common: ['spark', 'viper'], rare: ['hornet', 'brute'], epic: ['tempest', 'lancer'], legendary: ['longbow'] },
+  lootOdds: { common: 48, rare: 30, epic: 17, legendary: 5 },
+};
 // Gun Game : une arme par niveau, chaque élimination fait passer à la suivante ; la dernière est le couteau
 export const GUN_LADDER = ['lancer', 'tempest', 'viper', 'brute', 'longbow', 'hornet', 'spark', 'knife'];
 

@@ -95,6 +95,28 @@ export class BotBrain {
       }
       return null;
     }
+    if (m.mode === 'br' && m.zone) {
+      // Battle Royale : rester dans la zone (la prochaine si elle se resserre bientôt), chercher des armes dans les coffres
+      const z = m.zone, safe = (z.shrinking || z.until - m.time < 15) ? { c: z.nc, r: z.nr } : { c: z.c, r: z.r };
+      const out = Math.hypot(p.pos[0] - safe.c[0], p.pos[2] - safe.c[1]) > Math.max(2, safe.r * 0.85);
+      if (out) {
+        if (this.goalKey !== 'zone' + z.stage + (z.shrinking ? 's' : '') || this.reached) {
+          const a = Math.random() * Math.PI * 2, d = Math.random() * safe.r * 0.5;
+          let gx = safe.c[0] + Math.cos(a) * d, gz = safe.c[1] + Math.sin(a) * d;
+          if (!map.walkable(Math.floor(gx / CELL), Math.floor(gz / CELL))) { const near = map.floor.reduce((b, c) => { const x = (c[0] + 0.5) * CELL, y = (c[1] + 0.5) * CELL, dd = Math.hypot(x - gx, y - gz); return dd < b[0] ? [dd, x, y] : b; }, [1e9]); gx = near[1]; gz = near[2]; }
+          return { key: 'zone' + z.stage + (z.shrinking ? 's' : ''), pos: [gx, gz] };
+        }
+        return null;
+      }
+      if (!p.weapons[1] || !p.weapons[2]) {
+        let best = null, bd = 60;
+        for (const c of m.chests) {
+          if (c.open || Math.hypot(c.pos[0] - safe.c[0], c.pos[2] - safe.c[1]) > safe.r) continue;
+          const d = Math.hypot(c.pos[0] - p.pos[0], c.pos[2] - p.pos[2]); if (d < bd) { bd = d; best = c; }
+        }
+        if (best) return this.goalKey === 'chest' + best.id && !this.reached ? null : { key: 'chest' + best.id, pos: [best.pos[0], best.pos[2]] };
+      }
+    }
     if (isFfa(m.mode)) {
       if (!this.goal || this.reached) { const [i, j] = map.floor[(Math.random() * map.floor.length) | 0]; return { key: 'ffa' + Math.random(), pos: [(i + 0.5) * CELL, (j + 0.5) * CELL] }; }
       return null;
@@ -306,6 +328,11 @@ export class BotBrain {
         }
         if (isFfa(m.mode) && this.reached) { this.goal = null; }
       }
+    }
+    if (m.mode === 'br' && m.chests && p.alive && (this.chestT = (this.chestT || 0) - dt) <= 0) {
+      this.chestT = 0.4;
+      for (const c of m.chests) if (!c.open && Math.hypot(c.pos[0] - p.pos[0], c.pos[2] - p.pos[2]) < 2.2) { m.openChest(p, c.id); break; }
+      if (p.slot === 3 && (p.weapons[1] || p.weapons[2])) p.slot = p.weapons[1] ? 1 : 2; // prend l'arme trouvée en main
     }
     if (!p.interact) p.interactPos = null;
     // en duel ou en mêlée, un bruit entendu attire le bot
