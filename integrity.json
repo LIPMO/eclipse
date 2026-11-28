@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-28T16:23:45.297Z",
+ "generated": "2026-11-28T16:24:51.943Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -45,7 +45,7 @@
   "public/js/clans.js": "dfae1f1c35736a3e05adce0488c507b85fe84fb58125ed3a81734dfb6e598d84",
   "public/js/creator.js": "e3e597f4a6e1b3ea8cf399d8ef44ecb8fd748e2c6fa32f69a86a698b0b3f9df0",
   "public/js/fx.js": "5fb45d68bb6e4a16eb9d3765cfced25abfea8b8d9af781b3722d93be56c32156",
-  "public/js/game.js": "57a7ceaed233ec6f64e35802b90836124f0061a93a019720dea10b2028b67409",
+  "public/js/game.js": "bccd856de18a694323d14aaa68a82a77cf71c1d9d7750a4d2e7ec5a4e9ac97ba",
   "public/js/gamepad.js": "ab4d0225a3e66baf1aee4a3936919ad6e459d081c6e6c826c708f6a0147de1c6",
   "public/js/hub.js": "c2da52757cfe83fdc9b579e48a163929b1201a35a1edae215e42ddb17d19adeb",
   "public/js/i18n.js": "0c0cb63bd280bfc9318a8185a77b688635ae070acbad588ca818603096fb4511",

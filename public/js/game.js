@@ -2598,12 +2598,16 @@ export class Game {
       const allies = isFfa(this.mode) ? [] : alive.filter(o => this.roster.get(o.id)?.team === me?.team);
       let pool = allies;
       if (!pool.length) {
-        pool = alive.slice().sort((a, b) => (b.id === this.killedBy) - (a.id === this.killedBy) || String(a.id).localeCompare(String(b.id)));
-        // tant que le serveur n'a pas confirmé, seuls les joueurs déjà visibles sont dans la liste ; la cible choisie est retenue
-        if (this.specWant && !pool.some(o => o.id === this.specWant)) { const w = this.others.get(this.specWant); if (w?.cur?.al) pool.unshift(w); }
+        // tous les joueurs encore en vie (même ceux que la cible actuelle ne voit pas) : le serveur bascule la vue dès qu'on en choisit un
+        const ids = (this.snap?.players || []).filter(p => p.i !== this.myId && p.al && (!isLastStand(this.mode) || (p.lv ?? 1) > 0)).map(p => p.i)
+          .sort((a, b) => (b === this.killedBy) - (a === this.killedBy) || String(a).localeCompare(String(b)));
+        pool = ids.map(id => this.others.get(id)).filter(Boolean);
       }
       if (pool.length) target = pool[((this.specIdx % pool.length) + pool.length) % pool.length];
-      const wantId = target?.id || null;
+      // cible pas encore visible (le serveur n'a pas encore basculé) : on garde la vue précédente un instant
+      if (target && !(target.cur?.al && target.cur.p && !target.cur.au)) { this.specPendingT ||= performance.now(); if (performance.now() - this.specPendingT > 1500) this.specIdx++; target = this.lastSpecObj && this.lastSpecObj.cur?.al ? this.lastSpecObj : null; if (target) target.pendingNext = true; } else { this.specPendingT = 0; }
+      if (target) this.lastSpecObj = target;
+      const wantId = (pool.length ? pool[((this.specIdx % pool.length) + pool.length) % pool.length]?.id : null) || null;
       if (wantId !== this.specSent && (!this.specSentT || performance.now() - this.specSentT > 250)) { this.specSent = wantId; this.specSentT = performance.now(); this.specWant = wantId; this.net.send('spec', { id: wantId }); }
       if (target) {
         const st = target.cur;
