@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.41.0",
+    "date": "2026-11-28",
+    "title": "Saut mural",
+    "items": [
+      "Nouveau mouvement : le saut mural. En l'air contre un mur, appuie de nouveau sur Espace pour rebondir dans l'autre sens et repartir vers le haut. Tu peux rebondir 2 fois avant de retoucher le sol.",
+      "La caméra s'incline légèrement au rebond. Le mouvement est vérifié par le serveur, il ne déclenche pas l'anti-triche.",
+      "Réglage « Saut mural » dans les paramètres pour le désactiver ; l'admin peut aussi le couper sur le serveur."
+    ]
+  },
+  {
     "version": "1.40.0",
     "date": "2026-11-28",
     "title": "10 blagues de l'admin en plus",

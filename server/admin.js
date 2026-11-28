@@ -39,7 +39,7 @@ const DEFAULT_CONFIG = {
   // déplacement : glissade (s'accroupir en courant)
   slide: true,
   // 1.15 : blagues de l'administrateur (autorisées, durée max en s), événements serveur, message envoyé aux nouveaux comptes
-  trollsOn: true, trollMax: 30, eventBigHead: false, eventLowGrav: false, eventTurbo: false, welcomeMsg: '',
+  trollsOn: true, trollMax: 30, wallJump: true, eventBigHead: false, eventLowGrav: false, eventTurbo: false, welcomeMsg: '',
   // 1.19 : agents et cartes désactivés (identifiants séparés par des virgules), multiplicateur des récompenses de quêtes
   disabledAgents: '', disabledMaps: '', questMul: 1,
 };
@@ -57,7 +57,7 @@ const CONFIG_RULES = {
   anticheat: 'bool', acStrikes: [2, 50], discordWebhook: ['str', 300], discordCheat: 'bool', discordReports: 'bool', discordBans: 'bool', discordTournaments: 'bool', creatorCodes: 'bool', creatorDailyCap: [0, 1000000], botApiKey: ['str', 100],
   alertSuspectLogin: 'bool', maxAccountsPerIp: [0, 50], weekendXp: 'bool',
   perfAlerts: 'bool', perfTickMs: [5, 200], discordPerf: 'bool', autoBackup: 'bool', backupKeep: [1, 30], rateChat: [2, 30], rateSocial: [4, 60], clanMinLevel: [1, 50], slide: 'bool',
-  disabledAgents: ['str', 300], disabledMaps: ['str', 300], questMul: [0, 5], trollsOn: 'bool', trollMax: [5, 120], eventBigHead: 'bool', eventLowGrav: 'bool', eventTurbo: 'bool', welcomeMsg: ['str', 300],
+  disabledAgents: ['str', 300], disabledMaps: ['str', 300], questMul: [0, 5], trollsOn: 'bool', trollMax: [5, 120], wallJump: 'bool', eventBigHead: 'bool', eventLowGrav: 'bool', eventTurbo: 'bool', welcomeMsg: ['str', 300],
 };
 // libellés lisibles de la configuration (historique des modifications)
 const CONFIG_LABELS = {
@@ -70,7 +70,7 @@ const CONFIG_LABELS = {
   discordCheat: 'Discord : triche', discordReports: 'Discord : signalements', discordBans: 'Discord : bans', discordTournaments: 'Discord : tournois', creatorCodes: 'Codes créateur', botApiKey: 'Clé de l\'API du bot', creatorDailyCap: 'Plafond quotidien des créateurs', alertSuspectLogin: 'Alerte compte surveillé',
   maxAccountsPerIp: 'Comptes par IP', weekendXp: 'XP du week-end', perfAlerts: 'Alertes de lenteur', perfTickMs: 'Seuil de lenteur (ms)', discordPerf: 'Discord : lenteur',
   autoBackup: 'Sauvegarde automatique', backupKeep: 'Sauvegardes conservées', rateChat: 'Limite du chat', rateSocial: 'Limite des actions sociales', clanMinLevel: 'Niveau requis pour créer un clan', slide: 'Glissade',
-  disabledAgents: 'Agents désactivés', disabledMaps: 'Cartes désactivées', questMul: 'Récompenses des quêtes', trollsOn: 'Blagues autorisées', trollMax: 'Durée max. des blagues', eventBigHead: 'Événement grosses têtes', eventLowGrav: 'Événement gravité basse', eventTurbo: 'Événement turbo',
+  disabledAgents: 'Agents désactivés', disabledMaps: 'Cartes désactivées', questMul: 'Récompenses des quêtes', trollsOn: 'Blagues autorisées', wallJump: 'Saut mural autorisé', trollMax: 'Durée max. des blagues', eventBigHead: 'Événement grosses têtes', eventLowGrav: 'Événement gravité basse', eventTurbo: 'Événement turbo',
   welcomeMsg: 'Message d\'accueil des nouveaux comptes',
 };
 // blagues de l'administrateur (1.15) : all = visible par toute la partie, max = durée plafonnée (s)

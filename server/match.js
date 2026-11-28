@@ -62,7 +62,7 @@ export class Match {
     const o = room.opts || {};
     // règles personnalisées (1.16) : vitesse, dégâts reçus, armes autorisées, argent, durées, réapparition
     const c = cleanCustomOpts(o);
-    this.opts = { ...c, lowGrav: c.lowGrav || !!io.eventLowGrav?.(), friendlyFire: c.friendlyFire && !isFfa(room.mode), bigHead: c.bigHead || !!io.eventBigHead?.() };
+    this.opts = { ...c, lowGrav: c.lowGrav || !!io.eventLowGrav?.(), friendlyFire: c.friendlyFire && !isFfa(room.mode), bigHead: c.bigHead || !!io.eventBigHead?.(), wallJump: io.wallJumpEnabled ? io.wallJumpEnabled() !== false : true };
     this.turbo = !!io.eventTurbo?.(); // événement serveur « turbo » : vitesse ×1,3
     this.customOpts = c; // règles choisies par l'hôte (sans les événements du serveur)
     this.speedBase = (this.turbo ? 1.3 : 1) * (c.speed || 1);
@@ -499,6 +499,7 @@ export class Match {
     switch (msg.type) {
       case 'input': return this.handleInput(p, msg);
       case 'slide': return this.handleSlide(p);
+      case 'wallJump': return this.handleWallJump(p);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'bash': return this.handleBash(p, msg);
@@ -561,7 +562,7 @@ export class Match {
     const maxSpeed = MOVE.run * 1.3 * Math.max(1, p.speedMul, p.speedPeakEnd > T ? p.speedPeak : 1) + 0.5;
     const base = maxSpeed * elapsed + 1;
     const d = Math.hypot(np[0] - last.pos[0], np[2] - last.pos[2]);
-    const flying = np[1] > (this.opts.lowGrav ? 9 : 4.8); // plus haut que caisse haute + saut
+    const flying = np[1] > (this.opts.lowGrav ? 9 : p.wallJumpEnd > T ? 6.6 : 4.8); // plus haut que caisse haute + saut (+ sauts muraux)
     const ac = this.io.anticheat ? this.io.anticheat() : { on: true, strikes: 5 };
     if (ac.on !== false && (d > base + (p.moveBonus || 0) || flying)) {
       p.cheatStrikes = (p.cheatStrikes || 0) + 1;
@@ -574,6 +575,7 @@ export class Match {
     }
     if (d > base) p.moveBonus = Math.max(0, p.moveBonus - (d - base));
     if (d > 0.05 || (finite(m.y) && Math.abs(m.y - p.yaw) > 0.02)) { p.lastActive = T; p.afkWarned = false; }
+    if (Math.abs(np[1] - p.pos[1]) < 0.01 && T > (p.wallJumpEnd || 0) - 1.9) p.wallJumps = 0; // posé : rebonds rechargés
     p.lastValid = { pos: np.slice(), t: T };
     p.pos = np;
     this.fallStep(p, np);
@@ -591,6 +593,17 @@ export class Match {
     p.slides = (p.slides || 0) + 1;
     p.moveBonus = (p.moveBonus || 0) + MOVE.slideSpeed * 0.3;
     p.moveBonusEnd = Math.max(p.moveBonusEnd || 0, T + MOVE.slideTime + 1);
+  }
+
+  // saut mural (1.41) : 2 rebonds au plus avant de retoucher le sol ; le serveur accorde un peu d'altitude et de distance
+  handleWallJump(p) {
+    const T = this.time;
+    if (!p.alive || !this.opts.wallJump || this.phase === 'warmup' || this.phase === 'over') return;
+    if (p.pos[1] < 0.05 || (p.wallJumpGround && p.wallJumpGround > T - 0.1)) p.wallJumps = 0;
+    if ((p.wallJumps || 0) >= 2 || T < (p.wallJumpNext || 0)) return;
+    p.wallJumps = (p.wallJumps || 0) + 1; p.wallJumpNext = T + 0.15;
+    p.wallJumpEnd = T + 2.2;
+    p.moveBonus = (p.moveBonus || 0) + 2.5; p.moveBonusEnd = Math.max(p.moveBonusEnd || 0, T + 1.5);
   }
 
   applyLook(p, m) {

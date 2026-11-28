@@ -454,6 +454,7 @@ function startMatch(r) {
     eventBigHead: () => !!admin.state.config.eventBigHead,
     eventTurbo: () => !!admin.state.config.eventTurbo,
     slideEnabled: () => admin.state.config.slide !== false,
+    wallJumpEnabled: () => admin.state.config.wallJump !== false,
     onOver: () => {
       if (r.tournament) return;
       const pool = allowedMaps(r.mode).filter(id => id !== r.mapId);

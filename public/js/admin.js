@@ -453,6 +453,7 @@ const VIEWS = {
           <div class="row">${num('buyTime', 'Achat (Assaut)', 5, 120)}${num('roundTime', 'Manche (Assaut)', 20, 600)}${num('fuseTime', 'Noyau posé', 10, 180)}</div>
           <div class="row">${num('duelBuyTime', 'Achat (Duel)', 3, 60)}${num('duelRoundTime', 'Manche (Duel)', 15, 600)}</div>
           ${chk('slide', 'Glissade autorisée (s\'accroupir en courant)', 'Décoche pour la désactiver dans les nouvelles parties.')}
+          ${chk('wallJump', 'Saut mural autorisé', 'En l\'air contre un mur : Espace pour rebondir (2 fois max avant de toucher le sol). Nouvelles parties.')}
           ${chk('creatorCodes', 'Codes créateur activés', 'Les joueurs qui soutiennent un créateur lui reversent 50 % de leurs achats de skins.')}
           ${num('creatorDailyCap', 'Plafond d\'Éclats gagnés par créateur et par jour', 0, 1000000, 100)}
           <p class="muted small">S'applique aux nouvelles manches, sans redémarrage.</p>

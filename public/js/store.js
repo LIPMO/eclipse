@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = {
   netGraph: false, damageNumbers: true, dmgNumPos: 'target', chatMode: 'all', chatSize: 1, hudScale: 1, confirmQuit: true,
   minimapRotate: false, minimapZoom: 1, heardOnMap: true, allyTags: true, rawInput: true, chEnemy: true, lowAmmoWarn: true, roundBeeps: true, dmgReport: true,
   // commandes
-  crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true, grading: true, fxaa: true, slide: true,
+  crouchToggle: false, walkToggle: false, scopeHold: false, autoReload: true, wallJump: true, grading: true, fxaa: true, slide: true,
   // 1.15
   killSound: 'classic', fxSounds: true, hitPreset: 'pop', dynMove: 'normal', sightColor: 'red', adsZoomMul: 1, showSpeed: false, slideTilt: true, showClock: false, hideEmotes: false,
   // manette

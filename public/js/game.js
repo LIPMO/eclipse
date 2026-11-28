@@ -5,7 +5,7 @@ import { parseMap, CELL, MAP_INFO } from '/shared/maps.js';
 const MAP_NAMES = Object.fromEntries(Object.entries(MAP_INFO).map(([id, i]) => [id, i.name]));
 import { WEAPONS, AGENTS, MOVE, PLAYER, ARMOR, ROUND, isFfa, GUN_LADDER, KIT, WEAPON_RULES, customSummary, lossBonus, knifePower, recoilX, RECOIL_PATTERNS, INTERP_DELAY, reloadTime, partialShells, BASH, SCOPE_LEVELS } from '/shared/data.js';
 import { tr } from './i18n.js';
-import { collideMove, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm, groundHeight } from '/shared/physics.js';
+import { collideMove, overlaps, depenetrate, raycastBoxes, rayAABB, raySphere, hitboxes, dirFromAngles, norm, groundHeight } from '/shared/physics.js';
 import { setTextureQuality, envTexture, normalMapFor, buildWeapon, buildCharacter, setCharacterOpacity, animateSkins, agentIconHTML, drawMapPreview } from './models.js';
 import * as SFX from './audio.js';
 import { Fx, themeOf } from './fx.js';
@@ -2102,6 +2102,19 @@ export class Game {
       L.vel[0] += (wx * speed - L.vel[0]) * k;
       L.vel[2] += (wz * speed - L.vel[2]) * k;
     }
+    // saut mural (1.41) : en l'air contre un mur, un nouvel appui sur Espace fait rebondir (2 fois au plus avant de retoucher le sol)
+    { const jp = H.has('jump') && !L.jumpWasDown; L.jumpWasDown = H.has('jump');
+      if (L.onGround) { L.wallJumps = 0; L.airT = 0; } else L.airT = (L.airT || 0) + dt;
+      if (jp && !L.onGround && !frozen && this.opts.wallJump !== false && ST().wallJump !== false && (L.wallJumps || 0) < 2 && L.airT > 0.1) {
+        const n = this.wallNormal(L.pos);
+        if (n) {
+          const along = L.vel[0] * -n[2] + L.vel[2] * n[0]; // vitesse le long du mur, en partie gardée
+          L.vel[0] = n[0] * MOVE.run * 1.05 + -n[2] * along * 0.6; L.vel[2] = n[2] * MOVE.run * 1.05 + n[0] * along * 0.6;
+          L.vel[1] = MOVE.jump * 0.92; L.wallJumps = (L.wallJumps || 0) + 1; L.airT = 0;
+          const right = [Math.cos(L.yaw), -Math.sin(L.yaw)]; L.wjRoll = (n[0] * right[0] + n[2] * right[1]) > 0 ? -0.09 : 0.09;
+          SFX.playJump(); this.net.send('wallJump');
+        }
+      } }
     if (H.has('jump') && L.onGround && !frozen) {
       // saut pendant une glissade : on garde une bonne partie de l'élan
       if (L.slideT > 0) { L.slideT = 0; const hv = Math.hypot(L.vel[0], L.vel[2]), cap = MOVE.slideSpeed * MOVE.slideJumpKeep * (def.speed || 1) * (this.me.sm || 1); if (hv > cap) { L.vel[0] *= cap / hv; L.vel[2] *= cap / hv; } }
@@ -2157,6 +2170,16 @@ export class Game {
     this.toggleBuy(false);
     SFX.playSlide();
     this.net.send('slide');
+  }
+
+  // normale du mur touché (le joueur est en l'air, à moins de 0,25 m d'une paroi), ou null
+  wallNormal(pos) {
+    const hw = PLAYER.hw + 0.25;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const pr = [pos[0] + dx * 0.25, pos[1] + 0.3, pos[2] + dz * 0.25];
+      for (const b of this.boxes) if (overlaps(pr, PLAYER.hw, PLAYER.h - 0.6, b) && b.max[1] > pos[1] + 0.8) return [-dx, 0, -dz];
+    }
+    return null;
   }
 
   interpState(o, renderT) {
@@ -2398,7 +2421,8 @@ export class Game {
       if (Math.abs((this.fovKick || 1) - kick) > 0.002) { this.fovKick = (this.fovKick || 1) + (kick - (this.fovKick || 1)) * Math.min(1, dt * 8); this.updateFov(); }
       const tn = performance.now() / 1000;
       this.updateDynMove(dt);
-      let roll = L.slideRoll + this.dyn.camRoll, tp = 0;
+      L.wjRoll = (L.wjRoll || 0) * Math.exp(-dt * 6);
+      let roll = L.slideRoll + this.dyn.camRoll + L.wjRoll, tp = 0;
       if (this.trollOn('upside')) roll += Math.PI;
       if (this.trollOn('spin')) roll += (tn * 2.4) % (Math.PI * 2);
       if (this.trollOn('drunk')) { roll += Math.sin(tn * 1.3) * 0.22; tp = Math.sin(tn * 0.9) * 0.06; }
