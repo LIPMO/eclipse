@@ -963,7 +963,7 @@ export class Game {
   addKillfeed(m) {
     const kf = $('killfeed');
     const cls = id => id === this.myId ? 'ally' : this.isEnemyId(id) ? 'enemy' : 'ally';
-    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', core: 'Noyau', admin: 'Admin', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone' }[m.w] || m.w;
+    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', core: 'Noyau', admin: 'Admin', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade' }[m.w] || m.w;
     const div = document.createElement('div');
     div.className = 'kf' + (m.k === this.myId || m.v === this.myId ? ' mine' : '');
     div.innerHTML = (m.k ? `<span class="${cls(m.k)}">${esc(this.nameOf(m.k))}</span>` : '') +
@@ -1128,7 +1128,15 @@ export class Game {
       case 'slot2': this.switchSlot(2); break;
       case 'slot3': this.switchSlot(3); break;
       case 'bag1': case 'bag2': case 'bag3': this.bagSwap(+a.slice(3) - 1); break;
-      case 'potHeal': case 'potShield': { const k = a === 'potHeal' ? 'heal' : 'shield'; if (this.mode === 'br' && this.me?.al && this.me.po?.[k === 'heal' ? 0 : 1] && !this.me.dk) { this.net.send('potion', { k }); SFX.playUI?.('click'); } break; }
+      case 'potHeal': case 'potShield': {
+        const po = this.me?.po; if (this.mode !== 'br' || !this.me?.al || !po || this.me.dk) break;
+        let k = null;
+        if (a === 'potHeal') k = (this.me.hp < 60 || !po[2] || this.me.hp >= BR.items.bandage.cap) && po[0] ? 'heal' : po[2] && this.me.hp < BR.items.bandage.cap ? 'bandage' : po[0] ? 'heal' : null;
+        else k = ((this.me.ar || 0) < 25 || !po[3] || (this.me.ar || 0) >= BR.items.mini.cap) && po[1] ? 'shield' : po[3] && (this.me.ar || 0) < BR.items.mini.cap ? 'mini' : po[1] ? 'shield' : null;
+        if (k) { this.net.send('potion', { k }); SFX.playUI?.('click'); }
+        break;
+      }
+      case 'nade': if (this.mode === 'br' && this.me?.al && this.me.po?.[4]) { this.net.send('nade', { d: this.aimDir() }); SFX.playUI?.('click'); } break;
       case 'abilityQ': this.useAbility('q'); break;
       case 'abilityE': this.useAbility('e'); break;
       case 'ult': this.useAbility('x'); break;
@@ -1784,7 +1792,7 @@ export class Game {
     on('explode', m => {
       SFX.playExplosion(m.p); this.caption('Explosion', m.p, 'boom');
       const d = Math.hypot(m.p[0] - this.local.pos[0], m.p[2] - this.local.pos[2]);
-      this.local.flashUntil = performance.now() / 1000 + (d < 30 ? 1.2 : 0.4);
+      this.local.flashUntil = performance.now() / 1000 + (m.small ? (d < 6 ? 0.25 : 0) : d < 30 ? 1.2 : 0.4);
       this.local.flashDur = 1.2;
       this.shake = 1;
       this.addImpact(m.p, '#ff2f6d', 12, 1.2);
@@ -1876,7 +1884,7 @@ export class Game {
     on('chestOpen', m => { const c = this.chestMeshes?.[m.i]; if (c && !c.userData.open) { this.openChestMesh(c); SFX.playUI?.('click'); } });
     on('chestLoot', m => {
       const RAR = { common: ['COMMUN', '#9aa3ad'], rare: ['RARE', '#3d9bff'], epic: ['ÉPIQUE', '#b05cff'], legendary: ['LÉGENDAIRE', '#ffb11f'] }[m.rar] || ['', '#fff'];
-      this.banner(`${WEAPONS[m.w]?.name?.toUpperCase() || m.w}`, `${RAR[0]}${m.inSlot ? '' : m.inBag ? ' · rangée dans le sac (touches 4, 5, 6)' : ' · posée au sol (emplacement et sac pleins)'}${m.pot === 'heal' ? ' · + potion de soin' : m.pot === 'shield' ? ' · + potion de bouclier' : ''}`, '', 2.2);
+      this.banner(`${WEAPONS[m.w]?.name?.toUpperCase() || m.w}`, `${RAR[0]}${m.inSlot ? '' : m.inBag ? ' · rangée dans le sac (touches 4, 5, 6)' : ' · posée au sol (emplacement et sac pleins)'}${{ heal: ' · + potion de soin', shield: ' · + potion de bouclier', bandage: ' · + 2 bandages', mini: ' · + 2 mini-boucliers', nade: ' · + 2 grenades' }[m.pot] || ''}`, '', 2.2);
       SFX.playPromote?.();
       if (m.inSlot && this.local.slot === 3) setTimeout(() => { if (this.me?.wp?.[WEAPONS[m.w].slot]) this.switchSlot(WEAPONS[m.w].slot); }, 150); // prend l'arme trouvée en main
     });
@@ -2042,7 +2050,7 @@ export class Game {
           const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 24), new THREE.MeshBasicMaterial({ color: pr.o === this.myId ? '#19e3c4' : '#ff4f6d', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
           ring.rotation.x = -Math.PI / 2; ring.visible = false; this.scene.add(ring); m.userData.ring = ring;
         } else {
-          const col = pr.k === 'smoke' ? '#c9d0ff' : pr.k === 'flash' ? '#ffffff' : pr.k === 'cryo' ? '#9ee7ff' : '#ff8a3d';
+          const col = pr.k === 'frag' ? '#4a6b3a' : pr.k === 'smoke' ? '#c9d0ff' : pr.k === 'flash' ? '#ffffff' : pr.k === 'cryo' ? '#9ee7ff' : '#ff8a3d';
           m = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.2 }));
         }
         m.position.set(...pr.p);
@@ -2058,6 +2066,7 @@ export class Game {
       if (this.dropMeshes.has(d.i) || !WEAPONS[d.w]) continue;
       const g = new THREE.Group();
       const w = buildWeapon(WEAPONS[d.w].model, 'default'); w.scale.setScalar(1.5); w.rotation.set(0, 0, Math.PI / 2.2); w.position.y = 0.32; g.add(w);
+      if (d.r && BR.rarity[d.r]) { const ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.6, 24), new THREE.MeshBasicMaterial({ color: BR.rarity[d.r].color, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; g.add(ring); const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 6, 1, true), new THREE.MeshBasicMaterial({ color: BR.rarity[d.r].color, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending })); beam.position.y = 1.1; g.add(beam); } // rareté (Battle Royale)
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.55, 24), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
       ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; g.add(ring);
       g.position.set(...d.p); g.userData = { w: d.w, ring, wm: w };
@@ -2817,9 +2826,9 @@ export class Game {
       }
     }
     // emplacements
-    $('slots').innerHTML = [1, 2, 3].filter(i => me.wp[i]).map(i => `<span class="${i === this.local.slot ? 'on' : ''}">${i}·${WEAPONS[me.wp[i][0]].name}</span>`).join('')
-      + (me.po ? `<span class="pot ${me.po[0] ? '' : 'empty'}" title="Potion de soin (+40 PV)">${KB('potHeal')}·🧪 ×${me.po[0]}</span><span class="pot sh ${me.po[1] ? '' : 'empty'}" title="Potion de bouclier (+50 armure)">${KB('potShield')}·🛡 ×${me.po[1]}</span>` : '')
-      + (me.bg ? [0, 1, 2].map(k => `<span class="bag ${me.bg[k] ? '' : 'empty'}" title="Sac à dos">${4 + k}·${me.bg[k] ? WEAPONS[me.bg[k][0]].name : '—'}</span>`).join('') : '');
+    $('slots').innerHTML = [1, 2, 3].filter(i => me.wp[i]).map(i => `<span class="${i === this.local.slot ? 'on' : ''}" ${me.wp[i][3] ? `style="border-color:${BR.rarity[me.wp[i][3]]?.color};color:${BR.rarity[me.wp[i][3]]?.color}"` : ''}>${i}·${WEAPONS[me.wp[i][0]].name}</span>`).join('')
+      + (me.po ? `<span class="pot ${me.po[0] || me.po[2] ? '' : 'empty'}" title="Soin : potion (+40 PV) ou bandage (+15 PV, jusqu'à 75)">${KB('potHeal')}·🧪${me.po[0]} 🩹${me.po[2] || 0}</span><span class="pot sh ${me.po[1] || me.po[3] ? '' : 'empty'}" title="Bouclier : potion (+50) ou mini-bouclier (+25, jusqu'à 50)">${KB('potShield')}·🛡${me.po[1]} 🔹${me.po[3] || 0}</span><span class="pot nd ${me.po[4] ? '' : 'empty'}" title="Grenade">${KB('nade')}·💣${me.po[4] || 0}</span>` : '')
+      + (me.bg ? [0, 1, 2].map(k => `<span class="bag ${me.bg[k] ? '' : 'empty'}" title="Sac à dos" ${me.bg[k] ? `style="color:${BR.rarity[me.bg[k][3]]?.color || ''}"` : ''}>${4 + k}·${me.bg[k] ? WEAPONS[me.bg[k][0]].name : '—'}</span>`).join('') : '');
     // menu d'achat
     if (this.buyOpen) {
       const canBuy = isFfa(this.mode) || s.ph === 'buy';
@@ -2843,7 +2852,7 @@ export class Game {
       else if (s.ph === 'buy') hint = `${KB('buy')} — MENU D'ACHAT`;
     }
     if (this.mode === 'br' && me.al) {
-      if (this.me?.dk) hint = `🧪 TU BOIS UNE POTION… ${this.me.dk.toFixed(1)} s`;
+      if (this.me?.dk) hint = `🧪 SOIN EN COURS… ${this.me.dk.toFixed(1)} s`;
       else if (this.local.chute) hint = `PARACHUTE · ${KB('forward')}${KB('left')}${KB('back')}${KB('right')} POUR TE DIRIGER · ${KB('crouch')} POUR DESCENDRE PLUS VITE · ${Math.round(this.local.pos[1])} m`;
       else if (this.nearChest() >= 0) hint = `${KB('interact')} — OUVRIR LE COFFRE`;
       else if (this.nearDispenser() >= 0) { const cd = this.dispMeshes[this.nearDispenser()].userData.cd; hint = cd ? `DISTRIBUTEUR EN RECHARGE · ${cd} s` : me.hp >= 100 ? 'DISTRIBUTEUR : TU AS DÉJÀ TOUS TES PV' : `${KB('interact')} — DISTRIBUTEUR : SOIN COMPLET`; }
@@ -3240,7 +3249,7 @@ export class Game {
     const ghost = buildCharacter(r?.agent || 'ignis', ALLY);
     this.scene.add(ghost.root);
     this.kc = { m, t0, dur: t1 - t0, start: performance.now() / 1000 + 0.35, ghost, shotIdx: 0 };
-    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone' }[m.w] || '';
+    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade' }[m.w] || '';
     $('kc-who').innerHTML = `Éliminé par <b style="color:${ENEMY}">${esc(m.kn || '?')}</b>${wn ? ` · ${esc(wn)}` : ''}${m.h ? ' · <b>tête</b>' : ''} <span class="muted">(${m.hp} PV restants)</span>`;
     $('kc-skip').textContent = `${KB('jump')} ou clic pour passer`;
     $('killcam').classList.add('on');
@@ -3460,7 +3469,7 @@ export class Game {
     $('end-mvp').innerHTML = mvp ? `<span class="mvp-badge">MVP</span> ${agentIconHTML(mvp.agent, 'sm')} <b>${esc(mvp.name)}</b> <span class="muted">${mvp.score} pts · ${mvp.kills}/${mvp.deaths}/${mvp.assists} · ${mvp.dmg} dégâts</span>` : '';
     $('end-progress').innerHTML = this.isGuest ? '<div class="muted">Crée un compte pour gagner de l\'XP, monter de niveau et accomplir des quêtes.</div>' : '<div class="muted">Calcul de la progression…</div>';
     const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
-    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone' }[id] || '—';
+    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade' }[id] || '—';
     const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
     $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span>ARME FAVORITE</span></div>${rows}`;
     this.myVote = null; this.myRematch = false;

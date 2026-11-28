@@ -337,7 +337,8 @@ export class BotBrain {
       if (p.hp <= 50 && (p.money || 0) >= 300 && !this.target) m.handleBuy(p, 'brHeal');
       if (p.slot === 3 && (p.weapons[1] || p.weapons[2])) p.slot = p.weapons[1] ? 1 : 2; // prend l'arme trouvée en main
     }
-    if (m.mode === 'br' && p.pots && !this.target && !(p.drinkEnd > T)) { if (p.hp < 60 && p.pots.heal) m.drinkPotion(p, 'heal'); else if ((p.armor || 0) < 50 && p.pots.shield) m.drinkPotion(p, 'shield'); }
+    if (m.mode === 'br' && p.pots && !this.target && !(p.drinkEnd > T)) { if (p.hp < 60 && p.pots.heal) m.drinkPotion(p, 'heal'); else if (p.hp < 75 && p.pots.bandage) m.drinkPotion(p, 'bandage'); else if ((p.armor || 0) < 50 && p.pots.shield) m.drinkPotion(p, 'shield'); else if ((p.armor || 0) < 50 && p.pots.mini) m.drinkPotion(p, 'mini'); }
+    if (m.mode === 'br' && p.pots?.nade && this.target && Math.random() < dt * 0.25) { const q = this.target, dd = Math.hypot(q.pos[0] - p.pos[0], q.pos[2] - p.pos[2]); if (dd > 8 && dd < 22) m.throwNade(p, [(q.pos[0] - p.pos[0]) / dd, 0.25, (q.pos[2] - p.pos[2]) / dd]); }
     if (!p.interact) p.interactPos = null;
     // en duel ou en mêlée, un bruit entendu attire le bot
     if (this.heard && !enemy && m.mode !== 'assault' && canMove && (!this.heardGoalT || T > this.heardGoalT)) {

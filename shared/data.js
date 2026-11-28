@@ -67,6 +67,9 @@ export const BR = {
   // 1.48 : petite boutique de soin (touche d'achat) et distributeurs de soin complet sur la carte
   shop: { heal: { hp: 50, price: 300 } }, money: { chest: 150, kill: 300 },
   dispensers: [[13, 12], [26, 12], [13, 25], [26, 25], [20, 6], [20, 33]], dispenserCooldown: 45,
+  // V3 (1.51) : rareté des armes trouvées (dégâts en plus) et nouveaux objets
+  rarity: { common: { name: 'Commun', mul: 1, color: '#9aa3ad' }, rare: { name: 'Rare', mul: 1.08, color: '#3d9bff' }, epic: { name: 'Épique', mul: 1.16, color: '#b05cff' }, legendary: { name: 'Légendaire', mul: 1.25, color: '#ffb11f' } },
+  items: { bandage: { name: 'Bandage', hp: 15, cap: 75, time: 0.8, max: 6 }, mini: { name: 'Mini-bouclier', armor: 25, cap: 50, time: 0.9, max: 6 }, nade: { name: 'Grenade', max: 4, dmg: 95, radius: 5.5 } },
   potions: { heal: { name: 'Potion de soin', hp: 40, time: 1.4, max: 4 }, shield: { name: 'Potion de bouclier', armor: 50, time: 1.8, max: 3 } }, killHeal: 50,
   // attente avant de se resserrer (s), durée du resserrement (s), rayon visé (m), dégâts par seconde hors zone pendant l'étape
   stages: [[50, 30, 58, 1], [40, 25, 36, 2], [35, 20, 20, 4], [25, 15, 9, 7], [20, 15, 0, 10]],

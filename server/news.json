@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.51.0",
+    "date": "2026-11-28",
+    "title": "Battle Royale V3 (1/4) : raretés et nouveaux objets",
+    "items": [
+      "Les armes des coffres ont une rareté : commune, rare (+8 % de dégâts), épique (+16 %) ou légendaire (+25 %). Couleur sur ta barre d'armes, et un cercle lumineux de la bonne couleur sous les armes au sol.",
+      "Nouveaux objets dans les coffres : bandages (+15 PV, jusqu'à 75), mini-boucliers (+25 armure, jusqu'à 50) et grenades (touche 9).",
+      "Touche 7 : soin (potion si tu es très blessé, sinon bandage). Touche 8 : bouclier (potion ou mini-bouclier)."
+    ]
+  },
+  {
     "version": "1.50.0",
     "date": "2026-11-28",
     "title": "Clips automatiques Medal (launcher 2.3)",

@@ -30,6 +30,7 @@ function rayExit(o, d, min, max) {
   return tmax;
 }
 
+const T_NADE_CD = (p, T) => T - (p.nadeT || -9) < 0.9; // une grenade toutes les 0,9 s
 export class Match {
   constructor(room, io) {
     this.room = room;
@@ -459,7 +460,7 @@ export class Match {
     p.alive = true; p.hp = 100; p.armor = 50; p.money = 9000; p.reloadEnd = 0; p.knifeOut = false;
     this.projectiles = this.projectiles.filter(pr => !(pr.kind === 'knife' && pr.owner === p.id));
     if (this.mode === 'gungame') { this.gunLoadout(p); p.armor = 0; } // pas d'armure : le couteau final reste jouable
-    else if (this.mode === 'br') { p.weapons = { 1: null, 2: null, 3: { id: 'knife' } }; p.slot = 3; p.armor = 0; p.money = 0; p.bag = []; p.pots = { heal: 0, shield: 0 }; p.drinkEnd = 0; }
+    else if (this.mode === 'br') { p.weapons = { 1: null, 2: null, 3: { id: 'knife' } }; p.slot = 3; p.armor = 0; p.money = 0; p.bag = []; p.pots = { heal: 0, shield: 0, bandage: 0, mini: 0, nade: 0 }; p.drinkEnd = 0; }
     else {
       const prim = p.weapons?.[1]?.id || 'lancer';
       p.weapons = { 1: prim ? this.newWeapon(prim) : null, 2: this.newWeapon(p.weapons?.[2]?.id || 'spark'), 3: { id: 'knife' } };
@@ -532,7 +533,9 @@ export class Match {
   }
   // potions (1.47) : on boit pendant un court instant (pas de tir), puis le soin ou l'armure s'applique
   drinkPotion(p, k) {
-    const P = BR.potions[k];
+    const P = BR.potions[k] || (k === 'bandage' || k === 'mini' ? BR.items[k] : null);
+    if (k === 'bandage' && p.hp >= BR.items.bandage.cap) return;
+    if (k === 'mini' && (p.armor || 0) >= BR.items.mini.cap) return;
     if (!P || !p.alive || !p.pots?.[k] || p.drinkEnd > this.time) return;
     if (k === 'heal' && p.hp >= 100) return;
     if (k === 'shield' && (p.armor || 0) >= 100) return;
@@ -541,12 +544,20 @@ export class Match {
   tickPotions() {
     for (const p of this.players.values()) {
       if (!p.drinkEnd || this.time < p.drinkEnd) continue;
-      const k = p.drinkKind, P = BR.potions[k]; p.drinkEnd = 0;
+      const k = p.drinkKind, P = BR.potions[k] || BR.items[k]; p.drinkEnd = 0;
       if (!p.alive || !p.pots?.[k]) continue;
       p.pots[k]--;
-      if (P.hp) p.hp = Math.min(100, p.hp + P.hp); else p.armor = Math.min(100, (p.armor || 0) + P.armor);
+      if (P.hp) p.hp = Math.min(P.cap || 100, Math.max(p.hp, p.hp + P.hp)); else p.armor = Math.min(P.cap || 100, Math.max(p.armor || 0, (p.armor || 0) + P.armor));
       this.send(p, { type: 'potionDone', k });
     }
+  }
+  throwNade(p, d) {
+    if (!p.alive || !p.pots?.nade || this.phase !== 'live' || p.drinkEnd > this.time || T_NADE_CD(p, this.time)) return;
+    const dir = Array.isArray(d) && d.length === 3 && d.every(Number.isFinite) ? norm(d) : [-Math.sin(p.yaw), 0, -Math.cos(p.yaw)];
+    p.pots.nade--; p.nadeT = this.time;
+    const eye = this.eye(p);
+    this.projectiles.push({ id: this.nextId++, kind: 'frag', owner: p.id, team: p.team, pos: [eye[0] + dir[0] * 0.6, eye[1] + dir[1] * 0.6 - 0.1, eye[2] + dir[2] * 0.6],
+      vel: [dir[0] * 17, dir[1] * 17 + 3.2, dir[2] * 17], fuse: this.time + 2, stopped: false });
   }
   useDispenser(p, i) {
     const d = this.dispensers?.[i];
@@ -564,15 +575,15 @@ export class Match {
     let roll = Math.random() * 100, rar = 'common';
     for (const [r, pct] of Object.entries(BR.lootOdds)) { rar = r; if ((roll -= pct) < 0) break; }
     const pool = BR.loot[rar], id = pool[(Math.random() * pool.length) | 0], slot = WEAPONS[id].slot;
-    const w = this.newWeapon(id);
+    const w = this.newWeapon(id); w.rar = rar;
     if (w.reserve != null) w.reserve += Math.round((WEAPONS[id].mag || 10) * 1.5);
     let got = '';
     if (!p.weapons[slot]) { p.weapons[slot] = w; got = 'arme'; this.send(p, { type: 'picked', item: id, slot }); }
     else if (p.bag && p.bag.length < BR.bagSize) { p.bag.push(w); got = 'sac'; }
     else this.drops.push({ id: this.nextId++, w, pos: [c.pos[0] + 0.6, 0, c.pos[2]], from: null, noPick: 0 });
-    const bonus = Math.random(), pk = bonus < 0.45 ? 'heal' : bonus < 0.75 ? 'shield' : null;
+    const bonus = Math.random(), pk = bonus < 0.25 ? 'heal' : bonus < 0.43 ? 'shield' : bonus < 0.63 ? 'bandage' : bonus < 0.78 ? 'mini' : bonus < 0.93 ? 'nade' : null;
     let potGot = null;
-    if (pk && p.pots) { if (p.pots[pk] < BR.potions[pk].max) { p.pots[pk]++; potGot = pk; } else if (pk === 'heal') p.hp = Math.min(100, p.hp + 25); }
+    if (pk && p.pots) { const max = (BR.potions[pk] || BR.items[pk]).max; if (p.pots[pk] < max) { p.pots[pk] += pk === 'nade' || pk === 'bandage' || pk === 'mini' ? Math.min(2, max - p.pots[pk]) : 1; potGot = pk; } else if (pk === 'heal') p.hp = Math.min(100, p.hp + 25); }
     p.money = (p.money || 0) + BR.money.chest;
     this.broadcast({ type: 'chestOpen', i, by: p.id });
     this.send(p, { type: 'chestLoot', w: id, rar, pot: potGot, inSlot: got === 'arme', inBag: got === 'sac' });
@@ -613,6 +624,7 @@ export class Match {
       case 'bagSwap': return this.bagSwap(p, msg.k);
       case 'potion': return this.drinkPotion(p, msg.k);
       case 'dispense': return this.useDispenser(p, msg.i);
+      case 'nade': return this.throwNade(p, msg.d);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'bash': return this.handleBash(p, msg);
@@ -1056,6 +1068,7 @@ export class Match {
         if (through) dmg *= d.pen; // à travers une caisse
         if (!this.isEnemy(p, target)) dmg *= 0.5; // tir allié (option de salon) : moitié des dégâts
         if (d.falloff && bestT > d.falloff[0]) dmg *= d.falloff[1];
+        if (w.rar && BR.rarity[w.rar]) dmg *= BR.rarity[w.rar].mul; // Battle Royale : arme rare, épique, légendaire
         const acc = dmgAcc.get(target) || { dmg: 0, head: false };
         acc.dmg += dmg; acc.head = acc.head || zone === 'head';
         dmgAcc.set(target, acc);
@@ -1395,6 +1408,18 @@ export class Match {
     const g = groundHeight(pr.pos[0], pr.pos[2], pr.pos[1] + 0.3, this.map.boxes);
     if (pr.kind === 'smoke') this.smokes.push({ id: this.nextId++, pos: [pr.pos[0], g + 1.8, pr.pos[2]], r: 4.5, end: T + 14 });
     else if (pr.kind === 'cryo') this.fires.push({ id: this.nextId++, pos: [pr.pos[0], g, pr.pos[2]], r: 4.2, end: T + 6, dps: 0, slow: true, owner: pr.owner, kind: 'frost' });
+    else if (pr.kind === 'frag') { // grenade du Battle Royale : explosion, dégâts dégressifs, bloquée par les murs
+      const c = [pr.pos[0], g + 0.4, pr.pos[2]], R = BR.items.nade.radius, owner = this.players.get(pr.owner);
+      for (const q of this.players.values()) {
+        if (!q.alive) continue;
+        const qc = [q.pos[0], q.pos[1] + 1, q.pos[2]], dv = [qc[0] - c[0], qc[1] - c[1], qc[2] - c[2]], dist = Math.hypot(...dv);
+        if (dist > R) continue;
+        if (dist > 0.3 && raycastBoxes(c, norm(dv), dist, this.allBoxes()).t < dist - 0.3) continue;
+        if (owner && q !== owner && !this.isEnemy(owner, q)) continue;
+        this.damage(q, BR.items.nade.dmg * (1 - dist / R * 0.75) * (q === owner ? 0.5 : 1), owner || null, 'nade', false);
+      }
+      this.broadcast({ type: 'explode', p: c.map(r2), small: 1 });
+    }
     else if (pr.kind === 'molotov') this.fires.push({ id: this.nextId++, pos: [pr.pos[0], g, pr.pos[2]], r: 3.6, end: T + 6, dps: 38, owner: pr.owner, kind: pr.shock ? 'shock' : 'fire' });
     else if (pr.kind === 'flash') {
       for (const q of this.players.values()) {
@@ -1709,7 +1734,7 @@ export class Match {
       smokes: this.smokes.map(s => ({ i: s.id, p: s.pos.map(r2), r: s.r, u: r2(s.end - T) })),
       fires: this.fires.map(f => ({ i: f.id, p: f.pos.map(r2), r: f.r, k: f.kind, u: r2(f.end - T) })),
       walls: this.walls.map(w => ({ i: w.wallId, min: w.min.map(r2), max: w.max.map(r2), hp: w.hp })),
-      drops: this.drops.map(d => ({ i: d.id, w: d.w.id, p: d.pos.map(r2) })),
+      drops: this.drops.map(d => ({ i: d.id, w: d.w.id, p: d.pos.map(r2), ...(d.w.rar ? { r: d.w.rar } : {}) })),
       ...(this.zone ? { zone: { c: this.zone.c.map(r2), r: r2(this.zone.r), nc: this.zone.nc.map(r2), nr: r2(this.zone.nr), st: this.zone.stage, sh: this.zone.shrinking ? 1 : 0, t: r2(Math.max(0, this.zone.until - T)) }, cho: this.chests.filter(c => c.open).map(c => c.id), dsp: this.dispensers.map(d => Math.max(0, Math.ceil(d.readyAt - T))), alive: [...this.players.values()].filter(p => !p.out).length } : {}),
     };
     const commonStr = JSON.stringify(common).slice(1);
@@ -1731,7 +1756,7 @@ export class Match {
       const c = this.core;
       const core = { s: c.status, p: c.pos ? c.pos.map(r2) : null, c: side === 'atk' || isFfa(this.mode) ? c.carrier : null, site: c.site, f: c.status === 'planted' ? r2(this.phaseEnd - T) : 0 };
       const wp = {};
-      for (const s of [1, 2, 3]) { const w = p.weapons[s]; wp[s] = w ? [w.id, w.mag, w.reserve] : null; }
+      for (const s of [1, 2, 3]) { const w = p.weapons[s]; wp[s] = w ? (w.rar ? [w.id, w.mag, w.reserve, w.rar] : [w.id, w.mag, w.reserve]) : null; }
       const me = {
         hp: Math.ceil(p.hp), ar: Math.ceil(p.armor), $: p.money, sl: p.slot, wp, al: p.alive ? 1 : 0,
         rl: p.reloadEnd > T ? r2(p.reloadEnd - T) : 0, ko: p.knifeOut ? 1 : 0, ab: p.charges, ult: p.ult, side,
@@ -1739,7 +1764,7 @@ export class Match {
         sm: p.speedMul, rm: p.rateMul, rs: p.respawnAt ? r2(Math.max(0, p.respawnAt - T)) : 0,
         rc: { q: p.recharge.q ? r2(p.recharge.q - T) : 0, e: p.recharge.e ? r2(p.recharge.e - T) : 0 },
         iv: p.invisEnd > T ? 1 : 0, bf: p.buffEnd > T ? 1 : 0, bt: this.buffTimers(p, T),
-        ...(p.bag ? { bg: p.bag.map(w => [w.id, w.mag, w.reserve]) } : {}), ...(p.pots ? { po: [p.pots.heal, p.pots.shield], dk: p.drinkEnd > T ? r2(p.drinkEnd - T) : 0 } : {}), ...(p.chuteEnd > T ? { ch: 1 } : {}),
+        ...(p.bag ? { bg: p.bag.map(w => [w.id, w.mag, w.reserve, w.rar || 'common']) } : {}), ...(p.pots ? { po: [p.pots.heal, p.pots.shield, p.pots.bandage || 0, p.pots.mini || 0, p.pots.nade || 0], dk: p.drinkEnd > T ? r2(p.drinkEnd - T) : 0 } : {}), ...(p.chuteEnd > T ? { ch: 1 } : {}),
       };
       const meStr = JSON.stringify(me);
       meCache.set(p.id, { meStr, core: JSON.stringify(core) });
