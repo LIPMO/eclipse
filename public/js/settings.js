@@ -138,6 +138,8 @@ const SECTIONS = [
     { k: 'brightness', t: 'range', label: 'Luminosité', min: 0.6, max: 1.6, step: 0.05, pct: true },
     { k: 'quality', t: 'select', label: 'Qualité graphique', opts: [['high', 'Haute (ombres)'], ['low', 'Basse (sans ombres)']], hint: 'Appliquée à la prochaine partie' },
     { k: 'bloom', t: 'toggle', label: 'Halo lumineux (bloom) et vignettage', hint: 'Les lumières, néons et tirs rayonnent. Sur téléphone, actif seulement avec le préréglage Haut ou Ultra' },
+    { k: 'grading', t: 'toggle', label: 'Étalonnage cinéma', hint: 'Couleurs plus riches et contrastées, teinte propre à chaque carte (avec le halo lumineux)' },
+    { k: 'fxaa', t: 'toggle', label: 'Anticrénelage FXAA', hint: 'Lisse les bords en escalier (avec le halo lumineux), quasiment sans perte de fluidité' },
     { k: 'relief', t: 'toggle', label: 'Relief des surfaces', hint: 'Briques, dalles et caisses en relief, ombre au pied des murs. Appliqué à la prochaine partie' },
     { k: 'particles', t: 'toggle', label: 'Particules d\'ambiance', hint: 'Poussière dans l\'air de jour, lucioles la nuit' },
   ] },

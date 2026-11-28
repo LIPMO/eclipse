@@ -11,7 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VENDOR = ['node_modules/three/build/three.module.js', 'node_modules/three/examples/jsm/utils/BufferGeometryUtils.js',
   // post-traitement (halo lumineux) : chargé seulement si l'option est active
   ...['EffectComposer', 'RenderPass', 'ShaderPass', 'MaskPass', 'Pass', 'UnrealBloomPass', 'OutputPass'].map(f => `node_modules/three/examples/jsm/postprocessing/${f}.js`),
-  ...['CopyShader', 'LuminosityHighPassShader', 'OutputShader'].map(f => `node_modules/three/examples/jsm/shaders/${f}.js`)];
+  ...['CopyShader', 'LuminosityHighPassShader', 'OutputShader', 'FXAAShader'].map(f => `node_modules/three/examples/jsm/shaders/${f}.js`)];
 const walk = dir => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]);
 export const servable = () => [...walk('public'), ...walk('shared'), ...VENDOR.filter(f => fs.existsSync(path.join(ROOT, f)))].map(f => f.split(path.sep).join('/'));
 export const hashFile = f => crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, f))).digest('hex');

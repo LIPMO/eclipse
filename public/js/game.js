@@ -149,6 +149,15 @@ export class Game {
     this.vmCam = new THREE.PerspectiveCamera(ST().vmFov, 1, 0.01, 10);
     this.vmScene.add(new THREE.HemisphereLight('#ffffff', '#445566', 1.6));
     const vl = new THREE.DirectionalLight('#ffffff', 2.2); vl.position.set(1, 2, 1); this.vmScene.add(vl);
+    // 1.37 : reflets sur l'arme en main : environnement de studio (plafonnier + bandes lumineuses) précalculé une fois
+    try {
+      const env = new THREE.Scene(), pm = new THREE.PMREMGenerator(this.renderer);
+      env.add(new THREE.Mesh(new THREE.SphereGeometry(10, 16, 8), new THREE.MeshBasicMaterial({ color: '#2a2838', side: THREE.BackSide })));
+      for (const [x, y, z, w, h, c] of [[0, 6, 0, 8, 8, '#ffffff'], [6, 1, -2, 1.2, 6, '#dfe8ff'], [-6, 1.5, 2, 1.2, 5, '#ffe6d0'], [0, -6, 0, 10, 10, '#15131c']]) {
+        const pl = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide })); pl.position.set(x, y, z); pl.lookAt(0, 0, 0); env.add(pl);
+      }
+      this.vmScene.environment = pm.fromScene(env, 0.04).texture; this.vmScene.environmentIntensity = 0.6; pm.dispose();
+    } catch (e) { console.warn('Reflets indisponibles', e); }
     this.muzzleLight = new THREE.PointLight('#ffcc88', 0, 8, 2);
     this.scene.add(this.muzzleLight);
     this._onResize = () => this.onResize();
@@ -171,12 +180,34 @@ export class Game {
       c.addPass(new RenderPass(this.scene, this.camera));
       this.bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), night ? 0.85 : 0.35, night ? 0.6 : 0.45, night ? 0.35 : 0.9);
       c.addPass(this.bloomPass);
-      c.addPass(new ShaderPass({
-        uniforms: { tDiffuse: { value: null }, strength: { value: night ? 0.38 : 0.28 } },
-        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'uniform sampler2D tDiffuse; uniform float strength; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv); vec2 d = vUv - 0.5; float v = 1.0 - strength * smoothstep(0.25, 0.85, length(d) * 1.35); gl_FragColor = vec4(c.rgb * v, c.a); }',
-      }));
       c.addPass(new OutputPass());
+      // 1.37 : étalonnage façon cinéma (après conversion sRGB) : contraste en S, saturation, teinte propre à chaque carte,
+      // ombres légèrement teintées, vignettage. Réglage « Étalonnage cinéma ».
+      const GR = { sand: [[1.05, 1.0, 0.92], 1.12, 1.08, [0.02, 0.0, -0.01]], neon: [[1.0, 0.95, 1.07], 1.22, 1.12, [0.01, -0.01, 0.03]],
+        ice: [[0.95, 1.0, 1.06], 1.06, 1.07, [-0.01, 0.0, 0.02]], temple: [[1.0, 1.04, 0.95], 1.1, 1.07, [0.0, 0.015, 0.0]] }[this.map?.theme?.wall] || [[1, 1, 1], 1.08, 1.06, [0, 0, 0]];
+      this.gradePass = new ShaderPass({
+        uniforms: { tDiffuse: { value: null }, vig: { value: night ? 0.38 : 0.28 }, tint: { value: new THREE.Vector3(...GR[0]) }, sat: { value: GR[1] }, con: { value: GR[2] }, lift: { value: new THREE.Vector3(...GR[3]) }, on: { value: ST().grading !== false ? 1 : 0 } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `uniform sampler2D tDiffuse; uniform float vig, sat, con, on; uniform vec3 tint, lift; varying vec2 vUv;
+          void main(){ vec4 c = texture2D(tDiffuse, vUv); vec3 col = c.rgb;
+            if (on > 0.5) {
+              float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+              col = mix(vec3(l), col, sat) * tint;
+              col = clamp((col - 0.5) * con + 0.5, 0.0, 1.0);
+              col = col * col * (3.0 - 2.0 * col) * 0.35 + col * 0.65; // courbe en S douce
+              col += lift * (1.0 - l);
+            }
+            vec2 d = vUv - 0.5; col *= 1.0 - vig * smoothstep(0.25, 0.85, length(d) * 1.35);
+            gl_FragColor = vec4(col, c.a); }`,
+      });
+      c.addPass(this.gradePass);
+      // 1.37 : anticrénelage FXAA (le rendu par passes perd l'anticrénelage matériel)
+      if (ST().fxaa !== false) {
+        try {
+          const { FXAAShader } = await import('three/addons/shaders/FXAAShader.js');
+          this.fxaaPass = new ShaderPass(FXAAShader); c.addPass(this.fxaaPass);
+        } catch (e) { console.warn('FXAA indisponible', e); this.fxaaPass = null; }
+      } else this.fxaaPass = null;
       this.composer = c;
       this.onResize();
     } catch (e) { console.warn('Halo lumineux indisponible', e); this.composer = null; }
@@ -201,6 +232,7 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ST().gfxPreset === 'ultra' ? 2 : ST().quality === 'high' ? 1.5 : 1) * ST().renderScale * (this.trollOn?.('pixel') ? 0.12 : 1));
     this.renderer.setSize(w, h, false);
     if (this.composer) { this.composer.setPixelRatio(this.renderer.getPixelRatio()); this.composer.setSize(w, h); }
+    if (this.fxaaPass) { const pr = this.renderer.getPixelRatio(); this.fxaaPass.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr)); }
     this.aspect = w / h;
     this.camera.aspect = this.aspect;
     this.vmCam.aspect = this.aspect;
@@ -1141,7 +1173,9 @@ export class Game {
     if (all || key === 'adsZoomMul') this.updateFov();
     if (all || key === 'renderScale' || key === 'quality') this.onResize();
     if (all || key === 'brightness') this.renderer.toneMappingExposure = ST().brightness;
-    if (all || key === 'bloom' || key === 'gfxPreset') this.setupBloom();
+    if (key === 'grading' && this.gradePass) this.gradePass.uniforms.on.value = ST().grading !== false ? 1 : 0;
+    if (key === 'fxaa' && this.composer) { this.composer.dispose?.(); this.composer = null; }
+    if (all || key === 'bloom' || key === 'gfxPreset' || key === 'fxaa') this.setupBloom();
     if ((all || key === 'particles') && this.dust) this.dust.visible = ST().particles !== false && ST().gfxPreset !== 'low';
     if (all || key.startsWith('ch')) { this.chExtra = -1; applyCrosshair($('crosshair')); }
     if (all || key === 'fps') $('fps').style.display = ST().fps ? 'block' : 'none';

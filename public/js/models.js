@@ -494,9 +494,45 @@ export function buildWeapon(model, skinId) {
       g.children[3].rotation.x = 0.2; muzzle.set(0, 0.065, -1.02);
       break;
   }
+  if (model !== 'knife') detailWeapon(g, model, muzzle, { body, accent, dark });
   g.userData.muzzle = muzzle;
   g.userData.materials = { body, accent, dark };
   return g;
+}
+
+// 1.37 : détails des armes (rail, fenêtre d'éjection, cache-flamme, pontet, vis, levier d'armement, voyant lumineux)
+const DETAIL = {
+  // demi-largeur, dessus du corps, z de la fenêtre d'éjection, z du pontet, rail [début, fin] (null = pas de rail), y de la poignée
+  pistol: [0.025, 0.09, -0.04, -0.015, null, -0.005], heavypistol: [0.03, 0.102, -0.05, -0.01, null, -0.01],
+  smg: [0.035, 0.0975, -0.1, -0.02, [-0.24, 0.02], -0.01], shotgun: [0.0375, 0.095, -0.08, -0.01, [-0.34, -0.06], 0.0],
+  dmr: [0.035, 0.1, -0.08, 0.0, [-0.3, 0.06], -0.0], rifle: [0.0375, 0.105, -0.08, 0.0, [-0.3, 0.06], -0.0], sniper: [0.04, 0.105, -0.05, 0.0, null, -0.0],
+};
+let metalMat = null, ledMats = new Map();
+function detailWeapon(g, model, muzzle, { accent, dark }) {
+  const d = DETAIL[model]; if (!d) return;
+  const [hw, top, portZ, guardZ, rail] = d;
+  metalMat ||= new THREE.MeshStandardMaterial({ color: '#8a919c', metalness: 0.95, roughness: 0.28 });
+  const add = m => { m.castShadow = false; g.add(m); return m; };
+  // rail Picatinny : petites dents régulières
+  if (rail) for (let z = rail[0]; z <= rail[1]; z += 0.022) add(box(hw * 1.15, 0.008, 0.011, metalMat, 0, top + 0.004, z));
+  // fenêtre d'éjection (côté droit) + culasse visible
+  add(box(0.004, 0.026, 0.07, dark, hw + 0.001, top - 0.035, portZ));
+  add(box(0.003, 0.014, 0.05, metalMat, hw + 0.003, top - 0.035, portZ));
+  // vis sur les flancs
+  for (const sx of [-1, 1]) for (const z of [portZ + 0.07, portZ - 0.09]) { const v = add(cyl(0.006, 0.004, metalMat, sx * (hw + 0.002), top - 0.06, z, 8)); v.rotation.set(0, 0, Math.PI / 2); }
+  // pontet (protection de la détente) et détente
+  add(box(0.008, 0.006, 0.07, dark, 0, top - 0.155 + (model.includes('pistol') ? 0.05 : 0), guardZ - 0.005));
+  add(box(0.006, 0.03, 0.006, metalMat, 0, top - 0.13 + (model.includes('pistol') ? 0.05 : 0), guardZ + 0.005)).rotation.x = 0.3;
+  // cache-flamme à fentes au bout du canon
+  const fh = new THREE.Group(); fh.position.copy(muzzle);
+  for (let i = 0; i < 3; i++) { const r = cyl(model === 'shotgun' || model === 'sniper' ? 0.03 : 0.022, 0.012, metalMat, 0, 0, 0.01 + i * 0.02, 12); fh.add(r); }
+  fh.add(cyl(model === 'shotgun' || model === 'sniper' ? 0.026 : 0.018, 0.06, dark, 0, 0, 0.03, 12));
+  g.add(fh);
+  // levier d'armement à l'arrière, voyant lumineux (couleur du skin) sur le côté gauche
+  if (!model.includes('pistol')) add(box(0.05, 0.012, 0.018, metalMat, -0.01, top - 0.01, portZ + 0.16));
+  const col = '#' + (accent.color?.getHexString?.() || 'a259ff');
+  if (!ledMats.has(col)) ledMats.set(col, new THREE.MeshBasicMaterial({ color: col, toneMapped: false }));
+  add(box(0.003, 0.008, 0.045, ledMats.get(col), -hw - 0.002, top - 0.03, portZ - 0.02));
 }
 
 // ---------- personnages ----------

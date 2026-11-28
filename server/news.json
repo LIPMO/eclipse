@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.37.0",
+    "date": "2026-11-28",
+    "title": "Image plus belle : étalonnage cinéma, anticrénelage, armes détaillées",
+    "items": [
+      "Étalonnage cinéma : couleurs plus riches et contrastées, avec une teinte propre à chaque carte (chaude dans le désert, froide sur la glace, néon violet la nuit). Réglage « Étalonnage cinéma ».",
+      "Anticrénelage FXAA : les bords en escalier des murs et des armes sont lissés, presque sans perte de fluidité. Réglage « Anticrénelage FXAA ».",
+      "Armes plus détaillées : rail, fenêtre d'éjection, culasse, vis, pontet et détente, cache-flamme à fentes, levier d'armement et voyant lumineux aux couleurs du skin.",
+      "L'arme en main reflète maintenant la lumière : le métal brille et la lumière glisse dessus quand tu bouges.",
+      "L'étalonnage et le FXAA fonctionnent avec le halo lumineux (préréglages Haut et Ultra)."
+    ]
+  },
+  {
     "version": "1.36.0",
     "date": "2026-11-28",
     "title": "Boîtes de skins",
