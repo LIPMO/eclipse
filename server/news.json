@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.40.0",
+    "date": "2026-11-28",
+    "title": "10 blagues de l'admin en plus",
+    "items": [
+      "Nouvelles blagues de l'admin : écran en miroir, vision fish-eye, vision tunnel, noir et blanc, tremblement de terre, vision floue, pluie d'emojis, souris au ralenti, géant (vu par toute la partie) et toupie (vue par toute la partie)."
+    ]
+  },
+  {
     "version": "1.39.0",
     "date": "2026-11-28",
     "title": "Skins favoris et changement de pseudo corrigé",

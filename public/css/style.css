@@ -1432,3 +1432,5 @@ body.theme-light { color-scheme: light; }
   background: rgba(0,0,0,.45); color: rgba(255,255,255,.7); font-size: 16px; line-height: 26px; transition: transform .12s, color .12s; }
 .skin-fav:hover { transform: scale(1.15); color: #ffd23f; }
 .skin-fav.on { color: #ffd23f; text-shadow: 0 0 10px rgba(255,210,63,.8); }
+
+.confetti i.emo { background: none !important; width: auto; height: auto; font-size: 34px; }

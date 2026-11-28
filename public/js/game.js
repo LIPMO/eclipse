@@ -19,7 +19,7 @@ import { WEAPON_UNLOCK, RADIO, REPORT_REASONS } from '/shared/progress.js';
 const $ = id => document.getElementById(id);
 let ALLY = '#19e3c4';
 const ENEMY = '#ff4f6d';
-const TROLL_NAMES = { upside: 'écran à l\'envers', spin: 'vertige', drunk: 'caméra ivre', invert: 'commandes inversées', pixel: 'écran pixelisé', rainbow: 'arc-en-ciel', bighead: 'grosse tête', tiny: 'minuscule', duck: 'tirs « coin-coin »', fakeban: 'faux bannissement', fakedc: 'fausse déconnexion', confetti: 'confettis', dance: 'danse', flash: 'flash', freeze: 'gel sur place' };
+const TROLL_NAMES = { upside: 'écran à l\'envers', spin: 'vertige', drunk: 'caméra ivre', invert: 'commandes inversées', pixel: 'écran pixelisé', rainbow: 'arc-en-ciel', bighead: 'grosse tête', tiny: 'minuscule', duck: 'tirs « coin-coin »', fakeban: 'faux bannissement', fakedc: 'fausse déconnexion', confetti: 'confettis', dance: 'danse', flash: 'flash', freeze: 'gel sur place', mirror: 'écran en miroir', fisheye: 'vision fish-eye', tunnel: 'vision tunnel', grayscale: 'noir et blanc', shake: 'tremblement de terre', blur: 'vision floue', emojis: 'pluie d\'emojis', slowmouse: 'souris au ralenti', giant: 'géant', spinner: 'toupie' };
 const SIGHT_COLORS = { red: '#ff2a2a', green: '#3dff6a', blue: '#3da8ff', yellow: '#ffe14d', pink: '#ff4fd8', white: '#ffffff' };
 const EMOTES = ['👍 GG', '😂 Mdr', '🔥 En feu !', '😮 Oups', '👏 Bien joué', '😎 Trop facile', '🙏 Désolé', '💀 RIP'];
 const ULTS = new Set(['overdrive', 'megasmoke', 'hunt', 'fortress', 'phantom', 'firestorm', 'blizzard']);
@@ -246,6 +246,7 @@ export class Game {
     if (this.scoped) v /= 1 + (this.scopeZoom() - 1) * (this.scopeK ?? 1);
     else v *= this.fovKick || 1; // léger élargissement du champ de vision pendant une glissade
     if (this.adsK > 0) v /= 1 + (this.adsZoom() - 1) * this.adsK; // zoom du viseur
+    v = Math.min(170, v * (this.trollFov || 1)); // blagues fish-eye / tunnel
     this.camera.fov = v;
     this.camera.updateProjectionMatrix();
   }
@@ -890,7 +891,7 @@ export class Game {
   fxOn(id, k) { return (this.trollFx.get(id)?.[k] || 0) > performance.now() / 1000; }
   onTroll(m) {
     const now = performance.now() / 1000;
-    if (m.kind === 'stop') { this.trolls = {}; document.querySelectorAll('.troll-ov').forEach(e => e.remove()); this.onResize(); return; }
+    if (m.kind === 'stop') { this.trolls = {}; document.querySelectorAll('.troll-ov').forEach(e => e.remove()); const cv = this.renderer.domElement; cv.style.filter = ''; cv.style.transform = ''; this.trollFov = 1; this.updateFov(); this.onResize(); return; }
     this.trolls[m.kind] = now + m.s; this.trollBy = m.by || 'l\'admin';
     if (m.kind === 'fakeban' || m.kind === 'fakedc') this.trollOverlay(m.kind, m.s, this.trollBy);
     if (m.kind === 'flash') { this.local.flashUntil = now + m.s; this.local.flashDur = m.s; }
@@ -906,8 +907,11 @@ export class Game {
     setTimeout(() => { el.innerHTML = `<div class="to-box joke"><h2>😜 C'EST UNE BLAGUE !</h2><p>${esc(by)} t'a bien eu.</p></div>`; }, Math.max(1500, Math.min(4, s - 1.5) * 1000));
     setTimeout(() => el.remove(), s * 1000);
   }
-  domConfetti() {
+  domConfetti(emoji = false) {
     const box = document.createElement('div'); box.className = 'confetti';
+    if (emoji) { const E = ['😂', '🤡', '💩', '🐔', '🦆', '🍌', '👀', '🔥', '😜', '🥴'];
+      box.innerHTML = Array.from({ length: 24 }, () => `<i class="emo" style="left:${Math.random() * 100}%;animation-delay:${(Math.random() * 0.6).toFixed(2)}s;animation-duration:${(2 + Math.random() * 1.5).toFixed(2)}s">${E[(Math.random() * E.length) | 0]}</i>`).join('');
+      document.body.appendChild(box); setTimeout(() => box.remove(), 4000); return; }
     const cols = ['#ff4f6d', '#19e3c4', '#ffcf5a', '#8b5cff', '#3d9bff', '#ffffff'];
     box.innerHTML = Array.from({ length: 70 }, () => `<i style="left:${Math.random() * 100}%;background:${cols[(Math.random() * cols.length) | 0]};animation-delay:${(Math.random() * 0.8).toFixed(2)}s;animation-duration:${(1.8 + Math.random() * 1.4).toFixed(2)}s"></i>`).join('');
     document.body.appendChild(box); setTimeout(() => box.remove(), 4000);
@@ -1095,7 +1099,7 @@ export class Game {
     this._ku = e => { if (this.codeMap[e.code] || e.code === 'Tab') e.preventDefault(); this.release(e.code); };
     this._mm = e => {
       if (document.pointerLockElement !== canvas) return;
-      const s = ST().sens * 0.0022 * this.aimSensK();
+      const s = ST().sens * 0.0022 * this.aimSensK() * (this.trollOn('slowmouse') ? 0.2 : 1);
       L.yaw -= e.movementX * s * (this.trollOn('invert') ? -1 : 1);
       L.pitch = Math.max(-1.55, Math.min(1.55, L.pitch - e.movementY * s * (ST().sensY || 1) * (ST().invertY ? -1 : 1)));
       this.vmSwayX += e.movementX * 0.00025; this.vmSwayY += e.movementY * 0.00025;
@@ -2223,7 +2227,8 @@ export class Game {
       ch.arms[1].rotation.x = -1.35 + st.pt * 0.8 + (o.fireT > 0 ? 0.15 : 0);
       // blagues visibles par tous : grosse tête (ou événement serveur), minuscule, danse
       { const hs = this.bigHeadEvent || this.fxOn(o.id, 'bighead') ? 2.3 : 1; ch.head.scale.setScalar(ch.head.scale.x + (hs - ch.head.scale.x) * Math.min(1, dt * 8));
-        const rs = this.fxOn(o.id, 'tiny') ? 0.45 : 1; ch.root.scale.setScalar(ch.root.scale.x + (rs - ch.root.scale.x) * Math.min(1, dt * 8));
+        const rs = this.fxOn(o.id, 'tiny') ? 0.45 : this.fxOn(o.id, 'giant') ? 1.9 : 1;
+        if (this.fxOn(o.id, 'spinner')) ch.root.rotation.y = st.y + performance.now() / 1000 * 14; ch.root.scale.setScalar(ch.root.scale.x + (rs - ch.root.scale.x) * Math.min(1, dt * 8));
         if (this.fxOn(o.id, 'dance')) { const tn = performance.now() / 1000; ch.root.rotation.y = st.y + tn * 5; ch.arms[0].rotation.x = -2.9 + Math.sin(tn * 9) * 0.4; ch.arms[1].rotation.x = -2.9 - Math.sin(tn * 9) * 0.4; ch.root.position.y += Math.abs(Math.sin(tn * 9)) * 0.12; } }
       ch.hand.position.y = 0.3 + st.pt * 0.3;
       ch.hand.rotation.x = st.pt * 0.9;
@@ -2366,7 +2371,12 @@ export class Game {
     $('crosshair').classList.toggle('ads', this.adsK > 0.6);
     // blagues : arc-en-ciel, écran pixelisé, pastille
     { const cv = this.renderer.domElement; const tn = performance.now() / 1000;
-      if (this.trollOn('rainbow')) cv.style.filter = `hue-rotate(${(tn * 200) % 360}deg) saturate(1.8)`; else if (cv.style.filter) cv.style.filter = '';
+      { const f = [this.trollOn('rainbow') ? `hue-rotate(${(tn * 200) % 360}deg) saturate(1.8)` : '', this.trollOn('grayscale') ? 'grayscale(1)' : '', this.trollOn('blur') ? 'blur(4px)' : ''].filter(Boolean).join(' ');
+        if (cv.style.filter !== f) cv.style.filter = f;
+        const tr = [this.trollOn('mirror') ? 'scaleX(-1)' : '', this.trollOn('shake') ? `translate(${(Math.random() - 0.5) * 14}px, ${(Math.random() - 0.5) * 14}px)` : ''].filter(Boolean).join(' ');
+        if (cv.style.transform !== tr) cv.style.transform = tr;
+        const fv = this.trollOn('fisheye') ? 1.8 : this.trollOn('tunnel') ? 0.45 : 1; if (fv !== (this.trollFov || 1)) { this.trollFov = fv; this.updateFov(); }
+        if (this.trollOn('emojis') && tn - (this.emojiT || 0) > 1.2) { this.emojiT = tn; this.domConfetti(true); } }
       const px = this.trollOn('pixel'); if (px !== !!this.pixelOn) { this.pixelOn = px; cv.style.imageRendering = px ? 'pixelated' : ''; this.onResize(); }
       this.updateTrollBadge(); }
     if (this.spec) {

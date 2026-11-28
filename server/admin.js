@@ -79,6 +79,10 @@ export const TROLLS = {
   pixel: { name: 'Écran pixelisé' }, rainbow: { name: 'Arc-en-ciel' }, bighead: { name: 'Grosse tête', all: true }, tiny: { name: 'Minuscule', all: true },
   duck: { name: 'Tirs « coin-coin »', all: true }, fakeban: { name: 'Faux bannissement', max: 8 }, fakedc: { name: 'Fausse déconnexion', max: 8 },
   confetti: { name: 'Confettis', all: true }, dance: { name: 'Danse forcée', all: true }, flash: { name: 'Flash blanc', max: 3 }, freeze: { name: 'Gel sur place', max: 5 },
+  // 1.40 : 10 blagues de plus
+  mirror: { name: 'Écran en miroir' }, fisheye: { name: 'Vision fish-eye' }, tunnel: { name: 'Vision tunnel' }, grayscale: { name: 'Noir et blanc' },
+  shake: { name: 'Tremblement de terre' }, blur: { name: 'Vision floue', max: 10 }, emojis: { name: 'Pluie d\'emojis' }, slowmouse: { name: 'Souris au ralenti' },
+  giant: { name: 'Géant', all: true }, spinner: { name: 'Toupie', all: true },
 };
 const BACKUP_RE = /^eclipse-\d{4}-\d{2}-\d{2}(-\d{6})?\.json$/;
 const DECIMAL = new Set(['rewardMul', 'xpMul', 'eventXpMul', 'eventEclatsMul', 'questMul']);
