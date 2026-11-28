@@ -1376,6 +1376,7 @@ net.on('settingsSync', m => {
   const clean = sanitizeSettings(m.settings); const keys = clean.keys; delete clean.keys;
   if (clean.syncAccount === false) return;
   Object.assign(profile.settings, clean); if (keys) Object.assign(profile.settings.keys, keys);
+  { const k = profile.settings.keys; if (k && k.buy === 'KeyV' && k.emote === 'KeyB') { k.buy = 'KeyB'; k.emote = 'KeyV'; } } // 1.46 : touches de la 1.45 remises (émotes V, boutique B)
   profile.settingsAt = m.at; save();
   applyingSync = true; document.dispatchEvent(new CustomEvent('settings-changed', { detail: { key: '*' } })); applyingSync = false;
   toast('Tes paramètres ont été récupérés depuis ton compte.', 3500);

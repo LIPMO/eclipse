@@ -1446,3 +1446,8 @@ body.br-out #hud::before { content: ''; position: fixed; inset: 0; pointer-event
 #slots .bag.empty { opacity: .45; }
 
 body.emoting #crosshair { visibility: hidden; }
+
+/* 90 émotes (1.46) */
+#emote-menu .emo-grid { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)); gap: 2px 8px; max-height: 46vh; overflow-y: auto; pointer-events: auto; }
+#emote-menu .emo-msgs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 8px; }
+#emote-menu .emo-grid div, #emote-menu .emo-msgs div { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -1172,7 +1172,7 @@ export class Match {
   // émotes en partie (limitées)
   handleEmote(p, m) {
     const id = Math.round(Number(m.e));
-    if (!(id >= 0 && id < 16)) return; // 0-7 : bulles, 8-15 : animations (1.45)
+    if (!(id >= 0 && id < 98)) return; // 0-7 : bulles, 8-97 : les 90 animations (1.46)
     if (id >= 8 && !p.alive) return;
     const last = this.emoteT.get(p.id) || -9;
     if (this.time - last < (id >= 8 ? 0.8 : 2)) return;

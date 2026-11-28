@@ -22,23 +22,54 @@ const ENEMY = '#ff4f6d';
 const TROLL_NAMES = { upside: 'écran à l\'envers', spin: 'vertige', drunk: 'caméra ivre', invert: 'commandes inversées', pixel: 'écran pixelisé', rainbow: 'arc-en-ciel', bighead: 'grosse tête', tiny: 'minuscule', duck: 'tirs « coin-coin »', fakeban: 'faux bannissement', fakedc: 'fausse déconnexion', confetti: 'confettis', dance: 'danse', flash: 'flash', freeze: 'gel sur place', mirror: 'écran en miroir', fisheye: 'vision fish-eye', tunnel: 'vision tunnel', grayscale: 'noir et blanc', shake: 'tremblement de terre', blur: 'vision floue', emojis: 'pluie d\'emojis', slowmouse: 'souris au ralenti', giant: 'géant', spinner: 'toupie' };
 const SIGHT_COLORS = { red: '#ff2a2a', green: '#3dff6a', blue: '#3da8ff', yellow: '#ffe14d', pink: '#ff4fd8', white: '#ffffff' };
 const EMOTES = ['👍 GG', '😂 Mdr', '🔥 En feu !', '😮 Oups', '👏 Bien joué', '😎 Trop facile', '🙏 Désolé', '💀 RIP'];
-// émotes animées (1.45) : le personnage danse, visible par tous ; caméra à la 3e personne pour soi
-const ANIMS = ['🕺 Disco', '👋 Salut', '👏 Bravo', '🤣 Fou rire', '💪 Muscles', '🌀 Toupie', '🪑 Pause', '🤖 Robot'];
+// émotes animées (1.45, 90 émotes en 1.46) : chacune combine des bras, des jambes, un mouvement du corps et un tempo
+const EMO = [["🕺 Disco", 5, 1, 2, 8], ["👋 Salut", 1, 0, 0, 10], ["👏 Bravo", 3, 0, 3, 12], ["🤣 Fou rire", 14, 0, 4, 14], ["💪 Muscles", 4, 0, 2, 3], ["🌀 Toupie", 15, 0, 1, 9], ["🪑 Pause", 9, 4, 0, 1], ["🤖 Robot", 6, 0, 0, 3], ["🎸 Air guitare", 12, 6, 6, 10], ["🥁 Batteur", 17, 0, 3, 12], ["🎧 DJ", 18, 0, 3, 8], ["🙏 Prière", 19, 0, 4, 2], ["🫡 Garde-à-vous", 13, 0, 0, 1], ["🤷 Bof", 14, 0, 0, 4], ["🤗 Câlin", 15, 0, 2, 3], ["🦅 Aigle", 7, 0, 3, 6], ["🥊 Boxe", 8, 1, 3, 10], ["🦵 Karaté", 8, 2, 0, 7], ["🧘 Méditation", 19, 4, 0, 1], ["🚣 Rameur", 16, 4, 4, 5], ["🙆 Étirement", 2, 0, 5, 2], ["🤸 Grand écart", 15, 7, 0, 2], ["🐔 Poulet", 7, 1, 6, 12], ["🦆 Canard", 7, 5, 5, 8], ["🎉 Fête", 2, 5, 3, 9], ["🙌 Victoire", 2, 0, 3, 7], ["😤 Rage", 10, 1, 6, 14], ["🤯 Explosion", 10, 5, 1, 6], ["😴 Dodo", 9, 4, 4, 1], ["🧊 Glaçon", 13, 0, 0, 0], ["🌊 La vague", 15, 0, 7, 4], ["🎵 Groove", 5, 1, 2, 6], ["💃 Salsa", 15, 1, 2, 8], ["🪩 Boule à facettes", 5, 5, 1, 7], ["🔥 En feu", 2, 3, 6, 11], ["😎 Trop stylé", 9, 1, 2, 4], ["🫶 Cœur", 19, 0, 2, 3], ["👑 Roi", 13, 1, 4, 2], ["🏋️ Haltères", 4, 3, 0, 5], ["🏃 Sur place", 16, 1, 3, 12], ["🐸 Grenouille", 0, 3, 3, 6], ["🦘 Kangourou", 9, 5, 3, 7], ["🐍 Serpent", 7, 0, 7, 5], ["🦩 Flamant rose", 15, 6, 0, 2], ["🐧 Pingouin", 0, 1, 5, 6], ["🦍 Gorille", 17, 3, 3, 8], ["🐒 Singe", 10, 5, 2, 9], ["🦀 Crabe", 8, 1, 5, 9], ["🎯 Visée", 13, 0, 4, 2], ["🧙 Sorcier", 11, 0, 1, 3], ["⚡ Électrique", 6, 5, 6, 16], ["🌪️ Tornade", 11, 5, 1, 12], ["🛸 Ovni", 15, 0, 1, 4], ["🚀 Décollage", 2, 3, 3, 10], ["🎈 Ballon", 15, 5, 5, 3], ["🌈 Arc-en-ciel", 11, 0, 7, 3], ["🥳 Anniversaire", 3, 5, 2, 9], ["🤡 Clown", 10, 2, 5, 9], ["👻 Fantôme", 15, 0, 7, 2], ["🧟 Zombie", 13, 1, 5, 3], ["🧛 Vampire", 9, 0, 4, 2], ["🦸 Héros", 2, 0, 4, 1], ["🕵️ Espion", 9, 1, 5, 4], ["🥷 Ninja", 8, 2, 1, 8], ["🏄 Surf", 15, 3, 5, 3], ["⛷️ Ski", 16, 3, 2, 6], ["🏌️ Golf", 12, 0, 1, 2], ["⚽ Jongle", 0, 2, 3, 9], ["🏀 Dunk", 2, 5, 3, 7], ["🎳 Bowling", 16, 3, 4, 4], ["🏓 Ping-pong", 8, 1, 2, 12], ["🥇 Champion", 2, 0, 1, 2], ["😂 Mort de rire", 14, 3, 4, 16], ["😭 Chagrin", 10, 4, 4, 6], ["😡 Colère", 8, 1, 6, 14], ["🥶 Gelé", 9, 3, 6, 18], ["🥵 Chaud", 7, 1, 5, 10], ["🤢 Malade", 10, 3, 5, 3], ["🫠 Fondu", 14, 3, 4, 1], ["😇 Ange", 19, 0, 3, 2], ["🎤 Chanteur", 12, 1, 2, 5], ["🎻 Violon", 12, 0, 5, 3], ["🎺 Trompette", 18, 1, 4, 6], ["🪘 Djembé", 17, 4, 3, 10], ["🎹 Pianiste", 17, 0, 2, 9], ["📸 Selfie", 1, 0, 5, 2], ["💸 Pluie de billets", 11, 1, 3, 10], ["🏆 Trophée", 2, 5, 1, 4], ["🧹 Balai", 16, 1, 2, 5], ["🍳 Cuisinier", 18, 0, 2, 7]];
+const ANIMS = EMO.map(e => e[0]);
 function animateEmote(ch, a, t) {
-  const A = ch.arms, Lg = ch.legs, s = Math.sin, c = Math.cos;
+  const A = ch.arms, Lg = ch.legs, s = Math.sin, e = EMO[a] || EMO[0], w = e[4] || 6, q = s(t * w), aq = Math.abs(q);
   A[0].rotation.set(0, 0, 0); A[1].rotation.set(0, 0, 0); ch.head.rotation.set(0, 0, 0); ch.upper.rotation.set(0, 0, 0);
-  let y = 0, ry = 0, lx = 0, rx = 0;
-  switch (a) {
-    case 0: A[0].rotation.x = -2.8 + s(t * 8) * 0.4; A[1].rotation.x = -0.4 - s(t * 8) * 0.4; A[0].rotation.z = 0.3; y = Math.abs(s(t * 8)) * 0.12; ry = s(t * 4) * 0.5; lx = s(t * 8) * 0.4; rx = -lx; break;
-    case 1: A[0].rotation.x = -2.9; A[0].rotation.z = 0.4 + s(t * 10) * 0.45; ch.head.rotation.z = s(t * 5) * 0.12; break;
-    case 2: A[0].rotation.x = A[1].rotation.x = -1.4; A[0].rotation.z = 0.35 + Math.abs(s(t * 12)) * 0.5; A[1].rotation.z = -0.35 - Math.abs(s(t * 12)) * 0.5; y = Math.abs(s(t * 6)) * 0.05; break;
-    case 3: ch.upper.rotation.x = 0.35 + s(t * 14) * 0.1; A[0].rotation.x = A[1].rotation.x = -0.6; ch.head.rotation.x = -0.3 + s(t * 14) * 0.15; break;
-    case 4: A[0].rotation.x = A[1].rotation.x = -1.6; A[0].rotation.z = 1.2 + s(t * 3) * 0.15; A[1].rotation.z = -1.2 - s(t * 3) * 0.15; ch.upper.rotation.y = s(t * 1.5) * 0.4; break;
-    case 5: ry = t * 9; A[0].rotation.z = 1.4; A[1].rotation.z = -1.4; y = Math.abs(s(t * 9)) * 0.1; break;
-    case 6: y = -0.45; lx = rx = -1.4; A[0].rotation.x = A[1].rotation.x = -0.5; ch.head.rotation.y = s(t * 0.8) * 0.4; break;
-    case 7: { const k = Math.floor(t * 3) % 4; A[0].rotation.x = k % 2 ? -1.57 : -0.2; A[1].rotation.x = k % 2 ? -0.2 : -1.57; ch.head.rotation.y = [0.5, 0, -0.5, 0][k]; ry = [0, 0.3, 0, -0.3][k]; break; }
+  let y = 0, ry = 0, rz = 0, lx = 0, rx = 0, lz = 0, rzl = 0;
+  switch (e[1]) { // bras
+    case 1: A[0].rotation.x = -2.9; A[0].rotation.z = 0.4 + q * 0.45; break;
+    case 2: A[0].rotation.x = A[1].rotation.x = -2.7 - aq * 0.35; A[0].rotation.z = 0.25; A[1].rotation.z = -0.25; break;
+    case 3: A[0].rotation.x = A[1].rotation.x = -1.4; A[0].rotation.z = 0.35 + aq * 0.5; A[1].rotation.z = -0.35 - aq * 0.5; break;
+    case 4: A[0].rotation.x = A[1].rotation.x = -1.6; A[0].rotation.z = 1.2 + q * 0.15; A[1].rotation.z = -1.2 - q * 0.15; break;
+    case 5: A[0].rotation.x = -2.8 + q * 0.4; A[1].rotation.x = -0.4 - q * 0.4; A[0].rotation.z = 0.3; break;
+    case 6: { const k = Math.floor(t * w / 2) % 4; A[0].rotation.x = k % 2 ? -1.57 : -0.2; A[1].rotation.x = k % 2 ? -0.2 : -1.57; ch.head.rotation.y = [0.5, 0, -0.5, 0][k]; break; }
+    case 7: A[0].rotation.z = 1.2 + q * 0.6; A[1].rotation.z = -1.2 - q * 0.6; break;
+    case 8: A[0].rotation.x = -1.57 + Math.max(0, q) * -0.2; A[1].rotation.x = -1.57 + Math.max(0, -q) * -0.2; A[0].rotation.z = Math.max(0, q) * -0.3; A[1].rotation.z = Math.max(0, -q) * 0.3; break;
+    case 9: A[0].rotation.x = A[1].rotation.x = -1.3; A[0].rotation.z = -0.9; A[1].rotation.z = 0.9; break;
+    case 10: A[0].rotation.x = A[1].rotation.x = -2.6; A[0].rotation.z = -0.6; A[1].rotation.z = 0.6; ch.head.rotation.z = q * 0.15; break;
+    case 11: A[0].rotation.x = t * w; A[1].rotation.x = t * w + Math.PI; break;
+    case 12: A[0].rotation.x = -1.0; A[0].rotation.z = -0.6; A[1].rotation.x = -0.6 + q * 0.4; A[1].rotation.z = 0.2; break;
+    case 13: A[0].rotation.x = -2.4; A[0].rotation.z = -0.9; break;
+    case 14: A[0].rotation.x = A[1].rotation.x = -0.9; A[0].rotation.z = 0.6 + aq * 0.3; A[1].rotation.z = -0.6 - aq * 0.3; ch.head.rotation.z = q * 0.2; break;
+    case 15: A[0].rotation.z = 1.5; A[1].rotation.z = -1.5; A[0].rotation.x = A[1].rotation.x = q * 0.2; break;
+    case 16: A[0].rotation.x = A[1].rotation.x = -1.2 + q * 0.7; break;
+    case 17: A[0].rotation.x = -1.2 + Math.max(0, q) * -0.6; A[1].rotation.x = -1.2 + Math.max(0, -q) * -0.6; break;
+    case 18: A[0].rotation.x = -1.3; A[0].rotation.z = -0.4 + q * 0.2; A[1].rotation.x = -2.5 + aq * 0.3; ch.head.rotation.x = aq * 0.25; break;
+    case 19: A[0].rotation.x = A[1].rotation.x = -1.5; A[0].rotation.z = -0.55; A[1].rotation.z = 0.55; break;
   }
-  Lg[0].rotation.x = lx; Lg[1].rotation.x = rx;
+  switch (e[2]) { // jambes
+    case 1: lx = q * 0.45; rx = -lx; break;
+    case 2: lx = Math.max(0, q) * -1.3; rx = Math.max(0, -q) * -1.3; break;
+    case 3: y = -aq * 0.3; lx = rx = -aq * 0.6; break;
+    case 4: y = -0.45; lx = rx = -1.4; break;
+    case 5: y = aq * 0.22; lx = rx = -aq * 0.3; break;
+    case 6: lx = -1.2; y = aq * 0.08; break;
+    case 7: y = -0.55; lz = 1.3; rzl = -1.3; break;
+  }
+  switch (e[3]) { // corps
+    case 1: ry = t * w; break;
+    case 2: ry = q * 0.45; break;
+    case 3: y += aq * 0.12; break;
+    case 4: ch.upper.rotation.x = q * 0.3; break;
+    case 5: rz = q * 0.15; break;
+    case 6: ch.head.rotation.x = aq * 0.5 - 0.1; break;
+    case 7: ch.upper.rotation.z = q * 0.2; ch.upper.rotation.y = s(t * w * 0.5) * 0.3; break;
+  }
+  Lg[0].rotation.set(lx, 0, lz); Lg[1].rotation.set(rx, 0, rzl);
+  ch.root.rotation.z = rz;
   return { y, ry };
 }
 const ULTS = new Set(['overdrive', 'megasmoke', 'hunt', 'fortress', 'phantom', 'firestorm', 'blizzard']);
@@ -1016,9 +1047,14 @@ export class Game {
   }
 
   toggleEmote(v = !this.emoteOpen) {
+    const was = this.emoteOpen;
     this.emoteOpen = v;
+    // 1.46 : souris libérée pour cliquer dans la grille des émotes (comme le menu d'achat), puis reprise à la fermeture
+    const cv = this.renderer?.domElement;
+    if (v && !was && document.pointerLockElement === cv && !isTouchDevice()) { this.expectUnlock = true; document.exitPointerLock?.(); }
+    if (!v && was && cv && !this.ended && document.pointerLockElement !== cv && !isTouchDevice()) { try { const r = cv.requestPointerLock({ unadjustedMovement: !!ST().rawInput }); r?.catch?.(() => cv.requestPointerLock()); } catch { /* */ } }
     const el = $('emote-menu');
-    if (v) el.innerHTML = `<h4>ÉMOTES <span class="muted">(chiffre : animation · Maj + chiffre : message)</span></h4>` + ANIMS.map((t, i) => `<div data-emote="${i + 8}"><b>${i + 1}</b> ${esc(t)}</div>`).join('') + `<h4 style="margin-top:8px">MESSAGES</h4>` + EMOTES.map((t, i) => `<div data-emote="${i}"><b>⇧${i + 1}</b> ${esc(t)}</div>`).join('');
+    if (v) el.innerHTML = `<h4>ÉMOTES · ${ANIMS.length} <span class="muted">(clic · 1 à 8 pour les premières · Maj + chiffre : message)</span></h4><div class="emo-grid">` + ANIMS.map((t, i) => `<div data-emote="${i + 8}">${i < 8 ? `<b>${i + 1}</b> ` : ''}${esc(t)}</div>`).join('') + `</div><h4 style="margin-top:8px">MESSAGES</h4><div class="emo-msgs">` + EMOTES.map((t, i) => `<div data-emote="${i}"><b>⇧${i + 1}</b> ${esc(t)}</div>`).join('') + '</div>';
     el.classList.toggle('show', v);
     el.onclick = e => { const d = e.target.closest('[data-emote]'); if (d) { this.sendEmote(+d.dataset.emote); this.toggleEmote(false); } };
   }
@@ -1165,7 +1201,7 @@ export class Game {
     };
     this._plc = () => {
       const locked = document.pointerLockElement === canvas;
-      $('click-to-play').style.display = locked || this.buyOpen || this.chatOpen || this.settingsOpen || this.reportOpen || this.ended ? 'none' : 'block';
+      $('click-to-play').style.display = locked || this.emoteOpen || this.buyOpen || this.chatOpen || this.settingsOpen || this.reportOpen || this.ended ? 'none' : 'block';
       if (!locked) {
         if (!this.buyOpen) this.releaseAll();
         if (!this.expectUnlock && !this.ended && !this.settingsOpen) this.showPause(true);
@@ -2843,7 +2879,7 @@ export class Game {
   // ---- émotes ----
   showEmote(m) {
     if (m.e >= 8) { // animation
-      const a = m.e - 8, until = performance.now() / 1000 + 20;
+      const a = m.e - 8; if (!EMO[a]) return; const until = performance.now() / 1000 + 20;
       if (m.i === this.myId) { this.selfEmote = { a, t0: performance.now() / 1000, until }; if (this.scoped || this.ads) this.toggleScope(false); }
       else { const o = this.others.get(m.i); if (o) o.emote = { a, t0: performance.now() / 1000, until }; }
       return;

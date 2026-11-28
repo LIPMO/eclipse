@@ -1,12 +1,21 @@
 [
   {
+    "version": "1.46.0",
+    "date": "2026-11-28",
+    "title": "90 émotes",
+    "items": [
+      "90 émotes animées (Disco, Air guitare, DJ, Boxe, Ninja, Pingouin, Zombie, Surf, Pluie de billets…), chacune avec ses bras, ses jambes, son mouvement et son tempo.",
+      "Touche V : grille des 90 émotes (la souris est libérée pour cliquer). Touches 1 à 8 pour les 8 premières, Maj + chiffre pour les messages.",
+      "Retour aux touches d'origine : V pour les émotes, B pour la boutique."
+    ]
+  },
+  {
     "version": "1.45.0",
     "date": "2026-11-28",
     "title": "Émotes animées",
     "items": [
       "Nouvelles émotes animées : Disco, Salut, Bravo, Fou rire, Muscles, Toupie, Pause et Robot. Ton personnage les joue, tous les joueurs le voient, et ta caméra passe à la 3e personne (tourne autour avec la souris).",
-      "Touche B pour ouvrir les émotes (comme dans les battle royales) : chiffre = animation, Maj + chiffre = message (👍 GG, 😂 Mdr…). Bouger, sauter ou tirer arrête l'émote.",
-      "Le menu d'achat passe sur la touche V. Si tu avais changé ces touches toi-même, tes réglages sont gardés."
+      "Touche V pour ouvrir les émotes : chiffre = animation, Maj + chiffre = message (👍 GG, 😂 Mdr…). Bouger, sauter ou tirer arrête l'émote."
     ]
   },
   {
