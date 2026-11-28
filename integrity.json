@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-28T10:54:09.866Z",
+ "generated": "2026-11-28T10:58:39.268Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -17,10 +17,10 @@
   "public/admin.html": "0646327bdd322cd469494724f761436819bbcf9bd67a0b6538b6986c272becab",
   "public/cgu.html": "b3845f5b69f013148c31950bf562a3b63a86f9d46439c3f6fac30f26c9724d10",
   "public/confidentialite.html": "cfce0ae293ccc87acd99aaa9e7621e8274c91b547cc07620b7bc8b7ec635b9b9",
-  "public/css/admin.css": "e213a1a3753698f8858844d88bd2c1bf739a7d799952678ff5765d472f047324",
+  "public/css/admin.css": "90a0bb383669ac92c2e5da584c1aefe4d350ff31b36c0fb1669b6bf6c0474d34",
   "public/css/fonts.css": "acdef6069913a87b7871d3a906f95cb3527b7ed247bfd1875cdc1a96f8cc36fc",
-  "public/css/legal.css": "6ef84d27dd1b87bc84b39d128efc7ae0f7e1b7403785c6add6fe8f512e18a681",
-  "public/css/style.css": "9275ee6d1d4650c11f03f9be31ac7a4e300b7b99f3149001e9ff28e78fb6918f",
+  "public/css/legal.css": "b75152de09c3db453393481d2458ab6799e56d55e8b8ec7767330bd823c33219",
+  "public/css/style.css": "922e99e8b7c4d38611f9bfd72aa796a8ee86e9112f8357ccae143aa32286cb23",
   "public/favicon.svg": "0aa105fb1a26438db6f11363385c79dd15ed5c77a50322f3cde8c8fb6883c0c0",
   "public/fonts/LICENCE-OFL.txt": "8f32c96ea465c5916489845361238b31b365414228bc2e4e45e3ae98ba1d311a",
   "public/fonts/chakra-petch-latin-400-normal.woff2": "7d75be85dd1627e27ec151e9a3701e661bc4f8c2a93611bdd92f3a05d6bbd942",

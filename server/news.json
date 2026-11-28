@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.34.1",
+    "date": "2026-11-28",
+    "title": "Barres de défilement aux couleurs du jeu",
+    "items": [
+      "Les barres de défilement grises de Windows sont remplacées par des barres fines et violettes, sur fond transparent, sur toutes les pages (jeu, pages de présentation, pages légales, administration)."
+    ]
+  },
+  {
     "version": "1.34.0",
     "date": "2026-11-28",
     "title": "Graphismes et ennemis invisibles corrigés",

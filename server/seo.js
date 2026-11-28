@@ -32,7 +32,7 @@ function page({ path, title, desc, h1, body, crumbs = [], ld = null }) {
 <meta property="og:image" content="${SITE}/img/og-image.png"><meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">${JSON.stringify(bc)}</script>
 ${ld ? `<script type="application/ld+json">${JSON.stringify(ld)}</script>` : ''}
-<style>
+<style>:root{color-scheme:dark}*{scrollbar-width:thin;scrollbar-color:rgba(139,92,255,.6) transparent}::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(139,92,255,.6);border-radius:8px}::-webkit-scrollbar-button{display:none}
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#090c15;color:#e9ecf5;line-height:1.6}
 a{color:#7cf0ff}header,main,footer{max-width:1000px;margin:0 auto;padding:16px}
 header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;border-bottom:1px solid #1d2338}

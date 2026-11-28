@@ -184,3 +184,13 @@ table.perms { width: 100%; } table.perms th:not(:first-child), table.perms td:no
 .gold { color: #ffcf5a; }
 .badge.warn { background: #4a3a10; color: #ffcf5a; }
 #mcp-url { white-space: pre-wrap; word-break: break-all; user-select: all; }
+
+/* barres de défilement aux couleurs du jeu (1.34.1) : fines, violettes, fond transparent (plus de barre grise de Windows) */
+:root { color-scheme: dark; }
+* { scrollbar-width: thin; scrollbar-color: rgba(139, 92, 255, .6) transparent; }
+*:hover { scrollbar-color: rgba(160, 123, 255, .85) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(139, 92, 255, .6); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(160, 123, 255, .9); }
+::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
