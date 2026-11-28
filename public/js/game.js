@@ -520,14 +520,15 @@ export class Game {
 
   setViewmodel(wid) {
     const skin = profile.equipped[wid] || 'default';
-    const key = wid + skin;
+    const kv = wid === 'knife' ? (ST().knifeModel || 'tactique') : null;
+    const key = wid + skin + (kv || '');
     if (this.vmKey === key) return;
     this.vmKey = key;
     this.vmWeaponId = wid;
     while (this.vm.children.length) this.vm.remove(this.vm.children[0]);
     const def = WEAPONS[wid];
-    const w = buildWeapon(def.model, skin);
-    this.vm.add(w);
+    const w = buildWeapon(def.model, skin, kv);
+    this.vm.add(w); this.vmKnife = kv ? w : null;
     const agent = AGENTS[this.roster.get(this.myId)?.agent || 'ignis'];
     const glove = new THREE.MeshStandardMaterial({ color: '#23262e', roughness: 0.8 });
     const sleeve = new THREE.MeshStandardMaterial({ color: new THREE.Color(agent.color).multiplyScalar(0.7), roughness: 0.6 });
@@ -2692,6 +2693,14 @@ export class Game {
     let insp = 0;
     if (this.inspectT > 0) { this.inspectT -= dt; if (this.local.lastShot > now - 0.2 || L.reloadEnd > now) this.inspectT = 0; insp = Math.sin(Math.min(1, (1.8 - this.inspectT) / 1.8) * Math.PI); }
     this.vm.visible = !(melee && this.me?.ko);
+    // couteaux (1.49) : karambit qui tourne autour du doigt, papillon qui s'ouvre, les autres font un lancer-rattraper
+    if (this.vmKnife) {
+      const u = this.vmKnife.userData, pk = this.inspectT > 0 ? Math.min(1, (1.8 - this.inspectT) / 1.8) : 0, e = pk ? Math.sin(pk * Math.PI) : 0;
+      if (u.spin) u.spin.rotation.x = pk ? -pk * Math.PI * 6 : 0;
+      if (u.h1) { const o = pk ? Math.abs(Math.sin(pk * Math.PI * 4)) * Math.PI : 0; u.h1.rotation.z = -o * 0.0; u.h1.rotation.x = o; u.h2.rotation.x = -o; this.vmKnife.rotation.z = pk ? pk * Math.PI * 4 : 0; }
+      if (!u.spin && !u.h1) { this.vmKnife.rotation.x = pk ? -pk * Math.PI * 2 : 0; this.vmKnife.position.y = e * 0.08; }
+      if (pk) insp *= 0.35; // le geste du couteau remplace l'inspection classique
+    }
     if (this.knifeChargeT0) {
       if (!this.me?.al || this.curWeaponId() !== 'knife') this.cancelKnifeCharge();
       else { const pw = this.knifeChargePower(), kc = $('knife-charge'); kc.querySelector('i').style.width = Math.round(pw * 100) + '%'; kc.classList.toggle('full', pw >= 1); this.vm.position.z += pw * 0.12; this.vm.rotation.x -= pw * 0.5; }

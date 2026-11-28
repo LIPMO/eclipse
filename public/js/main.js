@@ -7,7 +7,7 @@ import { profile, save, session, setToken, applyServerProfile } from './store.js
 import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, ROLES, ABILITY_ICONS, OUTFITS, BOXES, boxPool, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { masteryOf, BANNERS, TITLES, setKey } from '/shared/progress.js';
-import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
+import { buildWeapon, buildCharacter, KNIVES, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
 import * as SFX from './audio.js';
 import { mountSettings, keyName, sanitizeSettings, applyPreset, loadCustomSounds } from './settings.js';
 import { initClans, openClanTab } from './clans.js';
@@ -1359,7 +1359,15 @@ function renderCollection() {
   }).join('') || `<p class="muted">${f === 'fav' ? 'Aucun favori : clique sur l\'étoile ☆ d\'un skin pour l\'ajouter.' : 'Aucun skin dans cette catégorie.'}</p>`;
   $('coll-title').textContent = `${WEAPONS[state.collWeapon].name.toUpperCase()} · ${SKINS.find(s => s.id === sel).name}`;
   if (!previews.coll) previews.coll = new Preview($('coll-canvas'));
-  const w = buildWeapon(WEAPONS[state.collWeapon].model, sel);
+  // couteau : choix du modèle (1.49)
+  let kp = document.getElementById('knife-pick');
+  if (state.collWeapon === 'knife') {
+    if (!kp) { kp = document.createElement('div'); kp.id = 'knife-pick'; $('coll-filters').before(kp); }
+    const cur = profile.settings.knifeModel || 'tactique';
+    kp.innerHTML = `<div class="kp-title">MODÈLE DE COUTEAU <span class="muted small">· touche ${esc(keyName(profile.settings.keys.inspect))} en partie pour le faire tourner</span></div><div class="kp-row">${Object.entries(KNIVES).map(([k, v]) => `<button class="kp-btn ${k === cur ? 'on' : ''}" data-knife="${k}" title="${esc(v.desc)}"><b>${esc(v.name.toUpperCase())}</b><small>${esc(v.desc)}</small></button>`).join('')}</div>`;
+    kp.onclick = e => { const b = e.target.closest('[data-knife]'); if (!b) return; profile.settings.knifeModel = b.dataset.knife; save(); document.dispatchEvent(new CustomEvent('settings-changed', { detail: { key: 'knifeModel' } })); toast(`Couteau ${KNIVES[b.dataset.knife].name} équipé.`); renderCollection(); };
+  } else kp?.remove();
+  const w = buildWeapon(WEAPONS[state.collWeapon].model, sel, state.collWeapon === 'knife' ? profile.settings.knifeModel || 'tactique' : null);
   const box = new THREE.Box3().setFromObject(w);
   const c = box.getCenter(new THREE.Vector3());
   w.position.sub(c);

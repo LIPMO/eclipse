@@ -436,13 +436,89 @@ function addSight(g, type, baseY, z, mats) {
 }
 
 // L'arme pointe vers -Z. Origine ≈ poignée.
-export function buildWeapon(model, skinId) {
+// 1.49 : modèles de couteau (cosmétiques), chacun avec son animation d'inspection
+export const KNIVES = {
+  tactique: { name: 'Tactique', desc: 'Le couteau de base' },
+  papillon: { name: 'Papillon', desc: 'Les deux manches s\'ouvrent et se referment' },
+  karambit: { name: 'Karambit', desc: 'Tourne autour du doigt grâce à son anneau' },
+  baionnette: { name: 'Baïonnette', desc: 'Longue lame droite' },
+  couronne: { name: 'Couronne', desc: 'Lame courbe et garde royale' },
+  dague: { name: 'Dague', desc: 'Lame à double tranchant' },
+  bowie: { name: 'Bowie', desc: 'Grande lame à contre-pointe' },
+};
+function knifeBlade(pts, depth, mat) {
+  const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) { const q = pts[i]; if (q.length === 4) sh.quadraticCurveTo(q[0], q[1], q[2], q[3]); else sh.lineTo(q[0], q[1]); }
+  const m = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelSize: 0.003, bevelThickness: 0.002, bevelSegments: 1 }), mat);
+  m.rotation.y = Math.PI / 2; m.position.x = -depth / 2; return m;
+}
+function buildKnifeVariant(g, v, { body, accent, dark }) {
+  const add = (...ms) => ms.forEach(m => { m.castShadow = true; g.add(m); });
+  const metal = new THREE.MeshStandardMaterial({ color: '#c9ced6', metalness: 0.95, roughness: 0.22 });
+  switch (v) {
+    case 'papillon': {
+      add(knifeBlade([[0, 0], [0.24, 0.004], [0.27, 0.03], [0.02, 0.04], [0, 0.03]], 0.007, body));
+      g.children.at(-1).position.set(-0.0035, 0.005, -0.01);
+      // deux manches qui pivotent (animation d'inspection)
+      for (const [side, x] of [['h1', -0.012], ['h2', 0.012]]) {
+        const piv = new THREE.Group(); piv.position.set(x, 0.022, 0.0);
+        const hm = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.15), side === 'h1' ? dark : accent); hm.position.z = 0.075; piv.add(hm);
+        for (let k = 0; k < 4; k++) { const hole = new THREE.Mesh(new THREE.BoxGeometry(0.013, 0.012, 0.012), metal); hole.position.z = 0.03 + k * 0.03; piv.add(hole); }
+        g.add(piv); g.userData[side] = piv;
+      }
+      break;
+    }
+    case 'karambit': {
+      // pivot sur l'anneau : le couteau tourne autour du doigt
+      const spin = new THREE.Group(); spin.position.set(0, 0.02, 0.16); g.add(spin); g.userData.spin = spin;
+      const inner = new THREE.Group(); inner.position.set(0, -0.02, -0.16); spin.add(inner);
+      const bl = knifeBlade([[0, 0], [0.06, -0.01, 0.15, 0.03], [0.2, 0.1, 0.17, 0.13], [0.12, 0.06, 0.03, 0.045]], 0.007, body);
+      bl.position.set(-0.0035, 0.01, -0.0); inner.add(bl);
+      const h = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.034, 0.13), dark); h.position.set(0, 0.025, 0.07); h.rotation.x = -0.15; inner.add(h);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.007, 8, 18), accent); ring.rotation.y = Math.PI / 2; ring.position.set(0, 0.02, 0.16); inner.add(ring);
+      break;
+    }
+    case 'baionnette': {
+      add(knifeBlade([[0, 0], [0.33, 0.006], [0.37, 0.025], [0.33, 0.042], [0, 0.045]], 0.008, body));
+      g.children.at(-1).position.set(-0.004, 0.0, -0.02);
+      add(box(0.006, 0.006, 0.26, metal, 0, 0.022, -0.17), box(0.09, 0.016, 0.022, accent, 0, 0.022, 0.0), cyl(0.019, 0.15, dark, 0, 0.022, 0.085));
+      for (let k = 0; k < 5; k++) add(cyl(0.021, 0.006, accent, 0, 0.022, 0.03 + k * 0.025));
+      break;
+    }
+    case 'couronne': {
+      add(knifeBlade([[0, 0], [0.12, -0.02, 0.27, 0.025], [0.3, 0.05], [0.12, 0.03, 0.0, 0.045]], 0.008, body));
+      g.children.at(-1).position.set(-0.004, 0.0, -0.02);
+      const gold = new THREE.MeshStandardMaterial({ color: '#ffcf5a', metalness: 0.9, roughness: 0.25, emissive: '#5a3a00', emissiveIntensity: 0.4 });
+      const crown = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.008, 6, 16), gold); crown.position.set(0, 0.022, 0.0); add(crown);
+      for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2, c = new THREE.Mesh(new THREE.ConeGeometry(0.008, 0.03, 4), gold); c.position.set(Math.cos(a) * 0.034, 0.022 + Math.sin(a) * 0.034, 0.0); c.rotation.x = Math.PI / 2; add(c); }
+      add(cyl(0.018, 0.14, dark, 0, 0.022, 0.08), new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), gold));
+      g.children.at(-1).position.set(0, 0.022, 0.16);
+      break;
+    }
+    case 'dague': {
+      add(knifeBlade([[0, 0], [0.28, 0.024], [0, 0.048]], 0.009, body));
+      g.children.at(-1).position.set(-0.0045, -0.002, -0.02);
+      add(box(0.004, 0.004, 0.24, metal, 0, 0.022, -0.15), box(0.12, 0.018, 0.02, accent, 0, 0.022, 0.0), box(0.03, 0.03, 0.13, dark, 0, 0.022, 0.075), new THREE.Mesh(new THREE.OctahedronGeometry(0.02), accent));
+      g.children.at(-1).position.set(0, 0.022, 0.15);
+      break;
+    }
+    case 'bowie': {
+      add(knifeBlade([[0, 0], [0.26, -0.004], [0.32, 0.02], [0.27, 0.045], [0.2, 0.06], [0, 0.06]], 0.009, body));
+      g.children.at(-1).position.set(-0.0045, -0.006, -0.02);
+      const brass = new THREE.MeshStandardMaterial({ color: '#c9a050', metalness: 0.85, roughness: 0.3 });
+      add(box(0.11, 0.024, 0.022, brass, 0, 0.022, 0.0), box(0.034, 0.042, 0.14, dark, 0, 0.018, 0.08), box(0.038, 0.046, 0.02, brass, 0, 0.018, 0.155));
+      break;
+    }
+  }
+}
+export function buildWeapon(model, skinId, knifeVariant = null) {
   const g = new THREE.Group();
   const { body, accent, dark } = skinMaterials(skinId);
   const add = (...ms) => ms.forEach(m => { m.castShadow = true; g.add(m); });
   let muzzle = new THREE.Vector3(0, 0.05, -0.4);
   switch (model) {
     case 'knife': {
+      if (knifeVariant && knifeVariant !== 'tactique' && KNIVES[knifeVariant]) { buildKnifeVariant(g, knifeVariant, { body, accent, dark }); g.userData.knife = knifeVariant; muzzle.set(0, 0.03, -0.35); break; }
       const shape = new THREE.Shape();
       shape.moveTo(0, 0); shape.lineTo(0.3, 0.005); shape.quadraticCurveTo(0.34, 0.02, 0.36, 0.045); shape.lineTo(0.04, 0.05); shape.lineTo(0, 0.04); shape.lineTo(0, 0);
       const blade = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.008, bevelEnabled: true, bevelSize: 0.004, bevelThickness: 0.003, bevelSegments: 1 }), body);
