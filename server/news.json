@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.33.0",
+    "date": "2026-11-28",
+    "title": "Référencement : une seule adresse par page",
+    "items": [
+      "Les adresses en double (/index.html, barre « / » finale, majuscules) redirigent maintenant vers l'adresse officielle de la page, pour un meilleur référencement sur Google."
+    ]
+  },
+  {
     "version": "1.32.0",
     "date": "2026-11-27",
     "title": "Annonces Discord des tournois",

@@ -163,6 +163,14 @@ const server = http.createServer((req, res) => {
   }
   let url;
   try { url = decodeURIComponent(req.url.split('?')[0]); } catch { res.writeHead(400); res.end(); return; }
+  // SEO (1.33) : une seule adresse par page — /index.html, barre finale et majuscules redirigées (301) vers l'adresse officielle
+  {
+    const SEO_PATHS = /^\/(jeu|agents|modes|cartes|guide|nouveautes|telecharger)(\/[A-Za-z]+)?\/?$/i;
+    let to = null;
+    if (url === '/index.html') to = '/';
+    else if (SEO_PATHS.test(url)) { const c = url.replace(/\/+$/, '').toLowerCase(); if (c !== url) to = c; }
+    if (to) { const q = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''; res.writeHead(301, { Location: to + (to === '/' ? q : ''), 'Cache-Control': 'public, max-age=86400' }); res.end(); return; }
+  }
   // pages de présentation pour les moteurs de recherche (1.20) et sitemap généré
   { const seo = seoRoute(url, admin.newsPath()); if (seo) { res.writeHead(200, { 'Content-Type': seo.type, 'Cache-Control': 'public, max-age=600', ...(seo.type.startsWith('text/html') ? { 'Content-Security-Policy': SEO_CSP } : {}) }); res.end(req.method === 'HEAD' ? undefined : seo.body); return; } }
   if (url === '/') url = '/index.html';
