@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Game } from './game.js';
 import { profile, save, session, setToken, applyServerProfile } from './store.js';
-import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, ROLES, ABILITY_ICONS, OUTFITS, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
+import { AGENTS, AGENT_ORDER, SKINS, SKINNABLE, WEAPONS, isFfa, RARITY, rarityOf, ROLES, ABILITY_ICONS, OUTFITS, BOXES, boxPool, CUSTOM_RULES, CUSTOM_FLAGS, cleanCustomOpts, customSummary } from '/shared/data.js';
 import { parseMap, MAP_INFO, mapsForMode } from '/shared/maps.js';
 import { masteryOf, BANNERS, TITLES, setKey } from '/shared/progress.js';
 import { buildWeapon, buildCharacter, agentIconHTML, drawMapPreview, animateSkins, skinSwatch } from './models.js';
@@ -1129,6 +1129,7 @@ function renderShopTab() {
       <div class="sh-clock"><span>NOUVELLE BOUTIQUE DANS</span><b id="shop-timer">${shopTimer()}</b></div>
     </div>
     ${state.guest ? '<p class="muted small">Crée un compte pour acheter des skins avec tes Éclats.</p>' : creatorBox()}
+    ${boxesSection()}
     <div class="sh-sec"><h2>EN VEDETTE <small>-${d.featured[0]?.off || 25} %</small></h2><div class="sh-grid big">${d.featured.map(i => shopTile(i, true)).join('')}
       ${b ? `<div class="sh-tile big sh-pack" style="--rc:#ffcf5a;--b1:${ref.body || '#222'};--b2:${ref.accent || '#8b5cff'}">
         <div class="sh-pack-art">${bSkins.map(x => `<i class="${profile.owned.includes(x.id) ? 'got' : ''}" style="${swatchCss(x)}" title="${esc(x.name)}"></i>`).join('')}</div>
@@ -1173,6 +1174,58 @@ document.addEventListener('input', e => {
   if (state.creatorInput.length >= 3) creatorBox.t = setTimeout(() => net.send('creatorLookup', { code: state.creatorInput }), 350);
 });
 document.addEventListener('keydown', e => { if (e.target.id === 'cr-input' && e.key === 'Enter') document.querySelector('[data-shp="crUse"]')?.click(); });
+// ---- boîtes de skins (1.36) ----
+function boxesSection() {
+  return `<div class="sh-sec"><h2>BOÎTES <small>un skin au hasard</small></h2><div class="bx-grid">${Object.entries(BOXES).map(([id, b]) => `
+    <div class="bx-card" style="--bc:${b.color}">
+      <div class="bx-art"><div class="bx-cube"></div></div>
+      <div class="bx-name">${esc(b.name.toUpperCase())}</div>
+      <div class="bx-odds">${Object.entries(b.odds).map(([r, p]) => `<span style="color:${RARITY[r].color}">${RARITY[r].name} <b>${String(p).replace('.', ',')} %</b></span>`).join('')}</div>
+      ${state.guest ? '' : `<button class="btn primary" data-shp="box" data-id="${id}" ${state.boxBusy ? 'disabled' : ''}><span class="gem small"></span> ${b.price}</button>`}
+    </div>`).join('')}</div>
+    <p class="muted small">Tu reçois un skin de la rareté tirée que tu ne possèdes pas encore. Si tu as déjà tous les skins de cette rareté, tu récupères la moitié de son prix en Éclats. Les boîtes s'achètent uniquement avec des Éclats gagnés en jouant.</p></div>`;
+}
+function openBoxAnim(m) {
+  const box = BOXES[m.box], win = SKINS.find(x => x.id === m.skin); if (!box || !win) { state.boxBusy = false; return; }
+  const rarities = Object.keys(box.odds), N = 44, WIN = 38;
+  const items = Array.from({ length: N }, (_, i) => {
+    if (i === WIN) return win;
+    let r = Math.random() * 100, rar = rarities[0];
+    for (const k of rarities) { rar = k; if ((r -= box.odds[k]) < 0) break; }
+    const pool = boxPool(rar); return pool[Math.floor(Math.random() * pool.length)] || win;
+  });
+  const ov = document.createElement('div'); ov.className = 'bx-overlay';
+  ov.innerHTML = `<div class="bx-panel" style="--bc:${box.color}"><div class="bx-title">${esc(box.name.toUpperCase())}</div>
+    <div class="bx-window"><div class="bx-marker"></div><div class="bx-strip">${items.map(s => `<div class="bx-item" style="--rc:${RARITY[rarityOf(s)].color}"><div class="bx-sw" style="${swatchCss(s)}"></div><span>${esc(s.name)}</span></div>`).join('')}</div></div>
+    <div class="bx-res"></div></div>`;
+  document.body.appendChild(ov);
+  const strip = ov.querySelector('.bx-strip'), W = 150; // largeur d'une case (marges comprises)
+  const target = WIN * W + W / 2 - ov.querySelector('.bx-window').clientWidth / 2 + (Math.random() - 0.5) * (W * 0.7);
+  requestAnimationFrame(() => requestAnimationFrame(() => { strip.style.transform = `translateX(${-target}px)`; }));
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) strip.style.transition = 'none';
+  setTimeout(() => {
+    const rar = RARITY[m.rarity];
+    ov.querySelector('.bx-res').innerHTML = `<div class="bx-win" style="--rc:${rar.color}"><b>${esc(win.name)}</b><span>${rar.name}</span>${m.refund ? `<div class="muted small">Déjà possédé : +${m.refund} Éclats</div>` : '<div class="small">Ajouté à ta collection !</div>'}</div>
+      <div class="row" style="justify-content:center;gap:8px"><button class="btn primary" data-bx="again">OUVRIR ENCORE (${box.price})</button><button class="btn ghost" data-bx="close">FERMER</button></div>`;
+    ov.querySelector('.bx-item:nth-child(' + (WIN + 1) + ')').classList.add('win');
+    if (m.rarity === 'legendary' || m.rarity === 'epic') SFX.playPromote?.(); else SFX.playNotify?.();
+    state.boxBusy = false;
+  }, reduce ? 300 : 5200);
+  ov.onclick = e => {
+    const b = e.target.closest('[data-bx]'); if (!b) return;
+    ov.remove(); if (state.tab === 'shop') renderShopTab();
+    if (b.dataset.bx === 'again') openBox(m.box);
+  };
+}
+function openBox(id) {
+  const b = BOXES[id]; if (!b || state.boxBusy) return;
+  if (profile.eclats < b.price) { toast(`Il te manque ${b.price - profile.eclats} Éclats.`); return; }
+  state.boxBusy = true; net.send('openBox', { box: id });
+  setTimeout(() => { if (state.boxBusy && !document.querySelector('.bx-overlay')) state.boxBusy = false; }, 5000);
+}
+net.on('boxResult', m => openBoxAnim(m));
+net.on('error', () => { if (state.boxBusy && !document.querySelector('.bx-overlay')) state.boxBusy = false; });
 function openShopTab() {
   if (!state.guest) net.send('creatorSupportGet');
   if (!state.shop || !state.shop.featured || Date.now() > state.shop.resetAt) net.send('shop');
@@ -1185,6 +1238,7 @@ function openShopTab() {
 $('shop-root').onclick = e => {
   const b = e.target.closest('[data-shp]'); if (!b) return;
   if (b.dataset.shp === 'crUse') { const v = ($('cr-input')?.value || '').trim(); if (v.length < 3) { toast('Entre un code créateur.'); return; } state.crPending = true; net.send('creatorSupport', { code: v }); return; }
+  if (b.dataset.shp === 'box') { openBox(b.dataset.id); return; }
   if (b.dataset.shp === 'crClear') { net.send('creatorSupport', { code: null }); return; }
   const d = state.shop; if (!d) return;
   if (b.dataset.shp === 'preview') { const s = SKINS.find(x => x.id === b.dataset.id); state.collSkin = b.dataset.id; state.collFilter = 'all'; state.collSet = s?.set || ''; showTab('collection'); return; }

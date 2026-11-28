@@ -2,7 +2,7 @@
 import { publicCard, titlesOf, rerollQuest, ensureUser, weekKey, rankFor, checkAchievements } from './progression.js';
 import { TITLES, levelOf, BANNERS, ENDORSE, unlockLevel } from '../shared/progress.js';
 import { PRESENCES, presenceOf, refusesInvites } from './progression.js';
-import { SKINS } from '../shared/data.js';
+import { SKINS, BOXES, boxPool } from '../shared/data.js';
 // boutique du jour (1.23) : un thème par jour (une des collections de skins), 2 skins en vedette (-25 %),
 // 6 skins du jour (-40 %) et le pack de la collection du thème (-50 % sur les skins qui manquent).
 // Même boutique pour tout le monde, renouvelée à minuit (UTC).
@@ -524,6 +524,28 @@ export class Social {
     this.ctx.send(c.id, { type: 'bundleBought', name: b.name, count: missing.length, price });
     const got = checkAchievements(u);
     if (got.length) { this.A.save(); for (const a of got) this.ctx.send(c.id, { type: 'achUnlocked', label: a.label, reward: a.reward, title: a.title }); this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); }
+  }
+  // boîtes de skins (1.36)
+  m_openBox(c, msg) {
+    const u = this.needAccount(c); if (!u) return;
+    const box = Object.prototype.hasOwnProperty.call(BOXES, msg.box) ? BOXES[msg.box] : null;
+    if (!box) return this.err(c, 'Boîte inconnue.');
+    if (u.eclats < box.price) return this.err(c, 'Pas assez d\'Éclats.');
+    let roll = Math.random() * 100, rar = null;
+    for (const [r, pct] of Object.entries(box.odds)) { rar = r; if ((roll -= pct) < 0) break; }
+    const pool = boxPool(rar), fresh = pool.filter(s => !u.owned.includes(s.id));
+    u.eclats -= box.price;
+    let skin, refund = 0;
+    if (fresh.length) { skin = fresh[Math.floor(Math.random() * fresh.length)]; u.owned.push(skin.id); }
+    else { skin = pool[Math.floor(Math.random() * pool.length)]; refund = Math.round(skin.price / 2); u.eclats += refund; }
+    this.A.save();
+    this.ctx.admin.economy?.('spend', box.price); if (refund) this.ctx.admin.economy?.('earn', refund); else this.ctx.admin.economy?.('skin', skin.id);
+    this.ctx.creators?.payout(u, box.price - refund, box.name);
+    this.ctx.admin.log('economie', `${u.name} ouvre une ${box.name} : ${skin.name} (${rar})${refund ? ` déjà possédé, +${refund} Éclats` : ''}`);
+    this.ctx.send(c.id, { type: 'boxResult', box: msg.box, skin: skin.id, rarity: rar, refund });
+    this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) });
+    const got = checkAchievements(u);
+    if (got.length) { this.A.save(); for (const a of got) this.ctx.send(c.id, { type: 'achUnlocked', label: a.label, reward: a.reward, title: a.title }); }
   }
   m_myProfile(c) { const u = this.userOf(c); if (u) this.ctx.send(c.id, { type: 'profile', profile: this.A.publicProfile(u) }); }
 

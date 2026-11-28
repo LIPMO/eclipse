@@ -766,6 +766,16 @@ export const RARITY = {
 };
 export const rarityOf = s => !s ? 'common' : s.level ? 'exclusive' : s.price >= 1400 ? 'legendary' : s.price >= 800 ? 'epic' : s.price >= 400 ? 'rare' : 'common';
 
+// boîtes de skins (1.36) : payées en Éclats (jamais en argent réel), tirage fait par le serveur, chances affichées.
+// On reçoit un skin de la rareté tirée qu'on ne possède pas encore ; si on a déjà toute cette rareté : la moitié de son prix en Éclats.
+export const BOXES = {
+  small: { name: 'Petite boîte', price: 300, color: '#9aa3ad', odds: { common: 70, rare: 25, epic: 4.5, legendary: 0.5 } },
+  big: { name: 'Grosse boîte', price: 600, color: '#3d9bff', odds: { common: 40, rare: 40, epic: 16, legendary: 4 } },
+  mega: { name: 'Méga boîte', price: 1000, color: '#b05cff', odds: { rare: 50, epic: 38, legendary: 12 } },
+  ultra: { name: 'Ultra boîte', price: 1600, color: '#ffb11f', odds: { epic: 60, legendary: 40 } },
+};
+export const boxPool = r => SKINS.filter(s => s.id !== 'default' && !s.level && rarityOf(s) === r);
+
 export const REWARDS = { kill: 10, roundWin: 15, matchWin: 150, matchPlayed: 50 };
 
 // moments annoncés en partie (1.15) : nom affiché, XP de base (× réglage de l'administration),

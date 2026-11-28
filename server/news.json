@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.36.0",
+    "date": "2026-11-28",
+    "title": "Boîtes de skins",
+    "items": [
+      "Nouveau dans la BOUTIQUE : 4 boîtes de skins, la Petite (300 Éclats), la Grosse (600), la Méga (1 000) et l'Ultra (1 600). Plus la boîte est grosse, plus les skins rares, épiques et légendaires sont fréquents.",
+      "Ouverture animée : une bande de skins défile puis s'arrête sur le tien. Les chances de chaque rareté sont affichées sur chaque boîte.",
+      "Tu reçois toujours un skin que tu n'as pas encore dans la rareté tirée. Si tu possèdes déjà toute cette rareté, tu récupères la moitié de son prix en Éclats.",
+      "Les boîtes s'achètent uniquement avec des Éclats gagnés en jouant, et elles comptent pour les codes créateur."
+    ]
+  },
+  {
     "version": "1.35.0",
     "date": "2026-11-28",
     "title": "Ennemis invisibles (vraie cause) et codes créateur",

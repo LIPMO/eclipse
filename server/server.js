@@ -1001,7 +1001,7 @@ function handleLobby(c, msg) {
       break;
     }
     default:
-      if (typeof msg.type === 'string' && /^(party|clan|tour|gift$|endorse$|setProfile$|buyShop$|pinFriend$|recent$|shop$|creatorSave$|creatorSupport$|creatorLookup$)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
+      if (typeof msg.type === 'string' && /^(party|clan|tour|gift$|endorse$|setProfile$|buyShop$|openBox$|pinFriend$|recent$|shop$|creatorSave$|creatorSupport$|creatorLookup$)/.test(msg.type) && !/^(clanChat|clanGet|tourList)$/.test(msg.type) && !socialLimit.take(c.id)) { send(c.id, { type: 'error', text: 'Doucement : attends un instant.' }); break; }
       if (social.handle(c, msg)) break;
       if (/^creator/.test(msg.type) && creators.handle(c, msg)) break;
       if (parties.handle(c, msg)) break;
