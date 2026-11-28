@@ -88,6 +88,9 @@
         <label class="tog"><input type="checkbox" id="s-fps"><span></span>Images par seconde illimitées <em>(plus fluide sur les écrans 120-240 Hz, chauffe un peu plus)</em></label>
         <label class="tog"><input type="checkbox" id="s-gpu"><span></span>Utiliser la carte graphique la plus puissante <em>(ordinateurs portables)</em></label>
         <label class="tog"><input type="checkbox" id="s-discord"><span></span>Présence Discord <em>(ton profil Discord affiche ECLIPSE : mode, carte, score, agent, temps de jeu)</em></label>
+        <label class="tog"><input type="checkbox" id="s-medal"><span></span>Clips automatiques Medal <em>(à chaque élimination, tir à la tête, ACE, victoire royale… si Medal est lancé sur ton PC)</em></label>
+        <div class="row gap medal-row"><input id="s-medal-key" class="inp" placeholder="Clé Medal (fournie par Medal)" autocomplete="off" spellcheck="false"><select id="s-medal-dur" class="inp"><option value="15">Clips de 15 s</option><option value="30">Clips de 30 s</option><option value="45">Clips de 45 s</option><option value="60">Clips de 60 s</option></select><button class="btn" id="s-medal-test">TESTER</button></div>
+        <div class="help" id="s-medal-msg">Ouvre Medal, colle la clé, puis clique sur TESTER : un clip « Test du launcher » doit apparaître dans Medal.</div>
         <label class="tog"><input type="checkbox" id="s-perf"><span></span>Mode performance <em>(carte graphique forcée, priorité haute, pas de ralentissement en arrière-plan : moins de saccades)</em></label>
         <div class="row gap"><button class="btn" id="s-nettest">TESTER MA CONNEXION</button><span class="help" id="s-net-msg">Mesure le ping et sa stabilité vers le serveur.</span></div>
         <div class="row gap" id="restart-row" hidden><span class="help ok">Redémarre le launcher pour appliquer.</span><button class="btn primary" id="s-restart">REDÉMARRER</button></div>

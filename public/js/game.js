@@ -973,6 +973,8 @@ export class Game {
     setTimeout(() => div.remove(), 7000);
   }
 
+  // ---- clips Medal (1.50) : dans le launcher, chaque moment fort est transmis à Medal (s'il est installé) ----
+  medalClip(id) { try { if (ST().medalClips !== false) window.eclipseLauncher?.medal?.(id); } catch { /* */ } }
   // ---- blagues de l'administrateur (1.15) ----
   trollOn(k) { return (this.trolls[k] || 0) > performance.now() / 1000; }
   fxOn(id, k) { return (this.trollFx.get(id)?.[k] || 0) > performance.now() / 1000; }
@@ -1723,7 +1725,12 @@ export class Game {
     on('hurt', m => { this.local.hurtT = 0.4; SFX.playHurt(); if (m.from) this.showDamageDir(m.from); this.pad?.rumble(Math.min(1, 0.3 + (m.d || 0) / 100), 180); });
     on('kill', m => {
       this.addKillfeed(m);
-      if (m.k === this.myId && m.v !== this.myId) { this.roundKills = (this.roundKills || 0) + 1; if (this.chal) { this.chal.kills++; if (m.h) this.chal.hs++; } }
+      if (m.k === this.myId && m.v !== this.myId) { this.roundKills = (this.roundKills || 0) + 1; if (this.chal) { this.chal.kills++; if (m.h) this.chal.hs++; }
+        // clips Medal : élimination, tir à la tête, couteau, multi-éliminations (en 4 s), ACE (toute l'équipe adverse en une manche)
+        const tn = performance.now() / 1000; this.medalChain = tn - (this.medalChainT || 0) < 4 ? (this.medalChain || 1) + 1 : 1; this.medalChainT = tn;
+        const foes = this.mode === 'assault' ? [...this.roster.values()].filter(r => r.team && r.team !== this.roster.get(this.myId)?.team).length : 0;
+        const id = foes >= 3 && this.roundKills >= foes ? 'ace' : this.medalChain >= 4 ? 'quadra' : this.medalChain === 3 ? 'triple' : this.medalChain === 2 ? 'double' : m.w === 'knife' ? 'knife' : m.h ? 'headshot' : 'kill';
+        this.medalClip(id); }
       if (m.v !== this.myId && !isFfa(this.mode) && !this.isEnemyId(m.v)) { const p = this.others.get(m.v)?.cur?.p; if (p) this.allyDeaths.push({ p: p.slice(), t: performance.now() / 1000, n: this.nameOf(m.v) }); }
       const kr = m.k && m.k !== this.myId && m.v !== this.myId && this.roster.get(m.k);
       if (kr && !kr.bot && !this.isEnemyId(m.k)) this.offerReaction(m.k);
@@ -1761,6 +1768,7 @@ export class Game {
     on('roundEnd', m => {
       const me = this.roster.get(this.myId);
       const win = me && m.winner === me.team;
+      if (win) this.medalClip('roundWin');
       if (m.history) this.roundHistory = m.history;
       if (m.loss) this.lossStreak = m.loss;
       const mvpTxt = m.mvp ? ` · MVP de la manche : ${this.nameOf(m.mvp.id)} (${m.mvp.kills} élim., ${m.mvp.dmg} dégâts)` : '';
@@ -1858,7 +1866,7 @@ export class Game {
     on('matchSummary', m => this.onSummary(m));
     on('matchEnd', m => this.onMatchEnd(m));
     on('brWin', m => {
-      if (m.i === this.myId) { this.banner('VICTOIRE ROYALE !', `Tu es le dernier survivant · ${KB('emote')} pour faire une petite danse`, 'win', 5); SFX.playPromote?.(); }
+      if (m.i === this.myId) { this.medalClip('brWin'); this.banner('VICTOIRE ROYALE !', `Tu es le dernier survivant · ${KB('emote')} pour faire une petite danse`, 'win', 5); SFX.playPromote?.(); }
       else this.banner(`${this.nameOf(m.i).toUpperCase()}`, 'REMPORTE LA VICTOIRE ROYALE', '', 5);
     });
     on('brBought', m => { this.centerMsg(m.full ? 'SOIN COMPLET !' : `+${m.hp} PV`, 1.2); SFX.playPromote?.(); });
@@ -3439,6 +3447,7 @@ export class Game {
     const mine = m.stats.find(s => s.id === this.myId) || { kills: 0, deaths: 0, assists: 0 };
     const win = isFfa(m.mode) ? m.winner === this.myId : m.winner === meR?.team;
     const reward = m.rewards?.[this.myId] ?? 0;
+    if (m.mode === 'br') { if ((mine.place || 99) <= 3 && (mine.place || 99) > 1) this.medalClip('brTop3'); } else if (win) this.medalClip('matchWin');
     if (this.isGuest) { profile.eclats += reward; save(); }
     void mine;
     $('end-title').textContent = win ? 'VICTOIRE' : 'DÉFAITE';

@@ -129,7 +129,7 @@ function renderSettings() {
   $('s-size').disabled = settings.fullscreen;
   seg('s-display', settings.fullscreen ? 'full' : 'window', v => save({ fullscreen: v === 'full' }));
   seg('s-after', settings.afterLaunch, v => save({ afterLaunch: v }));
-  $('s-fps').checked = settings.fpsUnlock; $('s-gpu').checked = settings.highPerfGpu; $('s-perf').checked = settings.perfMode !== false; $('s-discord').checked = settings.discord !== false;
+  $('s-fps').checked = settings.fpsUnlock; $('s-gpu').checked = settings.highPerfGpu; $('s-perf').checked = settings.perfMode !== false; $('s-discord').checked = settings.discord !== false; $('s-medal').checked = settings.medal !== false; $('s-medal-key').value = settings.medalKey || ''; $('s-medal-dur').value = String(settings.medalDuration || 30);
   $('s-autostart').checked = settings.autoStart; $('s-autoupd').checked = settings.autoUpdate;
   $('autostart-wrap').hidden = !['win32', 'darwin'].includes(settings.platform);
   $('restart-row').hidden = !initial || (initial.fpsUnlock === settings.fpsUnlock && initial.highPerfGpu === settings.highPerfGpu && initial.perfMode === (settings.perfMode !== false));
@@ -148,6 +148,16 @@ $('s-fps').onchange = e => save({ fpsUnlock: e.target.checked });
 $('s-gpu').onchange = e => save({ highPerfGpu: e.target.checked });
 $('s-perf').onchange = e => save({ perfMode: e.target.checked });
 $('s-discord').onchange = e => save({ discord: e.target.checked });
+$('s-medal').onchange = e => save({ medal: e.target.checked });
+$('s-medal-key').onchange = e => save({ medalKey: e.target.value });
+$('s-medal-dur').onchange = e => save({ medalDuration: +e.target.value });
+$('s-medal-test').onclick = async () => {
+  const m = $('s-medal-msg'); await save({ medalKey: $('s-medal-key').value });
+  if (!$('s-medal-key').value.trim()) { m.textContent = 'Colle d\'abord ta clé Medal.'; m.className = 'help bad'; return; }
+  m.textContent = 'Envoi du test à Medal…'; m.className = 'help';
+  const r = await window.launcher.medalTest();
+  m.textContent = r.ok ? '✔ Medal a reçu le test : un clip « Test du launcher » arrive dans ta bibliothèque.' : `✘ ${r.reason || 'échec'}`; m.className = 'help ' + (r.ok ? 'ok' : 'bad');
+};
 $('s-nettest').onclick = async () => {
   const msg = $('s-net-msg'), btn = $('s-nettest');
   msg.className = 'help'; msg.textContent = 'Mesure en cours…'; btn.disabled = true;

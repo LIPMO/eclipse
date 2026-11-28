@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('launcher', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  medalTest: () => ipcRenderer.invoke('medal:test'),
   setSettings: patch => ipcRenderer.invoke('settings:set', patch),
   resetSettings: () => ipcRenderer.invoke('settings:reset'),
   status: server => ipcRenderer.invoke('status:get', server),

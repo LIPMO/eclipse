@@ -103,6 +103,7 @@ const SECTIONS = [
     { k: 'slide', t: 'toggle', label: 'Glissade (s\'accroupir en courant)', hint: 'En courant, la touche s\'accroupir lance une glissade : plus petit et plus rapide, mais moins précis. Saute pendant la glissade pour garder l\'élan.' },
     { k: 'walkToggle', t: 'toggle', label: 'Marche silencieuse en mode bascule' },
     { k: 'scopeHold', t: 'toggle', label: 'Viseur et lunette : maintenir le bouton', hint: 'Désactivé : un clic pour viser, un autre pour arrêter' },
+    { k: 'medalClips', t: 'toggle', label: 'Clips automatiques Medal (launcher)', hint: 'Dans le launcher : chaque moment fort est envoyé à Medal s\'il est installé (clé à mettre dans les paramètres du launcher)' },
     { k: 'wallJump', t: 'toggle', label: 'Saut mural', hint: 'En l\'air contre un mur, appuie sur Espace pour rebondir (2 fois au plus avant de toucher le sol)' },
     { k: 'autoReload', t: 'toggle', label: 'Rechargement automatique quand le chargeur est vide' },
   ] },

@@ -5,13 +5,14 @@ const { app, BrowserWindow, ipcMain, shell, dialog, session, screen, powerSaveBl
 const path = require('node:path');
 const os = require('node:os');
 const { DiscordPresence, buildActivity } = require('./discord.js');
+const { MedalClips } = require('./medal.js');
 const DISCORD_CLIENT_ID = '1575996797615350011';
 const fs = require('node:fs');
 
 const DEFAULT_SERVER = process.env.ECLIPSE_SERVER || 'https://eclipseee.online';
 const OLD_SERVERS = ['https://eclipse.charlesvibe.xyz']; // anciennes adresses par défaut : remplacées automatiquement
 const SITE = 'https://eclipseee.online';
-const DEFAULTS = { server: DEFAULT_SERVER, fullscreen: true, size: '1600x900', afterLaunch: 'hide', fpsUnlock: false, highPerfGpu: true, perfMode: true, discord: true, autoStart: false, autoUpdate: true, gameBounds: null };
+const DEFAULTS = { server: DEFAULT_SERVER, fullscreen: true, size: '1600x900', afterLaunch: 'hide', fpsUnlock: false, highPerfGpu: true, perfMode: true, discord: true, medal: true, medalKey: '', medalDuration: 30, autoStart: false, autoUpdate: true, gameBounds: null };
 const SIZES = ['1280x720', '1600x900', '1920x1080', '2560x1440'];
 const ICON = path.join(__dirname, 'build', 'icon.png');
 
@@ -207,6 +208,16 @@ ipcMain.on('presence:set', (e, st) => {
   updatePresence();
 });
 
+// clips automatiques Medal (2.3) : événements envoyés par la fenêtre de jeu, transmis à l'application Medal du PC
+const medal = new MedalClips({ log: (...a) => console.log(...a) });
+ipcMain.on('medal:event', (e, id) => {
+  if (!gameWin || e.sender !== gameWin.webContents || settings.medal === false || !settings.medalKey) return;
+  try { if (new URL(e.senderFrame?.url || e.sender.getURL()).origin !== new URL(normalizeServer(settings.server)).origin) return; } catch { return; }
+  if (typeof id !== 'string' || id.length > 20 || id === 'test') return;
+  medal.send(id, { key: settings.medalKey, duration: settings.medalDuration });
+});
+ipcMain.handle('medal:test', () => medal.send('test', { key: settings.medalKey, duration: 15 }));
+
 function boostPriority(wc) {
   const prio = os.constants?.priority?.PRIORITY_ABOVE_NORMAL ?? -7;
   const pids = new Set();
@@ -242,6 +253,9 @@ ipcMain.handle('settings:set', (e, patch = {}) => {
   if ('server' in patch) { const s = normalizeServer(patch.server); if (!s) return { ok: false, error: 'Adresse du serveur invalide' }; settings.server = s; }
   for (const k of ['fullscreen', 'fpsUnlock', 'highPerfGpu', 'perfMode', 'discord', 'autoStart', 'autoUpdate']) if (k in patch) settings[k] = !!patch[k];
   if ('discord' in patch) applyDiscord();
+  if ('medal' in patch) settings.medal = !!patch.medal;
+  if ('medalKey' in patch) settings.medalKey = String(patch.medalKey || '').trim().replace(/[^\w.:+/=-]/g, '').slice(0, 200);
+  if ('medalDuration' in patch && [15, 30, 45, 60].includes(+patch.medalDuration)) settings.medalDuration = +patch.medalDuration;
   if ('size' in patch && SIZES.includes(patch.size)) { settings.size = patch.size; settings.gameBounds = null; }
   if ('afterLaunch' in patch && ['hide', 'minimize', 'keep'].includes(patch.afterLaunch)) settings.afterLaunch = patch.afterLaunch;
   if ('autoStart' in patch) applyAutoStart();

@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.50.0",
+    "date": "2026-11-28",
+    "title": "Clips automatiques Medal (launcher 2.3)",
+    "items": [
+      "Launcher 2.3 : clips automatiques Medal. Si Medal est lancé sur ton PC, chaque moment fort crée un clip tout seul : élimination, tir à la tête, couteau, double / triple / quadruple élimination, ACE, manche gagnée, victoire, victoire royale, top 3.",
+      "Réglages dans le launcher (Paramètres → Clips automatiques Medal) : activer, clé Medal, durée des clips (15 à 60 s) et bouton TESTER. Dans le jeu : réglage « Clips automatiques Medal »."
+    ]
+  },
+  {
     "version": "1.49.0",
     "date": "2026-11-28",
     "title": "7 modèles de couteaux",

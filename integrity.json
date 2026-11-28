@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-28T16:50:09.614Z",
+ "generated": "2026-11-28T17:05:52.528Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -45,14 +45,14 @@
   "public/js/clans.js": "dfae1f1c35736a3e05adce0488c507b85fe84fb58125ed3a81734dfb6e598d84",
   "public/js/creator.js": "e3e597f4a6e1b3ea8cf399d8ef44ecb8fd748e2c6fa32f69a86a698b0b3f9df0",
   "public/js/fx.js": "5fb45d68bb6e4a16eb9d3765cfced25abfea8b8d9af781b3722d93be56c32156",
-  "public/js/game.js": "1ee01cfb2893384d5957dd84249235f40e1791997fff1c3482c21cda9e6de616",
+  "public/js/game.js": "223c69da2853d96424b74cc8080cdb7c2117dae90ec535fcfc6aeda4ce7a96d4",
   "public/js/gamepad.js": "ab4d0225a3e66baf1aee4a3936919ad6e459d081c6e6c826c708f6a0147de1c6",
   "public/js/hub.js": "c2da52757cfe83fdc9b579e48a163929b1201a35a1edae215e42ddb17d19adeb",
   "public/js/i18n.js": "0c0cb63bd280bfc9318a8185a77b688635ae070acbad588ca818603096fb4511",
   "public/js/main.js": "d5e2e81ca4ebac97be8e4e419d2d0fcfc4f454eaa18c628ba20b1ea776a381cf",
   "public/js/models.js": "5591af3b1a402b370f52d7fe3ffc885ed7b4169e756caae10ee441e1ea19a1dc",
   "public/js/net.js": "c15e62ff164f84e8f7e792a2598ad61a5a003b78eb1e5873de2861e259375c49",
-  "public/js/settings.js": "307aa5c110b1d7e0251e3f0c3f545327bc277a4a7cdbeab588546f27a2b75d78",
+  "public/js/settings.js": "1f9e4907f24be3051ceea01d3105576fa922e17e0fd23ef2b3e4e8ee8b3cf443",
   "public/js/store.js": "ff76f5e1bbbf4a57d60ce46d4f599e551eeec54c79c72677e98df79bbc2b5d43",
   "public/js/touch.js": "d255ec1b8d9308a7f72c4c497b2df19ac5fd7fd1d4ef6d6efd6340a06d638305",
   "public/js/tournaments.js": "7d9e9c5d7eb19385715673d8492b1bccd328531d4593d27b42134f3a71f10030",
