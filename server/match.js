@@ -1,5 +1,5 @@
 // Logique de partie autoritaire côté serveur
-import { WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, isLastStand, BR, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, SNAP_EVERY, STATS_EVERY, KNIFE_THROW, lossBonus, knifePower, TIMEOUT, reloadTime, partialShells, FALL, BASH } from '../shared/data.js';
+import { brTeamSize, WEAPONS, AGENTS, ROUND, FFA, DUEL, PLAYER, MOVE, TICK_RATE, ARMOR, REWARDS, sideOf, AGENT_ORDER, isFfa, isLastStand, BR, GUN_LADDER, KIT, WEAPON_RULES, cleanCustomOpts, SNAP_EVERY, STATS_EVERY, KNIFE_THROW, lossBonus, knifePower, TIMEOUT, reloadTime, partialShells, FALL, BASH } from '../shared/data.js';
 import { parseMap, CELL } from '../shared/maps.js';
 import { raycastBoxes, rayAABB, raySphere, hitboxes, norm, groundHeight, depenetrate } from '../shared/physics.js';
 import { BotBrain } from './bot.js';
@@ -36,7 +36,8 @@ export class Match {
     this.room = room;
     this.io = io; // { send(id,obj), sendRaw(id,str), onEnd() }
     this.map = parseMap(room.mapId);
-    this.mode = room.mode; // 'assault' | 'duel' | 'ffa' | 'gungame'
+    this.brTeam = brTeamSize(room.mode); // duos / escouades : on joue en Battle Royale avec des équipes
+    this.mode = this.brTeam > 1 ? 'br' : room.mode; // 'assault' | 'duel' | 'ffa' | 'gungame' | 'lives' | 'br'
     this.target = room.target;
     this.difficulty = room.difficulty;
     this.time = 0;
@@ -145,7 +146,7 @@ export class Match {
 
   startMsg(id) {
     const p = this.players.get(id);
-    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, target: this.target, players: this.rosterMsg().players, level: p?.prestige ? 999 : p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty, slide: this.slideOn(), fx: { bigHead: !!this.opts.bigHead, turbo: this.turbo }, custom: this.customOpts };
+    return { type: 'matchStart', you: id, mapId: this.map.id, mode: this.mode, brTeam: this.brTeam, target: this.target, players: this.rosterMsg().players, level: p?.prestige ? 999 : p?.level || 1, unlocks: this.unlocksOn(), opts: this.opts, diff: this.difficulty, slide: this.slideOn(), fx: { bigHead: !!this.opts.bigHead, turbo: this.turbo }, custom: this.customOpts };
   }
 
   // déblocage des armes par niveau (désactivable dans l'administration)
@@ -166,6 +167,7 @@ export class Match {
 
   start(members) {
     for (const m of members) this.players.set(m.id, this.makePlayer(m));
+    if (this.brTeam > 1) { const list = [...this.players.values()].sort((a, b) => (a.isBot - b.isBot)); list.forEach((p, i) => { p.team = 'sq' + (1 + Math.floor(i / this.brTeam)); }); }
     this.io.onEvent?.('start', { players: [...this.players.values()].map(p => ({ agent: p.agent, isBot: p.isBot })) });
     for (const p of this.players.values()) if (!p.isBot) this.io.send(p.id, this.startMsg(p.id));
     if (isFfa(this.mode)) {
@@ -183,7 +185,7 @@ export class Match {
   // mi-temps « effective » : la manche au couteau peut inverser les côtés de départ
   effHalf() { return (this.half + (this.sideFlip ? 1 : 0)) % 2; }
   side(p) { return sideOf(p.team, this.effHalf()); }
-  isEnemy(a, b) { return a.id !== b.id && (isFfa(this.mode) || a.team !== b.team); }
+  isEnemy(a, b) { return a.id !== b.id && ((isFfa(this.mode) && this.brTeam <= 1) || a.team !== b.team); }
   eye(p) { return [p.pos[0], p.pos[1] + (p.crouch ? PLAYER.eyeCrouch : PLAYER.eye), p.pos[2]]; }
 
   allBoxes() {
@@ -416,12 +418,12 @@ export class Match {
     // MVP : meilleur score de la partie
     let mvp = null;
     for (const p of this.players.values()) if (!mvp || p.score > mvp.score) mvp = p;
-    const stats = [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score, bot: p.isBot, dmg: Math.round(p.dmg), hs: p.hsKills, title: p.title, shots: p.shots, hits: p.hits, best: p.bestStreak, fav: Object.entries(p.weaponKills || {}).sort((x, y) => y[1] - x[1])[0]?.[0] || null, lives: this.mode === 'lives' ? p.lives : undefined, place: this.mode === 'br' ? (p.place || 1) : undefined }));
+    const stats = [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, agent: p.agent, kills: p.kills, deaths: p.deaths, assists: p.assists, score: p.score, bot: p.isBot, dmg: Math.round(p.dmg), hs: p.hsKills, title: p.title, shots: p.shots, hits: p.hits, best: p.bestStreak, fav: Object.entries(p.weaponKills || {}).sort((x, y) => y[1] - x[1])[0]?.[0] || null, lives: this.mode === 'lives' ? p.lives : undefined, team: this.brTeam > 1 ? p.team : undefined, place: this.mode === 'br' ? (p.place || 1) : undefined }));
     const rewards = {}, results = [];
     const scoreLine = isFfa(this.mode) ? '' : `${this.score.alpha}-${this.score.beta}`;
     for (const p of this.players.values()) {
       if (p.isBot) continue;
-      const won = isFfa(this.mode) ? winner === p.id : winner === p.team;
+      const won = this.brTeam > 1 ? (this.brWinTeam && p.team === this.brWinTeam) : isFfa(this.mode) ? winner === p.id : winner === p.team;
       const brBonus = this.mode === 'br' ? Math.max(0, 9 - (p.place || 1)) * 20 : 0; // classement : 160 Éclats au 1er … 20 au 8e
       rewards[p.id] = Math.round((REWARDS.matchPlayed + p.kills * REWARDS.kill + p.roundsWon * REWARDS.roundWin + (won ? REWARDS.matchWin : 0) + brBonus) * (this.io.rewardMul ? this.io.rewardMul() : 1));
       results.push({
@@ -560,6 +562,7 @@ export class Match {
   }
   // potions (1.47) : on boit pendant un court instant (pas de tir), puis le soin ou l'armure s'applique
   drinkPotion(p, k) {
+    if (p.downed) return;
     const P = BR.potions[k] || (k === 'bandage' || k === 'mini' ? BR.items[k] : null);
     if (k === 'bandage' && p.hp >= BR.items.bandage.cap) return;
     if (k === 'mini' && (p.armor || 0) >= BR.items.mini.cap) return;
@@ -579,6 +582,7 @@ export class Match {
     }
   }
   throwNade(p, d) {
+    if (p.downed) return;
     if (!p.alive || !p.pots?.nade || this.phase !== 'live' || p.drinkEnd > this.time || T_NADE_CD(p, this.time)) return;
     const dir = Array.isArray(d) && d.length === 3 && d.every(Number.isFinite) ? norm(d) : [-Math.sin(p.yaw), 0, -Math.cos(p.yaw)];
     p.pots.nade--; p.nadeT = this.time;
@@ -596,6 +600,7 @@ export class Match {
   }
   openChest(p, i) {
     const c = this.chests?.[i];
+    if (p.downed) return;
     if (!c || c.open || !p.alive || this.phase !== 'live') return;
     if (Math.hypot(p.pos[0] - c.pos[0], p.pos[2] - c.pos[2]) > BR.chestRange + 0.4) return;
     c.open = true;
@@ -1041,7 +1046,7 @@ export class Match {
   }
 
   handleShoot(p, msg) {
-    if (p.drinkEnd > this.time || p.inBus) return; // en train de boire une potion, ou encore dans le dirigeable
+    if (p.drinkEnd > this.time || p.inBus || p.downed) return; // en train de boire, dans le dirigeable, ou à terre
     if (!p.alive || this.phase === 'buy' || this.phase === 'over' || this.phase === 'warmup') return;
     const w = p.weapons[p.slot];
     if (!w) return;
@@ -1143,6 +1148,7 @@ export class Match {
     let rest = amount;
     if (q.armor > 0) { const a = Math.min(q.armor, rest); q.armor -= a; rest -= a; }
     q.hp -= rest;
+    if (q.hp <= 0 && this.brTeam > 1 && !q.downed && this.phase === 'live' && this.squadUp(q).length) { this.downPlayer(q, attacker, wpn); return; }
     const killed = q.hp <= 0;
     if (attacker && attacker !== q && !silent) this.send(attacker, { type: 'hit', d: Math.round(amount), h: head ? 1 : 0, k: killed ? 1 : 0, t: q.id });
     if (!silent || killed) this.send(q, { type: 'hurt', d: Math.round(amount), from: attacker ? attacker.pos.map(r2) : null });
@@ -1206,9 +1212,39 @@ export class Match {
     }
   }
 
+  // ---------- duos et escouades (1.54) ----------
+  squadUp(q) { return [...this.players.values()].filter(o => o !== q && o.team === q.team && o.alive && !o.downed && !o.out); }
+  downPlayer(q, attacker, wpn) {
+    q.downed = true; q.hp = BR.down.bleed; q.armor = 0; q.downBy = attacker?.id || null; q.drinkEnd = 0; q.interact = false; q.prog = 0;
+    if (attacker && attacker !== q) this.send(attacker, { type: 'hit', d: 0, h: 0, k: 0, t: q.id, dn: 1 });
+    this.broadcast({ type: 'downed', i: q.id, by: attacker?.id || null, w: wpn });
+    this.statsDirty = true;
+  }
+  tickSquads(dt) {
+    const T = this.time;
+    for (const p of this.players.values()) {
+      if (p.downed && p.alive) {
+        // perd des PV petit à petit ; plus personne debout dans l'équipe : éliminé
+        p.hp -= BR.down.bleedRate * dt;
+        if (p.hp <= 0 || !this.squadUp(p).length) { p.downed = false; p.hp = 0; this.kill(p, this.players.get(p.downBy) || null, 'bleed', false); }
+        continue;
+      }
+      // réanimation : maintenir la touche d'interaction près d'un coéquipier à terre
+      if (!p.alive || p.downed || !p.interact) { if (p.progKind === 'revive') { p.prog = 0; p.progKind = null; p.reviving = null; } continue; }
+      const mate = [...this.players.values()].find(o => o.downed && o.alive && o.team === p.team && Math.hypot(o.pos[0] - p.pos[0], o.pos[2] - p.pos[2]) < BR.down.range);
+      if (!mate) { if (p.progKind === 'revive') { p.prog = 0; p.progKind = null; } continue; }
+      if (p.reviving !== mate.id) { p.reviving = mate.id; p.prog = 0; }
+      p.progKind = 'revive'; p.prog += dt;
+      if (p.prog >= BR.down.reviveTime) {
+        mate.downed = false; mate.hp = BR.down.reviveHp; p.prog = 0; p.progKind = null; p.reviving = null; p.interact = false;
+        this.broadcast({ type: 'revived', i: mate.id, by: p.id });
+      }
+    }
+  }
   // Dernier debout : chaque joueur a quelques vies ; le dernier encore en jeu gagne
   livesKill(v) {
     v.lives = Math.max(0, v.lives - 1);
+    if (this.brTeam > 1) return this.squadOut(v);
     const alive0 = [...this.players.values()].filter(p => !p.out).length;
     if (v.lives <= 0) { v.out = true; v.respawnAt = 0; v.place = alive0; this.broadcast({ type: 'notice', text: this.mode === 'br' ? `${v.name.toUpperCase()} EST ÉLIMINÉ · ${alive0 - 1} JOUEUR(S) EN VIE` : `${v.name.toUpperCase()} EST ÉLIMINÉ DÉFINITIVEMENT` }); }
     const left = [...this.players.values()].filter(p => !p.out);
@@ -1216,6 +1252,23 @@ export class Match {
     // Battle Royale (1.47) : 5 secondes pour que le gagnant fasse sa danse avant l'écran de fin
     if (this.mode === 'br' && left.length <= 1 && this.phase !== 'over') { if (!this.brWin) { this.brWin = { id: left[0]?.id || null, at: this.time + 5 }; this.broadcast({ type: 'brWin', i: this.brWin.id }); } return; }
     if (left.length <= 1 && this.phase !== 'over') this.matchOver(left[0]?.id || null);
+  }
+  squadOut(v) {
+    v.lives = 0; v.out = true; v.respawnAt = 0; v.downed = false;
+    const teamsAlive = () => new Set([...this.players.values()].filter(p => !p.out).map(p => p.team));
+    // équipe entièrement à terre ou éliminée : ses membres à terre sont éliminés aussi
+    const left0 = teamsAlive();
+    if (!this.squadUp(v).length) for (const o of this.players.values()) if (o.team === v.team && o.downed && o.alive) { o.downed = false; o.alive = false; o.hp = 0; o.out = true; o.lives = 0; }
+    const left = teamsAlive();
+    if (!left.has(v.team)) { for (const o of this.players.values()) if (o.team === v.team) o.place = left.size + 1; this.broadcast({ type: 'notice', text: `ÉQUIPE DE ${v.name.toUpperCase()} ÉLIMINÉE · ${left.size} ÉQUIPE(S) EN JEU` }); }
+    else this.broadcast({ type: 'notice', text: `${v.name.toUpperCase()} EST ÉLIMINÉ` });
+    void left0;
+    if (left.size <= 1 && this.phase !== 'over' && !this.brWin) {
+      const team = [...left][0] || null; this.brWinTeam = team;
+      const win = [...this.players.values()].find(p => p.team === team && !p.out);
+      for (const o of this.players.values()) if (o.team === team) o.place = 1;
+      this.brWin = { id: win?.id || null, at: this.time + 5 }; this.broadcast({ type: 'brWin', i: win?.id || null, team });
+    }
   }
   updateLeader() {
     let best = null, tie = false;
@@ -1565,6 +1618,7 @@ export class Match {
 
     this.pickupDrops();
     if (this.mode === 'br') this.tickBus();
+    if (this.brTeam > 1 && this.phase === 'live') this.tickSquads(dt);
     if (this.mode === 'br' && this.phase === 'live') { if (this.brWin) { if (this.time >= this.brWin.at) this.matchOver(this.brWin.id); } else this.tickZone(dt); this.tickPotions(); }
     if (assault) this.tickAssault(dt);
     else if (this.phase === 'live' && T >= this.phaseEnd) {
@@ -1754,6 +1808,7 @@ export class Match {
         pl: p.prog > 0 ? 1 : 0, ...(full ? stats(p) : {}),
       };
       if (p.protEnd > T) base.sp = 1;
+      if (p.downed) base.dn = 1;
       if (p.sliding && p.alive && (p.slideUntil || 0) > T) base.sd = 1;
       pub.set(p.id, JSON.stringify(base));
       // santé, argent et porteur du Noyau : réservés aux alliés
@@ -1792,10 +1847,10 @@ export class Match {
       const me = {
         hp: Math.ceil(p.hp), ar: Math.ceil(p.armor), $: p.money, sl: p.slot, wp, al: p.alive ? 1 : 0,
         rl: p.reloadEnd > T ? r2(p.reloadEnd - T) : 0, ko: p.knifeOut ? 1 : 0, ab: p.charges, ult: p.ult, side,
-        pr: p.prog > 0 ? [p.progKind, r2(p.prog / (p.progKind === 'plant' ? ROUND.plantTime : (p.kit ? KIT.defuseTime : ROUND.defuseTime)))] : null, kt: p.kit ? 1 : 0,
+        pr: p.prog > 0 ? [p.progKind, r2(p.prog / (p.progKind === 'revive' ? BR.down.reviveTime : p.progKind === 'plant' ? ROUND.plantTime : (p.kit ? KIT.defuseTime : ROUND.defuseTime)))] : null, kt: p.kit ? 1 : 0,
         sm: p.speedMul, rm: p.rateMul, rs: p.respawnAt ? r2(Math.max(0, p.respawnAt - T)) : 0,
         rc: { q: p.recharge.q ? r2(p.recharge.q - T) : 0, e: p.recharge.e ? r2(p.recharge.e - T) : 0 },
-        iv: p.invisEnd > T ? 1 : 0, bf: p.buffEnd > T ? 1 : 0, bt: this.buffTimers(p, T),
+        iv: p.invisEnd > T ? 1 : 0, bf: p.buffEnd > T ? 1 : 0, bt: this.buffTimers(p, T), ...(p.downed ? { dn: 1 } : {}),
         ...(p.bag ? { bg: p.bag.map(w => [w.id, w.mag, w.reserve, w.rar || 'common']) } : {}), ...(p.pots ? { po: [p.pots.heal, p.pots.shield, p.pots.bandage || 0, p.pots.mini || 0, p.pots.nade || 0], dk: p.drinkEnd > T ? r2(p.drinkEnd - T) : 0 } : {}), ...(p.chuteEnd > T ? { ch: 1 } : {}), ...(p.inBus ? { ib: 1 } : {}),
       };
       const meStr = JSON.stringify(me);

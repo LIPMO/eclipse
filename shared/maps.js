@@ -280,7 +280,7 @@ export const MAP_ORDER = ['dune', 'neon', 'glacier', 'temple', 'fosse', 'cube', 
 export const LARGE_MAPS = ['dune', 'neon', 'glacier', 'temple'];
 export const SMALL_MAPS = ['fosse', 'cube', 'igloo'];
 export const BR_MAPS = ['ville', 'vallee'];
-export const mapsForMode = mode => mode === 'br' ? BR_MAPS : mode === 'duel' ? SMALL_MAPS : mode === 'assault' ? LARGE_MAPS : MAP_ORDER;
+export const mapsForMode = mode => mode === 'br' || mode === 'br2' || mode === 'br4' ? BR_MAPS : mode === 'duel' ? SMALL_MAPS : mode === 'assault' ? LARGE_MAPS : MAP_ORDER;
 export const MAP_INFO = Object.fromEntries([...MAP_ORDER, ...BR_MAPS].map(id => [id, { id, name: RAW[id].name, subtitle: RAW[id].subtitle, theme: RAW[id].theme, small: !!RAW[id].small }]));
 
 const FLOORISH = new Set(['.', 'A', 'B', 'T', 'D', 'H']);

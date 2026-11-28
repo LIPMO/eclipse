@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.54.0",
+    "date": "2026-11-28",
+    "title": "Battle Royale V3 (4/4) : duos et escouades",
+    "items": [
+      "Nouveaux modes BR DUO (équipes de 2) et BR ESCOUADES (équipes de 4). Les amis de ton groupe sont dans ton équipe, complétée par des bots.",
+      "À terre au lieu d'éliminé tant qu'un coéquipier tient debout : tu rampes, tu ne peux plus tirer et tu perds des PV petit à petit.",
+      "Maintiens la touche d'interaction (F) 4 secondes près d'un coéquipier à terre pour le relever (30 PV). Les bots relèvent aussi leurs coéquipiers.",
+      "Quand toute une équipe est à terre ou éliminée, elle sort de la partie. La dernière équipe en vie gagne : victoire royale pour toute l'équipe."
+    ]
+  },
+  {
     "version": "1.53.0",
     "date": "2026-11-28",
     "title": "Battle Royale V3 (3/4) : nouvelle carte VALLÉE",

@@ -7,7 +7,7 @@ import { TITLES, REPORT_REASONS, RANKS } from '/shared/progress.js';
 const $ = id => document.getElementById(id);
 const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ROLE = { owner: 'Propriétaire', admin: 'Admin', mod: 'Modérateur', player: 'Joueur' };
-const MODE = { assault: 'Assaut 5v5', duel: 'Duel 1v1', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout', br: 'Battle Royale' };
+const MODE = { assault: 'Assaut 5v5', duel: 'Duel 1v1', ffa: 'Mêlée', gungame: 'Gun Game', lives: 'Dernier debout', br: 'Battle Royale', br2: 'BR Duo', br4: 'BR Escouades' };
 const PHASE = { warmup: 'Préparation', buy: 'Achat', live: 'En cours', planted: 'Noyau posé', end: 'Fin de manche', over: 'Terminée' };
 const DIFF = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert' };
 const LB_KINDS = [['level', 'Niveau'], ['week', 'Semaine'], ['elo', 'Elo duel'], ['kills', 'Éliminations'], ['wins', 'Victoires']];
@@ -609,7 +609,7 @@ const VIEWS = {
     async load() { S.matchData = await api(`matches?q=${encodeURIComponent(S.matchQ)}&mode=${S.matchMode}`); },
     render() {
       return `<div class="toolbar"><input class="grow" data-input="matchQ" placeholder="Rechercher un salon ou un joueur…" value="${h(S.matchQ)}">
-        <span class="seg">${[['', 'Tous'], ['assault', 'Assaut'], ['duel', 'Duel'], ['ffa', 'Mêlée'], ['gungame', 'Gun Game'], ['lives', 'Dernier debout'], ['br', 'Battle Royale']].map(([v, l]) => `<button data-act="matchMode" data-v="${v}" class="${S.matchMode === v ? 'active' : ''}">${l}</button>`).join('')}</span>
+        <span class="seg">${[['', 'Tous'], ['assault', 'Assaut'], ['duel', 'Duel'], ['ffa', 'Mêlée'], ['gungame', 'Gun Game'], ['lives', 'Dernier debout'], ['br', 'Battle Royale'], ['br2', 'BR Duo'], ['br4', 'BR Escouades']].map(([v, l]) => `<button data-act="matchMode" data-v="${v}" class="${S.matchMode === v ? 'active' : ''}">${l}</button>`).join('')}</span>
         ${lvl() >= 2 ? '<button class="btn small" data-act="exportMatches">⇩ Export CSV</button>' : ''}</div><div id="list"></div>`;
     },
     update() {

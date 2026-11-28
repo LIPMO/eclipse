@@ -243,6 +243,11 @@ export class BotBrain {
   update(dt) {
     const m = this.m, p = this.p, T = m.time, cfg = this.cfg;
     if (!p.alive) { this.vel = [0, 0, 0]; return; }
+    if (m.brTeam > 1) {
+      if (p.downed) { this.target = null; p.interact = false; this.vel = [0, 0, 0]; return; } // à terre : ne bouge plus, ne tire pas
+      else { const mate = [...m.players.values()].find(o => o.downed && o.alive && o.team === p.team && Math.hypot(o.pos[0] - p.pos[0], o.pos[2] - p.pos[2]) < 30);
+        if (mate && !this.target) { const d = Math.hypot(mate.pos[0] - p.pos[0], mate.pos[2] - p.pos[2]); if (d < 1.8) { p.interact = true; this.vel = [0, 0, 0]; return; } if (this.goalKey !== 'revive' + mate.id) { this.goal = [mate.pos[0], mate.pos[2]]; this.goalKey = 'revive' + mate.id; this.path = null; this.reached = false; } } }
+    }
     if (p.dropUntil && T < p.dropUntil) { this.vel = [0, 0, 0]; return; } // Battle Royale : attend la fin de la descente des joueurs
     let wishX = 0, wishZ = 0, speed = MOVE.run * 0.88 * (WEAPONS[p.weapons[p.slot]?.id]?.speed || 1) * p.speedMul;
     const canMove = m.phase !== 'buy' && m.phase !== 'warmup' && m.phase !== 'over';

@@ -55,13 +55,16 @@ export const STEP_LOUD = 4.3;
 
 export const FFA = { respawn: 3, timeLimit: 600, gunTimeLimit: 480, abilityRecharge: 18 };
 // modes « chacun pour soi » (pas d'équipes, réapparition) : Mêlée et Gun Game
-export const isFfa = mode => mode === 'ffa' || mode === 'gungame' || mode === 'lives' || mode === 'br';
+export const isFfa = mode => mode === 'ffa' || mode === 'gungame' || mode === 'lives' || mode === 'br' || mode === 'br2' || mode === 'br4';
+// Battle Royale en équipe (1.54) : 'br2' = duos, 'br4' = escouades ; la partie se joue en mode 'br' avec des équipes
+export const brTeamSize = mode => mode === 'br2' ? 2 : mode === 'br4' ? 4 : 1;
 // dernier debout : une ou plusieurs vies, le dernier en jeu gagne (Dernier debout, Battle Royale)
-export const isLastStand = mode => mode === 'lives' || mode === 'br';
+export const isLastStand = mode => mode === 'lives' || mode === 'br' || mode === 'br2' || mode === 'br4';
 // Battle Royale (1.42) : zone qui se resserre par étapes, coffres à ouvrir (touche d'interaction), une seule vie
 export const BR = {
   timeLimit: 900, startRadius: 118, chestRange: 2.4,
   // V2 (1.44) : saut en parachute au départ, sac à dos de 3 emplacements (touches 4, 5, 6)
+  down: { bleed: 100, bleedRate: 4, reviveTime: 4, reviveHp: 30, crawl: 0.3, range: 2.2 }, // à terre et réanimation (duos, escouades)
   bus: { delay: 3, duration: 22, height: 62 }, // V3 (1.52) : dirigeable de départ, on saute quand on veut (Espace)
   drop: { height: 55, fall: 6, fastFall: 15, speed: 8.5, botWait: 9 }, bagSize: 3,
   // 1.47 : potions (touches 7 et 8) et +50 PV par élimination (le surplus devient de l'armure)

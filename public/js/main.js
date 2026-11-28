@@ -16,8 +16,8 @@ import { initHub, renderLevel, renderQuests, renderProfile, renderFriends, rende
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const MODE_LABEL = { assault: 'ASSAUT 5v5', duel: 'DUEL 1v1', ffa: 'MÊLÉE', gungame: 'GUN GAME', lives: 'DERNIER DEBOUT', br: 'BATTLE ROYALE' };
-const TARGETS = { assault: [3, 5, 7, 9, 13], duel: [3, 5, 7, 9], ffa: [10, 15, 25, 40], gungame: [8], lives: [1, 2, 3, 5], br: [1] };
+const MODE_LABEL = { assault: 'ASSAUT 5v5', duel: 'DUEL 1v1', ffa: 'MÊLÉE', gungame: 'GUN GAME', lives: 'DERNIER DEBOUT', br: 'BATTLE ROYALE', br2: 'BR DUO', br4: 'BR ESCOUADES' };
+const TARGETS = { assault: [3, 5, 7, 9, 13], duel: [3, 5, 7, 9], ffa: [10, 15, 25, 40], gungame: [8], lives: [1, 2, 3, 5], br: [1], br2: [1], br4: [1] };
 const DIFF_LABEL = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert', cible: 'Cibles' };
 
 const net = new Net();
@@ -207,7 +207,7 @@ const saveFav = () => { try { localStorage.setItem('eclipse_fav_rooms', JSON.str
 function renderRooms() {
   const list = $('room-list');
   const f = state.roomFilter || 'all', free = $('room-free')?.checked;
-  const shown = state.rooms.filter(r => (f === 'all' || (f === 'custom' ? r.custom : f === 'other' ? ['gungame', 'lives', 'br'].includes(r.mode) : r.mode === f)) && (!free || r.humans < r.max));
+  const shown = state.rooms.filter(r => (f === 'all' || (f === 'custom' ? r.custom : f === 'other' ? ['gungame', 'lives', 'br', 'br2', 'br4'].includes(r.mode) : r.mode === f)) && (!free || r.humans < r.max));
   if (!shown.length) { list.innerHTML = `<div class="empty">${state.rooms.length ? 'Aucun salon ne correspond à ce filtre.' : 'Aucun salon ouvert pour le moment. Lance une partie depuis le salon de groupe, ou crée une partie perso publique !'}</div>`; return; }
   const rows = shown.sort((a, b) => favRooms.has(b.name) - favRooms.has(a.name));
   list.innerHTML = rows.map(r => `<div class="room-item ${favRooms.has(r.name) ? 'fav' : ''}" data-id="${r.id}">
@@ -339,7 +339,7 @@ function renderRoom() {
   $('rs-mode').value = r.mode;
   document.querySelectorAll('[data-opt]').forEach(el => { el.checked = !!r.opts?.[el.dataset.opt]; });
   $('rs-pass').placeholder = r.hasPassword ? '🔒 Protégé — nouveau mot de passe (vide = retirer)' : 'Mot de passe du salon (facultatif)';
-  $('rs-target').innerHTML = TARGETS[r.mode].map(t => `<option value="${t}">${r.mode === 'gungame' ? t + ' armes (fixe)' : r.mode === 'br' ? 'Dernier survivant (1 vie)' : r.mode === 'lives' ? t + ' vie(s) par joueur' : isFfa(r.mode) ? t + ' éliminations' : 'Premier à ' + t + ' manches'}</option>`).join('');
+  $('rs-target').innerHTML = TARGETS[r.mode].map(t => `<option value="${t}">${r.mode === 'gungame' ? t + ' armes (fixe)' : /^br/.test(r.mode) ? (r.mode === 'br' ? 'Dernier survivant (1 vie)' : 'Dernière équipe en vie') : r.mode === 'lives' ? t + ' vie(s) par joueur' : isFfa(r.mode) ? t + ' éliminations' : 'Premier à ' + t + ' manches'}</option>`).join('');
   if (!TARGETS[r.mode].includes(r.target)) $('rs-target').insertAdjacentHTML('beforeend', `<option value="${r.target}">${r.target}</option>`);
   $('rs-target').value = r.target;
   $('rs-diff').value = r.difficulty;
@@ -473,6 +473,8 @@ const MODE_TIPS = {
   ffa: 'Mêlée : tout le monde contre tout le monde. Bouge sans arrêt et évite les grands espaces découverts.',
   gungame: 'Gun Game : chaque élimination te donne l\'arme suivante. L\'élimination au couteau fait reculer ta victime.',
   lives: 'Dernier debout : tu as peu de vies, joue prudemment et laisse les autres se battre entre eux.',
+  br2: 'BR Duo : reste près de ton coéquipier. À terre, il peut te relever en maintenant la touche d\'interaction (F).',
+  br4: 'BR Escouades : équipes de 4. Un coéquipier à terre peut être relevé tant que l\'équipe n\'est pas entièrement à terre.',
   br: 'Battle Royale : ouvre les coffres (touche d\'interaction, F par défaut) pour trouver des armes, de l\'armure et des soins, et reste dans la zone violette.',
 };
 const GEN_TIPS = ['Une glissade (sprint puis accroupi) te rend plus difficile à toucher.', 'Couteau en main : maintiens le clic droit pour charger la force, relâche pour le lancer. Va le ramasser ensuite.', 'En Assaut, clique sur un coéquipier dans le menu d\'achat pour lui offrir une arme.', 'Clic molette : marque une position pour ton équipe.', 'Les tirs à la tête font beaucoup plus de dégâts : vise à hauteur de tête.', 'Recharge à l\'abri, jamais en plein duel.', 'Change de position après une élimination : l\'ennemi sait où tu es.', 'Les pas s\'entendent : marche (touche de marche) pour approcher sans bruit.'];
@@ -651,6 +653,8 @@ const LB_MODES = [
   ['assault', 'ASSAUT 5v5', 'Pose ou désamorce le noyau', 'En équipe · premier à 7 manches', '◆', '#19e3c4'],
   ['lives', 'DERNIER DEBOUT', 'Trois vies chacun', 'Le dernier en vie gagne', '♥', '#ff4f6d'],
   ['br', 'BATTLE ROYALE', '16 joueurs, une vie', 'Coffres, zone, dernier survivant', '◎', '#b26bff'],
+  ['br2', 'BR DUO', 'Équipes de 2', 'Relève ton coéquipier à terre', '◎◎', '#9b6bff'],
+  ['br4', 'BR ESCOUADES', 'Équipes de 4', 'Dernière équipe en vie', '◎◎', '#7f5bff'],
   ['duel', 'DUEL 1v1', 'Face à face', 'Premier à 5 manches · seul ou à deux', '⚔', '#ffcf5a'],
 ];
 const LB_DIFF = { easy: 'Facile', normal: 'Normal', hard: 'Difficile', expert: 'Expert', cible: 'Cibles' };
@@ -967,10 +971,10 @@ const CG_TEMPLATES = [
   { id: 't-pump', name: 'Duel au fusil à pompe', mode: 'duel', map: 'random', target: 5, size: 2, opts: { weapons: 'shotguns' } },
   { id: 't-gun', name: 'Gun Game éclair', mode: 'gungame', map: 'random', target: 8, size: 8, opts: { speed: 1.25, respawn: 1, timeLimit: 300 } },
 ];
-const CG_COLORS = { ffa: '#8b5cff', gungame: '#ff8a3d', assault: '#19e3c4', lives: '#ff4f6d', duel: '#ffcf5a', br: '#b26bff' };
+const CG_COLORS = { ffa: '#8b5cff', gungame: '#ff8a3d', assault: '#19e3c4', lives: '#ff4f6d', duel: '#ffcf5a', br: '#b26bff', br2: '#9b6bff', br4: '#7f5bff' };
 const CG_SIZES = mode => mode === 'duel' ? [2] : mode === 'assault' ? [2, 4, 6, 8, 10] : [2, 3, 4, 5, 6, 7, 8];
 const cgSizeLabel = (mode, n) => mode === 'assault' ? `${n / 2}v${n / 2}` : mode === 'duel' ? '1v1' : `${n} joueurs`;
-const cgTargetLabel = (mode, t) => mode === 'br' ? 'Dernier survivant' : mode === 'gungame' ? `${t} armes` : mode === 'lives' ? `${t} vie(s) par joueur` : isFfa(mode) ? `${t} éliminations` : `Premier à ${t} manches`;
+const cgTargetLabel = (mode, t) => /^br/.test(mode) ? 'Dernier survivant' : mode === 'gungame' ? `${t} armes` : mode === 'lives' ? `${t} vie(s) par joueur` : isFfa(mode) ? `${t} éliminations` : `Premier à ${t} manches`;
 const cg = { view: 'list', edit: null };
 const cgMine = () => profile.progress?.customGames || [];
 function cgDefaults(mode = 'ffa') { return { id: null, name: 'Ma partie perso', mode, map: 'random', target: TARGETS[mode].includes(25) ? 25 : TARGETS[mode][Math.floor(TARGETS[mode].length / 2)], diff: 'normal', size: CG_SIZES(mode).slice(-1)[0], bots: true, priv: true, opts: cleanCustomOpts({}) }; }

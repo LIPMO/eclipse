@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-28T17:23:59.758Z",
+ "generated": "2026-11-28T17:29:53.771Z",
  "files": {
   "node_modules/three/build/three.module.js": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
   "node_modules/three/examples/jsm/postprocessing/EffectComposer.js": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
@@ -40,16 +40,16 @@
   "public/img/logo-512.png": "d4c707080b9c2a9235308356f34ceceae9041717c15d33a130d771fa78496e77",
   "public/img/og-image.png": "b6a1d70cb9decebc4029b6cceba08f459ab4b443f1823420b0d95288d3708599",
   "public/index.html": "e00744e22ee70c720291078b4ca5a9bdae5b7239b9f03330a5281ea5700dd145",
-  "public/js/admin.js": "2cf3cbecb623f96a6fa52a0b8ce2c446e24abee5a28cc97bdb1ee4aab51f03ce",
+  "public/js/admin.js": "e85d9b294306a75aaaba543a26ce48d0e40ae3531f07bfb31b6835a92e4785ac",
   "public/js/audio.js": "1ad182c944f7de74f3b2be6dbac9da62191b01597863ce9771d0b8537024e34e",
   "public/js/clans.js": "dfae1f1c35736a3e05adce0488c507b85fe84fb58125ed3a81734dfb6e598d84",
   "public/js/creator.js": "e3e597f4a6e1b3ea8cf399d8ef44ecb8fd748e2c6fa32f69a86a698b0b3f9df0",
   "public/js/fx.js": "5fb45d68bb6e4a16eb9d3765cfced25abfea8b8d9af781b3722d93be56c32156",
-  "public/js/game.js": "dbcba8fbdee725fe0e0148f84bf5ea81c70c8d7804348d8183b69d16761a437d",
+  "public/js/game.js": "fba052ac3d8c4add1f3a8cfae1d66f3b5aca3a0e8f273c9a0437717be335cf97",
   "public/js/gamepad.js": "ab4d0225a3e66baf1aee4a3936919ad6e459d081c6e6c826c708f6a0147de1c6",
-  "public/js/hub.js": "c2da52757cfe83fdc9b579e48a163929b1201a35a1edae215e42ddb17d19adeb",
+  "public/js/hub.js": "dc757fe94f56030b12122ce0a3653667a997b9b2f1139bee6057a63c37b19c57",
   "public/js/i18n.js": "0c0cb63bd280bfc9318a8185a77b688635ae070acbad588ca818603096fb4511",
-  "public/js/main.js": "d5e2e81ca4ebac97be8e4e419d2d0fcfc4f454eaa18c628ba20b1ea776a381cf",
+  "public/js/main.js": "9e1bf2b0bbf906417f194a680a1bfc413beabcae9a076d2d02bd0271272845c2",
   "public/js/models.js": "5591af3b1a402b370f52d7fe3ffc885ed7b4169e756caae10ee441e1ea19a1dc",
   "public/js/net.js": "c15e62ff164f84e8f7e792a2598ad61a5a003b78eb1e5873de2861e259375c49",
   "public/js/settings.js": "45308b9e3ae9bccef56ffd01932afeeee8e2c5700f8112d22a95cc7859ac90f8",
@@ -58,8 +58,8 @@
   "public/js/tournaments.js": "7d9e9c5d7eb19385715673d8492b1bccd328531d4593d27b42134f3a71f10030",
   "public/mentions-legales.html": "4235787e732c23eb6f4d836ceab5c900883819dbd85e0d1e4afadd85e672e58a",
   "public/robots.txt": "46a7b87c779cefa66d2db8782ca3445a1ae4d0867563f4faaae95d8d83107e00",
-  "shared/data.js": "9a9706847350e6670dc9e01688095ccafb12b8ca5676652a13d85b0a4951e187",
-  "shared/maps.js": "853bacda8f9ea8d71c0460dd60c19f142e197f273d0e2794455d891b3f541a1d",
+  "shared/data.js": "9bbc6be0833bf21f1a77dfff6920ec3887114049f4e26914e697ca465accc870",
+  "shared/maps.js": "b7f517d697d7f306f79d9da059d6936a0adb95d3326fcf6ca81230e9a8ea8720",
   "shared/physics.js": "4d74759f49e4abe6a9214440a5056e5391362030d32287f211ded744ef0050bd",
   "shared/progress.js": "af206b8ea1ec805cf0616ad033601ecb6d57a76dc63c5ffe703641049e66bb99"
  }

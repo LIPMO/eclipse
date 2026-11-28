@@ -151,6 +151,7 @@ export class Game {
     this.killedBy = null;
     // spectateur staff : vue du joueur observé, aucune entrée envoyée au serveur
     this.opts = start.opts || {};
+    this.brTeam = start.brTeam || 1; // duos / escouades (1.54)
     this.isHost = !!start.host;
     this.roundHistory = [];
     this.bubbles = [];
@@ -640,7 +641,7 @@ export class Game {
 
   isEnemyId(id) {
     if (id === this.myId) return false;
-    if (isFfa(this.mode)) return true;
+    if (isFfa(this.mode) && !(this.brTeam > 1)) return true;
     const a = this.roster.get(id), me = this.roster.get(this.myId);
     return !a || !me || a.team !== me.team;
   }
@@ -970,7 +971,7 @@ export class Game {
   addKillfeed(m) {
     const kf = $('killfeed');
     const cls = id => id === this.myId ? 'ally' : this.isEnemyId(id) ? 'enemy' : 'ally';
-    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', core: 'Noyau', admin: 'Admin', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade' }[m.w] || m.w;
+    const wname = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', core: 'Noyau', admin: 'Admin', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade', bleed: 'À terre' }[m.w] || m.w;
     const div = document.createElement('div');
     div.className = 'kf' + (m.k === this.myId || m.v === this.myId ? ' mine' : '');
     div.innerHTML = (m.k ? `<span class="${cls(m.k)}">${esc(this.nameOf(m.k))}</span>` : '') +
@@ -1881,8 +1882,10 @@ export class Game {
     on('whisper', m => this.addWhisper(m));
     on('matchSummary', m => this.onSummary(m));
     on('matchEnd', m => this.onMatchEnd(m));
+    on('downed', m => { if (m.i === this.myId) this.centerMsg('TU ES À TERRE', 1.5); else if (m.by === this.myId) this.centerMsg('ENNEMI À TERRE', 1.2); });
+    on('revived', m => { if (m.i === this.myId) this.centerMsg('TU AS ÉTÉ RELEVÉ', 1.5); else if (m.by === this.myId) this.centerMsg(`${this.nameOf(m.i).toUpperCase()} RELEVÉ`, 1.2); });
     on('brWin', m => {
-      if (m.i === this.myId) { this.medalClip('brWin'); this.banner('VICTOIRE ROYALE !', `Tu es le dernier survivant · ${KB('emote')} pour faire une petite danse`, 'win', 5); SFX.playPromote?.(); }
+      if (m.i === this.myId || (m.team && this.roster.get(this.myId)?.team === m.team)) { this.medalClip('brWin'); this.banner('VICTOIRE ROYALE !', `Tu es le dernier survivant · ${KB('emote')} pour faire une petite danse`, 'win', 5); SFX.playPromote?.(); }
       else this.banner(`${this.nameOf(m.i).toUpperCase()}`, 'REMPORTE LA VICTOIRE ROYALE', '', 5);
     });
     on('brBought', m => { this.centerMsg(m.full ? 'SOIN COMPLET !' : `+${m.hp} PV`, 1.2); SFX.playPromote?.(); });
@@ -2236,7 +2239,7 @@ export class Game {
     const wl = Math.hypot(wx, wz);
     if (wl > 0) { wx /= wl; wz /= wl; }
     const walking = H.has('walk') || (stickMag > 0.15 && stickMag < 0.55);
-    let speed = MOVE.run * (def.speed || 1) * (this.me.sm || 1);
+    let speed = MOVE.run * (def.speed || 1) * (this.me.sm || 1) * (this.me.dn ? BR.down.crawl : 1);
     // glissade : s'accroupir en courant (au sol, ni en marche lente, ni en visée à la lunette)
     const runSpeed = speed;
     if (L.crouch && !L.crouchPrev && !(L.slideT > 0) && !(L.dashT > 0) && this.slideOn && ST().slide !== false && L.onGround && !walking && !this.scoped
@@ -2301,7 +2304,7 @@ export class Game {
       const allowed = this.me.side === 'atk' ? 'T' : 'D';
       if (this.map.cellAt(L.pos[0], L.pos[2]) !== allowed) { L.pos[0] = prev[0]; L.pos[2] = prev[2]; L.vel[0] = L.vel[2] = 0; }
     }
-    L.eyeH += ((L.crouch ? PLAYER.eyeCrouch : PLAYER.eye) - L.eyeH) * Math.min(1, dt * 14);
+    L.eyeH += ((this.me?.dn ? 0.45 : L.crouch ? PLAYER.eyeCrouch : PLAYER.eye) - L.eyeH) * Math.min(1, dt * 14);
     // pas
     const hs = Math.hypot(L.vel[0], L.vel[2]);
     if (L.onGround && hs > 4 && !walking && !L.crouch) {
@@ -2312,7 +2315,7 @@ export class Game {
     // « chargeur vide, pas de recharge en cours » et relançait une recharge qui effaçait la précédente (boucle)
     this.finishReload(now);
     // tir
-    if (H.has('fire') && !this.me?.dk) this.tryFire(now);
+    if (H.has('fire') && !this.me?.dk && !this.me?.dn) this.tryFire(now);
     else L.triggerHeld = false;
     // rechargement automatique quand le chargeur est vide
     if (ST().autoReload && def.mag && L.mag <= 0 && L.reserve > 0 && !(L.reloadEnd > now) && now - L.lastShot > 0.12 && this.snap?.ph !== 'buy') this.reload();
@@ -2503,6 +2506,7 @@ export class Game {
         const enemy = this.isEnemyId(o.id);
         ch.xray.visible = !!((enemy && st.rv) || (this.spec?.xray && enemy));
       }
+      if (st.dn && st.al) { ch.root.rotation.x = -1.35; ch.root.position.y = st.p[1] + 0.28; } // à terre (duos, escouades)
       // invisibilité
       const enemy = this.isEnemyId(o.id);
       const op = st.iv && st.al ? (enemy ? 0.05 : 0.35) : st.sp && st.al ? (Math.sin(now * 14) > 0 ? 0.35 : 0.75) : 1;
@@ -2872,7 +2876,10 @@ export class Game {
       else if (s.ph === 'buy') hint = `${KB('buy')} — MENU D'ACHAT`;
     }
     if (this.mode === 'br' && me.al) {
-      if (this.me?.ib) { const b = this.busInfo; hint = b && b.go > 0 ? `LES PORTES S'OUVRENT DANS ${Math.ceil(b.go)} s` : `${KB('jump')} POUR SAUTER · SAUT AUTOMATIQUE DANS ${Math.max(0, Math.ceil(b?.left ?? 0))} s`; }
+      const downMate = this.brTeam > 1 && !me.dn ? [...this.others.values()].find(o => o.cur?.dn && o.cur.al && !this.isEnemyId(o.id) && Math.hypot(o.cur.p[0] - this.local.pos[0], o.cur.p[2] - this.local.pos[2]) < BR.down.range) : null;
+      if (me.dn) hint = `⚠ À TERRE · RAMPE VERS UN ABRI, UN COÉQUIPIER PEUT TE RELEVER · ${Math.ceil(me.hp)} PV`;
+      else if (downMate) hint = `MAINTIENS ${KB('interact')} POUR RELEVER ${this.nameOf(downMate.id).toUpperCase()}`;
+      else if (this.me?.ib) { const b = this.busInfo; hint = b && b.go > 0 ? `LES PORTES S'OUVRENT DANS ${Math.ceil(b.go)} s` : `${KB('jump')} POUR SAUTER · SAUT AUTOMATIQUE DANS ${Math.max(0, Math.ceil(b?.left ?? 0))} s`; }
       else if (this.me?.dk) hint = `🧪 SOIN EN COURS… ${this.me.dk.toFixed(1)} s`;
       else if (this.local.chute) hint = `PARACHUTE · ${KB('forward')}${KB('left')}${KB('back')}${KB('right')} POUR TE DIRIGER · ${KB('crouch')} POUR DESCENDRE PLUS VITE · ${Math.round(this.local.pos[1])} m`;
       else if (this.nearChest() >= 0) hint = `${KB('interact')} — OUVRIR LE COFFRE`;
@@ -2895,7 +2902,7 @@ export class Game {
     const pr = $('progress');
     if (me.pr) {
       pr.style.display = 'block';
-      pr.querySelector('.p-label').textContent = me.pr[0] === 'plant' ? 'POSE DU NOYAU' : 'DÉSAMORÇAGE';
+      pr.querySelector('.p-label').textContent = me.pr[0] === 'revive' ? 'RÉANIMATION' : me.pr[0] === 'plant' ? 'POSE DU NOYAU' : 'DÉSAMORÇAGE';
       pr.querySelector('i').style.width = Math.min(100, me.pr[1] * 100) + '%';
     } else pr.style.display = 'none';
   }
@@ -3270,7 +3277,7 @@ export class Game {
     const ghost = buildCharacter(r?.agent || 'ignis', ALLY);
     this.scene.add(ghost.root);
     this.kc = { m, t0, dur: t1 - t0, start: performance.now() / 1000 + 0.35, ghost, shotIdx: 0 };
-    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade' }[m.w] || '';
+    const wn = WEAPONS[m.w]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade', bleed: 'À terre' }[m.w] || '';
     $('kc-who').innerHTML = `Éliminé par <b style="color:${ENEMY}">${esc(m.kn || '?')}</b>${wn ? ` · ${esc(wn)}` : ''}${m.h ? ' · <b>tête</b>' : ''} <span class="muted">(${m.hp} PV restants)</span>`;
     $('kc-skip').textContent = `${KB('jump')} ou clic pour passer`;
     $('killcam').classList.add('on');
@@ -3491,7 +3498,7 @@ export class Game {
     $('end-mvp').innerHTML = mvp ? `<span class="mvp-badge">MVP</span> ${agentIconHTML(mvp.agent, 'sm')} <b>${esc(mvp.name)}</b> <span class="muted">${mvp.score} pts · ${mvp.kills}/${mvp.deaths}/${mvp.assists} · ${mvp.dmg} dégâts</span>` : '';
     $('end-progress').innerHTML = this.isGuest ? '<div class="muted">Crée un compte pour gagner de l\'XP, monter de niveau et accomplir des quêtes.</div>' : '<div class="muted">Calcul de la progression…</div>';
     const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
-    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade' }[id] || '—';
+    const wn = id => WEAPONS[id]?.name || { fire: 'Feu', shock: 'Électricité', frost: 'Givre', trap: 'Piège', fall: 'Chute', bash: 'Coup de crosse', zone: 'Zone', nade: 'Grenade', bleed: 'À terre' }[id] || '—';
     const rows = m.stats.slice().sort((a, b) => b.score - a.score).map(s => `<div class="sb-row end-row ${s.id === this.myId ? 'me' : ''}" style="--c:${AGENTS[s.agent]?.color}">${agentIconHTML(s.agent, 'sm')}<span>${esc(this.nameOf(s.id) === '???' ? s.name : this.nameOf(s.id))}${s.id === m.mvp ? ' <span class="mvp-badge small">MVP</span>' : ''}</span><span>${s.score}</span><span>${s.kills}/${s.deaths}/${s.assists}</span><span>${s.dmg ?? ''}</span><span>${pct(s.hs || 0, s.kills)}</span><span>${pct(s.hits || 0, s.shots)}</span><span>${s.best || 0}</span><span class="small">${esc(wn(s.fav))}</span></div>`).join('');
     $('end-stats').innerHTML = `<div class="sb-row end-row head"><span></span><span>JOUEUR</span><span>SCORE</span><span>É/M/A</span><span>DÉG.</span><span>TÊTE</span><span>PRÉCISION</span><span>SÉRIE</span><span>ARME FAVORITE</span></div>${rows}`;
     this.myVote = null; this.myRematch = false;
