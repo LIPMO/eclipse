@@ -62,6 +62,7 @@ export const isLastStand = mode => mode === 'lives' || mode === 'br';
 export const BR = {
   timeLimit: 900, startRadius: 118, chestRange: 2.4,
   // V2 (1.44) : saut en parachute au départ, sac à dos de 3 emplacements (touches 4, 5, 6)
+  bus: { delay: 3, duration: 22, height: 62 }, // V3 (1.52) : dirigeable de départ, on saute quand on veut (Espace)
   drop: { height: 55, fall: 6, fastFall: 15, speed: 8.5, botWait: 9 }, bagSize: 3,
   // 1.47 : potions (touches 7 et 8) et +50 PV par élimination (le surplus devient de l'armure)
   // 1.48 : petite boutique de soin (touche d'achat) et distributeurs de soin complet sur la carte

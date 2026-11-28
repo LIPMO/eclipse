@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.52.0",
+    "date": "2026-11-28",
+    "title": "Battle Royale V3 (2/4) : le dirigeable",
+    "items": [
+      "Départ en dirigeable : il traverse la carte (route en pointillés sur la mini-carte). Les portes s'ouvrent au bout de 3 secondes, puis appuie sur Espace quand tu veux pour sauter en parachute. Saut automatique en fin de route.",
+      "Pendant le vol, la caméra est derrière le dirigeable (tourne autour avec la souris) et personne ne te voit. La zone commence à se resserrer après le passage du dirigeable."
+    ]
+  },
+  {
     "version": "1.51.0",
     "date": "2026-11-28",
     "title": "Battle Royale V3 (1/4) : raretés et nouveaux objets",

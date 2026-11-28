@@ -469,6 +469,13 @@ export class Game {
         g.userData = { glow, cross: g.children.filter(x => x.material === cross) };
         S.add(g); this.dispMeshes.push(g);
       }
+      // dirigeable de départ (1.52)
+      { const g = new THREE.Group(), env = new THREE.MeshStandardMaterial({ color: '#7b4dff', roughness: 0.5, metalness: 0.2, emissive: '#2a1066', emissiveIntensity: 0.4 }), cab = new THREE.MeshStandardMaterial({ color: '#e8edf2', roughness: 0.5 }), glow = new THREE.MeshBasicMaterial({ color: '#ffcf5a', toneMapped: false });
+        const bal = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), env); bal.scale.set(3.2, 3.2, 9); bal.position.y = 3.4; g.add(bal);
+        const c = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.6, 5), cab); c.position.y = -0.6; g.add(c);
+        for (const x of [-1.31, 1.31]) for (let k = 0; k < 4; k++) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.5, 0.7), glow); w.position.set(x, -0.4, -1.8 + k * 1.2); g.add(w); }
+        for (const [x, y] of [[0, 6.6], [3.2, 3.4], [-3.2, 3.4]]) { const f = new THREE.Mesh(new THREE.BoxGeometry(x ? 0.15 : 2.4, x ? 2.4 : 0.15, 2), env); f.position.set(x, y, 8.4); g.add(f); }
+        g.visible = false; S.add(g); this.busMesh = g; }
       const zm = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 60, 96, 1, true), new THREE.MeshBasicMaterial({ color: '#b26bff', transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
       zm.position.y = 30; zm.renderOrder = 3; S.add(zm); this.zoneMesh = zm;
       const nz = new THREE.Mesh(new THREE.RingGeometry(0.985, 1, 128), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
@@ -1118,6 +1125,7 @@ export class Game {
     if (this.held.has(a)) return;
     this.held.add(a);
     if (this.kc && (a === 'jump' || a === 'fire')) { this.endKillcam(); return; }
+    if (a === 'jump' && this.me?.ib) { if ((this.busInfo?.go ?? 0) <= 0) { this.net.send('busJump'); SFX.playJump(); } return; }
     switch (a) {
       case 'buy': if (this.mode === 'br') { this.toggleBrShop(); break; } this.toggleBuy(); break;
       case 'chat': this.openChat(false); break;
@@ -1964,6 +1972,10 @@ export class Game {
   }
 
   syncDynamic(s) {
+    if (this.busMesh) {
+      this.busMesh.visible = !!s.bus;
+      if (s.bus) { const dir = Math.atan2(s.bus.b[0] - s.bus.a[0], s.bus.b[1] - s.bus.a[1]); this.busMesh.rotation.y = dir; this.busTarget = [s.bus.p[0], 62, s.bus.p[1]]; if (!this.busPosS) this.busPosS = this.busTarget.slice(); this.busInfo = s.bus; }
+    }
     if (s.zone && this.zoneMesh) {
       this.zone = s.zone;
       this.zoneMesh.scale.set(Math.max(0.1, s.zone.r), 1, Math.max(0.1, s.zone.r)); this.zoneMesh.position.x = s.zone.c[0]; this.zoneMesh.position.z = s.zone.c[1];
@@ -2190,7 +2202,7 @@ export class Game {
     if (this.dust?.visible) this.updateDust(dt);
     if (this.composer) this.composer.render(dt);
     else { this.renderer.clear(); this.renderer.render(this.scene, this.camera); }
-    if (this.me?.al && !this.scoped && !this.kc && !this.spec?.third && !this.selfEmote) {
+    if (this.me?.al && !this.scoped && !this.kc && !this.spec?.third && !this.selfEmote && !this.me?.ib) {
       this.renderer.clearDepth();
       this.renderer.render(this.vmScene, this.vmCam);
     }
@@ -2211,7 +2223,7 @@ export class Game {
     if (!alive) return;
     const ph = this.snap?.ph;
     const def = WEAPONS[this.curWeaponId()];
-    const frozen = ph === 'warmup' || ph === 'over' || (this.interacting && this.me?.pr) || this.chatOpen || this.trollOn('freeze');
+    const frozen = ph === 'warmup' || ph === 'over' || !!this.me?.ib || (this.interacting && this.me?.pr) || this.chatOpen || this.trollOn('freeze');
     L.crouch = H.has('crouch') && !frozen;
     let f = 0, s = 0;
     if (!frozen) { f = (H.has('forward') ? 1 : 0) - (H.has('back') ? 1 : 0); s = (H.has('right') ? 1 : 0) - (H.has('left') ? 1 : 0); }
@@ -2582,7 +2594,8 @@ export class Game {
   }
 
   updateCamera(dt, now) {
-    document.body.classList.toggle('emoting', !!(this.selfEmote && this.me?.al));
+    if (this.busMesh && this.busPosS && !this.me?.ib && this.busMesh.visible) { const k = Math.min(1, dt * 6); for (let i = 0; i < 3; i++) this.busPosS[i] += (this.busTarget[i] - this.busPosS[i]) * k; this.busMesh.position.set(...this.busPosS); }
+    document.body.classList.toggle('emoting', !!((this.selfEmote || this.me?.ib) && this.me?.al));
     const L = this.local;
     const cam = this.camera;
     let shake = 0;
@@ -2620,6 +2633,13 @@ export class Game {
       L.slideRoll = (L.slideRoll || 0) + ((L.specSlide && !this.spec.third && !ST().reduceMotion ? 0.075 : 0) - (L.slideRoll || 0)) * Math.min(1, dt * 10);
       cam.rotation.set(L.pitch, L.yaw, L.slideRoll);
       $('death-info').innerHTML = this.me && !this.me.al ? `${esc(this.nameOf(this.myId))} est mort${this.me.rs ? ` · réapparition dans ${Math.ceil(this.me.rs)} s` : ''}` : '';
+    } else if (this.me?.ib && this.busMesh && this.busPosS) {
+      const k = Math.min(1, dt * 6); for (let i = 0; i < 3; i++) this.busPosS[i] += (this.busTarget[i] - this.busPosS[i]) * k;
+      this.busMesh.position.set(...this.busPosS);
+      const d = 26, b = this.busPosS;
+      cam.position.set(b[0] + Math.sin(L.yaw) * d * Math.cos(L.pitch * 0.6), b[1] + 7 - L.pitch * 10, b[2] + Math.cos(L.yaw) * d * Math.cos(L.pitch * 0.6));
+      cam.lookAt(b[0], b[1] + 1, b[2]);
+      this.specTarget = null;
     } else if (this.selfEmote && this.me?.al) {
       const E = this.selfEmote, tn = performance.now() / 1000, H = this.held;
       if (!this.selfCh) { const r = this.roster.get(this.myId); this.selfCh = buildCharacter(r?.agent || 'ignis', ALLY, r?.of); this.scene.add(this.selfCh.root); }
@@ -2852,7 +2872,8 @@ export class Game {
       else if (s.ph === 'buy') hint = `${KB('buy')} — MENU D'ACHAT`;
     }
     if (this.mode === 'br' && me.al) {
-      if (this.me?.dk) hint = `🧪 SOIN EN COURS… ${this.me.dk.toFixed(1)} s`;
+      if (this.me?.ib) { const b = this.busInfo; hint = b && b.go > 0 ? `LES PORTES S'OUVRENT DANS ${Math.ceil(b.go)} s` : `${KB('jump')} POUR SAUTER · SAUT AUTOMATIQUE DANS ${Math.max(0, Math.ceil(b?.left ?? 0))} s`; }
+      else if (this.me?.dk) hint = `🧪 SOIN EN COURS… ${this.me.dk.toFixed(1)} s`;
       else if (this.local.chute) hint = `PARACHUTE · ${KB('forward')}${KB('left')}${KB('back')}${KB('right')} POUR TE DIRIGER · ${KB('crouch')} POUR DESCENDRE PLUS VITE · ${Math.round(this.local.pos[1])} m`;
       else if (this.nearChest() >= 0) hint = `${KB('interact')} — OUVRIR LE COFFRE`;
       else if (this.nearDispenser() >= 0) { const cd = this.dispMeshes[this.nearDispenser()].userData.cd; hint = cd ? `DISTRIBUTEUR EN RECHARGE · ${cd} s` : me.hp >= 100 ? 'DISTRIBUTEUR : TU AS DÉJÀ TOUS TES PV' : `${KB('interact')} — DISTRIBUTEUR : SOIN COMPLET`; }
@@ -3378,6 +3399,7 @@ export class Game {
     for (const d of this.allyDeaths) { const [x, y] = P(d.p[0], d.p[2]); g.strokeStyle = ALLY; g.globalAlpha = 0.9 - (tn - d.t) / 25; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 4, y - 4); g.lineTo(x + 4, y + 4); g.moveTo(x + 4, y - 4); g.lineTo(x - 4, y + 4); g.stroke(); g.globalAlpha = 1; }
     // Battle Royale : coffres fermés, zone actuelle et prochaine
     if (this.mode === 'br') {
+      if (snap.bus) { const [ax, ay] = P(snap.bus.a[0], snap.bus.a[1]), [bx, by] = P(snap.bus.b[0], snap.bus.b[1]), [px, py] = P(snap.bus.p[0], snap.bus.p[1]); g.setLineDash([5, 4]); g.strokeStyle = 'rgba(255,207,90,.8)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.setLineDash([]); g.fillStyle = '#ffcf5a'; g.beginPath(); g.arc(px, py, 4, 0, 7); g.fill(); }
       for (const d of this.dispMeshes || []) { const [x, y] = P(d.position.x, d.position.z); g.fillStyle = d.userData.cd ? '#ff6b7d' : '#3dffa8'; g.fillRect(x - 1, y - 4, 2, 8); g.fillRect(x - 4, y - 1, 8, 2); }
       for (const c of this.chestMeshes) if (!c.userData.open) { const [x, y] = P(c.position.x, c.position.z); g.fillStyle = '#ffcf5a'; g.fillRect(x - 2.5, y - 2.5, 5, 5); }
       const z = snap.zone;

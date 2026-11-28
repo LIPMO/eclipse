@@ -169,6 +169,7 @@ export class Match {
     this.io.onEvent?.('start', { players: [...this.players.values()].map(p => ({ agent: p.agent, isBot: p.isBot })) });
     for (const p of this.players.values()) if (!p.isBot) this.io.send(p.id, this.startMsg(p.id));
     if (isFfa(this.mode)) {
+      if (this.mode === 'br') this.initBus();
       for (const p of this.players.values()) this.spawnFFA(p);
       this.phase = 'live';
       this.phaseEnd = this.time + (this.mode === 'br' ? BR.timeLimit : this.opts.timeLimit || (this.mode === 'gungame' ? FFA.gunTimeLimit : FFA.timeLimit));
@@ -470,14 +471,40 @@ export class Match {
     p.reloadEnd = 0; p.damagedBy = new Map(); p.hitsBy = new Map(); p.invisEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.blindEnd = 0;
     p.protEnd = this.time + 1.5; // protection de réapparition : annulée dès que le joueur tire ou utilise une capacité
     const [mw, mh] = this.map.size;
-    if (this.mode === 'br' && !p.isBot) { best = [best[0], BR.drop.height, best[2]]; p.chuteEnd = this.time + 40; p.fallTop = null; }
-    if (this.mode === 'br' && p.isBot) p.dropUntil = this.time + BR.drop.botWait + Math.random() * 4;
+    if (this.mode === 'br' && !p.isBot && this.bus && !this.bus.done) { const [x, z] = this.busPos(); best = [x, BR.bus.height, z]; p.inBus = true; p.fallTop = null; }
+    else if (this.mode === 'br' && !p.isBot) { best = [best[0], BR.drop.height, best[2]]; p.chuteEnd = this.time + 40; p.fallTop = null; }
+    if (this.mode === 'br' && p.isBot && this.bus) {
+      // le bot « saute » à un moment au hasard : il apparaît au sol près de la route, et attend la durée de la descente
+      const u = Math.random(), T0 = this.bus.t0 + u * this.bus.dur, [bx, bz] = this.busPos(T0);
+      let b2 = best, bd = 1e9; for (const [i, j] of this.map.floor) { const x = (i + 0.5) * CELL, z = (j + 0.5) * CELL, d = Math.hypot(x - bx, z - bz) + Math.random() * 18; if (d < bd) { bd = d; b2 = [x, 0, z]; } }
+      best = b2; p.dropUntil = T0 + BR.drop.botWait;
+    } else if (this.mode === 'br' && p.isBot) p.dropUntil = this.time + BR.drop.botWait + Math.random() * 4;
     this.teleport(p, best, Math.atan2(-(mw / 2 - best[0]), -(mh / 2 - best[2])));
-    if (this.mode === 'br' && !p.isBot) p.tpGrace = this.time + 0.6;
+    if (this.mode === 'br' && !p.isBot) p.tpGrace = this.time + (p.inBus ? 999 : 0.6);
     if (p.brain) p.brain.onRoundStart();
   }
 
   // ---------- Battle Royale (1.42) ----------
+  // dirigeable de départ (1.52) : traverse la carte en ligne droite passant près du centre
+  initBus() {
+    const [mw, mh] = this.map.size, a = Math.random() * Math.PI * 2, off = (Math.random() - 0.5) * 50, R = Math.hypot(mw, mh) / 2 + 6;
+    const cx = mw / 2 + Math.cos(a + Math.PI / 2) * off, cz = mh / 2 + Math.sin(a + Math.PI / 2) * off;
+    const clamp = (v, m) => Math.max(4, Math.min(m - 4, v));
+    this.bus = { a: [clamp(cx - Math.cos(a) * R, mw), clamp(cz - Math.sin(a) * R, mh)], b: [clamp(cx + Math.cos(a) * R, mw), clamp(cz + Math.sin(a) * R, mh)], t0: this.time + BR.bus.delay, dur: BR.bus.duration };
+  }
+  busPos(T = this.time) { const b = this.bus, k = Math.max(0, Math.min(1, (T - b.t0) / b.dur)); return [b.a[0] + (b.b[0] - b.a[0]) * k, b.a[1] + (b.b[1] - b.a[1]) * k]; }
+  busJump(p) {
+    if (!p.inBus || !p.alive || this.time < this.bus.t0) return;
+    const [x, z] = this.busPos(); p.inBus = false;
+    p.chuteEnd = this.time + 40; p.fallTop = null;
+    this.teleport(p, [x, BR.drop.height, z], p.yaw); p.tpGrace = this.time + 0.6;
+  }
+  tickBus() {
+    if (!this.bus || this.bus.done) return;
+    const T = this.time, [x, z] = this.busPos(), end = T >= this.bus.t0 + this.bus.dur;
+    for (const p of this.players.values()) if (p.inBus) { if (end) this.busJump(p); else { p.pos = [x, BR.bus.height, z]; p.lastValid = { pos: p.pos.slice(), t: T }; } }
+    if (end) this.bus.done = true;
+  }
   initBR() {
     const [mw, mh] = this.map.size;
     this.chests = this.map.chests.map(([x, z], i) => ({ id: i, pos: [x, 0, z], open: false }));
@@ -487,7 +514,7 @@ export class Match {
       for (const [fi, fj] of this.map.floor) { if (this.map.grid[fj][fi] !== '.') continue; const d = Math.hypot(fi - ci, fj - cj); if (d < bd) { bd = d; b = [fi, fj]; } }
       return { id: i, pos: [(b[0] + 0.5) * CELL, 0, (b[1] + 0.5) * CELL], readyAt: 0 };
     });
-    this.zone = { c: [mw / 2, mh / 2], r: BR.startRadius, stage: 0, shrinking: false, until: this.time + BR.stages[0][0] };
+    this.zone = { c: [mw / 2, mh / 2], r: BR.startRadius, stage: 0, shrinking: false, until: this.time + BR.stages[0][0] + (this.bus ? BR.bus.delay + BR.bus.duration : 0) };
     this.pickNextZone();
   }
   pickNextZone() {
@@ -625,6 +652,7 @@ export class Match {
       case 'potion': return this.drinkPotion(p, msg.k);
       case 'dispense': return this.useDispenser(p, msg.i);
       case 'nade': return this.throwNade(p, msg.d);
+      case 'busJump': return this.busJump(p);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'bash': return this.handleBash(p, msg);
@@ -674,6 +702,7 @@ export class Match {
   }
 
   handleInput(p, m) {
+    if (p.inBus) { this.applyLook(p, m); return; } // dans le dirigeable : seulement le regard
     if (!p.alive || !Array.isArray(m.p) || m.p.length !== 3 || !m.p.every(finite)) return;
     const [mw, mh] = this.map.size;
     const T = this.time;
@@ -1012,7 +1041,7 @@ export class Match {
   }
 
   handleShoot(p, msg) {
-    if (p.drinkEnd > this.time) return; // en train de boire une potion
+    if (p.drinkEnd > this.time || p.inBus) return; // en train de boire une potion, ou encore dans le dirigeable
     if (!p.alive || this.phase === 'buy' || this.phase === 'over' || this.phase === 'warmup') return;
     const w = p.weapons[p.slot];
     if (!w) return;
@@ -1535,6 +1564,7 @@ export class Match {
     }
 
     this.pickupDrops();
+    if (this.mode === 'br') this.tickBus();
     if (this.mode === 'br' && this.phase === 'live') { if (this.brWin) { if (this.time >= this.brWin.at) this.matchOver(this.brWin.id); } else this.tickZone(dt); this.tickPotions(); }
     if (assault) this.tickAssault(dt);
     else if (this.phase === 'live' && T >= this.phaseEnd) {
@@ -1675,6 +1705,7 @@ export class Match {
     p.specId = q.id;
   }
   visibility(r, q, T) {
+    if (q.inBus) return 'hidden';
     if (q.revealEnd > T) return 'full';
     let viewers = r.alive ? [r] : this.specAllies(r);
     if (!r.alive && !viewers.length && r.specId) { const sp = this.players.get(r.specId); if (sp?.alive) viewers = [sp]; }
@@ -1735,6 +1766,7 @@ export class Match {
       fires: this.fires.map(f => ({ i: f.id, p: f.pos.map(r2), r: f.r, k: f.kind, u: r2(f.end - T) })),
       walls: this.walls.map(w => ({ i: w.wallId, min: w.min.map(r2), max: w.max.map(r2), hp: w.hp })),
       drops: this.drops.map(d => ({ i: d.id, w: d.w.id, p: d.pos.map(r2), ...(d.w.rar ? { r: d.w.rar } : {}) })),
+      ...(this.bus && !this.bus.done ? { bus: { a: this.bus.a.map(r2), b: this.bus.b.map(r2), p: this.busPos().map(r2), go: r2(this.bus.t0 - T), left: r2(this.bus.t0 + this.bus.dur - T) } } : {}),
       ...(this.zone ? { zone: { c: this.zone.c.map(r2), r: r2(this.zone.r), nc: this.zone.nc.map(r2), nr: r2(this.zone.nr), st: this.zone.stage, sh: this.zone.shrinking ? 1 : 0, t: r2(Math.max(0, this.zone.until - T)) }, cho: this.chests.filter(c => c.open).map(c => c.id), dsp: this.dispensers.map(d => Math.max(0, Math.ceil(d.readyAt - T))), alive: [...this.players.values()].filter(p => !p.out).length } : {}),
     };
     const commonStr = JSON.stringify(common).slice(1);
@@ -1764,7 +1796,7 @@ export class Match {
         sm: p.speedMul, rm: p.rateMul, rs: p.respawnAt ? r2(Math.max(0, p.respawnAt - T)) : 0,
         rc: { q: p.recharge.q ? r2(p.recharge.q - T) : 0, e: p.recharge.e ? r2(p.recharge.e - T) : 0 },
         iv: p.invisEnd > T ? 1 : 0, bf: p.buffEnd > T ? 1 : 0, bt: this.buffTimers(p, T),
-        ...(p.bag ? { bg: p.bag.map(w => [w.id, w.mag, w.reserve, w.rar || 'common']) } : {}), ...(p.pots ? { po: [p.pots.heal, p.pots.shield, p.pots.bandage || 0, p.pots.mini || 0, p.pots.nade || 0], dk: p.drinkEnd > T ? r2(p.drinkEnd - T) : 0 } : {}), ...(p.chuteEnd > T ? { ch: 1 } : {}),
+        ...(p.bag ? { bg: p.bag.map(w => [w.id, w.mag, w.reserve, w.rar || 'common']) } : {}), ...(p.pots ? { po: [p.pots.heal, p.pots.shield, p.pots.bandage || 0, p.pots.mini || 0, p.pots.nade || 0], dk: p.drinkEnd > T ? r2(p.drinkEnd - T) : 0 } : {}), ...(p.chuteEnd > T ? { ch: 1 } : {}), ...(p.inBus ? { ib: 1 } : {}),
       };
       const meStr = JSON.stringify(me);
       meCache.set(p.id, { meStr, core: JSON.stringify(core) });
