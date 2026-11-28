@@ -36,7 +36,7 @@ export const ACTIONS = [
   ['forward', 'Avancer'], ['back', 'Reculer'], ['left', 'Gauche'], ['right', 'Droite'],
   ['jump', 'Sauter'], ['crouch', 'S\'accroupir'], ['walk', 'Marcher (silencieux)'],
   ['fire', 'Tirer'], ['scope', 'Viseur / lunette'], ['reload', 'Recharger'],
-  ['slot1', 'Arme principale'], ['slot2', 'Arme secondaire'], ['slot3', 'Couteau'],
+  ['slot1', 'Arme principale'], ['slot2', 'Arme secondaire'], ['slot3', 'Couteau'], ['bag1', 'Sac à dos : emplacement 1 (Battle Royale)'], ['bag2', 'Sac à dos : emplacement 2'], ['bag3', 'Sac à dos : emplacement 3'],
   ['abilityQ', 'Capacité 1'], ['abilityE', 'Capacité 2'], ['ult', 'Ultime'],
   ['interact', 'Poser / désamorcer'], ['buy', 'Menu d\'achat'], ['scoreboard', 'Tableau des scores'], ['chat', 'Chat (tous)'],
   ['teamChat', 'Chat d\'équipe'], ['radio', 'Messages radio'], ['mark', 'Marquer une position (ping)'], ['emote', 'Émotes'], ['inspect', 'Inspecter l\'arme'], ['react', 'Féliciter un coéquipier (👏)'],

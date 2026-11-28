@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.44.0",
+    "date": "2026-11-28",
+    "title": "Battle Royale V2 : parachute et sac à dos",
+    "items": [
+      "Saut en parachute au départ : tout le monde commence à 55 m au-dessus de la ville. Dirige-toi avec les touches de déplacement et maintiens Accroupi pour descendre plus vite. Pas de dégâts à l'atterrissage. Les autres joueurs ont une toile de parachute visible.",
+      "Sac à dos de 3 emplacements (touches 4, 5 et 6, modifiables dans les paramètres) : une arme trouvée alors que tu as déjà une arme de ce type est rangée dans le sac. La touche de l'emplacement l'échange avec celle en main.",
+      "Corrigé : on peut maintenant jeter son arme en Battle Royale. À la mort, toutes les armes et le contenu du sac tombent au sol.",
+      "Les coffres n'utilisent plus 32 vraies lumières (remplacées par un halo lumineux) : beaucoup moins de lag en Battle Royale."
+    ]
+  },
+  {
     "version": "1.43.0",
     "date": "2026-11-28",
     "title": "Vrai mode spectateur",

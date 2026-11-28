@@ -399,7 +399,9 @@ export class Game {
         const top = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.22, 0.74), wood); top.position.set(0, 0.11, 0.35); lid.add(top);
         const b1 = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.06, 0.76), band); b1.position.set(0, 0.04, 0.35); lid.add(b1);
         const lock = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.05), band); lock.position.set(0, 0.42, 0.37); c.add(lock);
-        const glow = new THREE.PointLight('#ffcf5a', 1.4, 5, 2); glow.position.y = 1; c.add(glow);
+        // halo lumineux (sprite additif) : pas de vraie lumière, 32 lumières faisaient chuter les FPS
+        if (!this.chestGlowTex) { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const gx = cv.getContext('2d'), gr = gx.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,214,110,0.9)'); gr.addColorStop(1, 'rgba(255,180,40,0)'); gx.fillStyle = gr; gx.fillRect(0, 0, 64, 64); this.chestGlowTex = new THREE.CanvasTexture(cv); }
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.chestGlowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.set(2.6, 2.6, 1); glow.position.y = 0.7; c.add(glow);
         c.userData = { lid, glow, band: b1, open: false };
         S.add(c); this.chestMeshes.push(c);
       }
@@ -1049,6 +1051,7 @@ export class Game {
       case 'slot1': this.switchSlot(1); break;
       case 'slot2': this.switchSlot(2); break;
       case 'slot3': this.switchSlot(3); break;
+      case 'bag1': case 'bag2': case 'bag3': this.bagSwap(+a.slice(3) - 1); break;
       case 'abilityQ': this.useAbility('q'); break;
       case 'abilityE': this.useAbility('e'); break;
       case 'ult': this.useAbility('x'); break;
@@ -1349,6 +1352,14 @@ export class Game {
     return w ? w[0] : (this.me?.wp?.[2]?.[0] || 'knife');
   }
 
+  // sac à dos (Battle Royale) : échange l'arme rangée avec celle en main du même type
+  bagSwap(k) {
+    const it = this.me?.bg?.[k]; if (this.mode !== 'br' || !this.me?.al || !it) return;
+    const slot = WEAPONS[it[0]]?.slot; if (!slot || slot === 3) return;
+    this.net.send('bagSwap', { k });
+    SFX.playSwitch();
+    if (this.local.slot !== slot) this.pendingSwitch = slot; else this.syncSlot = true;
+  }
   switchSlot(s) {
     const L = this.local;
     if (!this.me?.wp?.[s] || L.slot === s) return;
@@ -1771,7 +1782,7 @@ export class Game {
     on('chestOpen', m => { const c = this.chestMeshes?.[m.i]; if (c && !c.userData.open) { this.openChestMesh(c); SFX.playUI?.('click'); } });
     on('chestLoot', m => {
       const RAR = { common: ['COMMUN', '#9aa3ad'], rare: ['RARE', '#3d9bff'], epic: ['ÉPIQUE', '#b05cff'], legendary: ['LÉGENDAIRE', '#ffb11f'] }[m.rar] || ['', '#fff'];
-      this.banner(`${WEAPONS[m.w]?.name?.toUpperCase() || m.w}`, `${RAR[0]}${m.inSlot ? '' : ' · posée au sol (emplacement déjà pris)'}${m.bonus === 'armor' ? ' · +50 armure' : m.bonus === 'heal' ? ' · +50 PV' : ''}`, '', 2.2);
+      this.banner(`${WEAPONS[m.w]?.name?.toUpperCase() || m.w}`, `${RAR[0]}${m.inSlot ? '' : m.inBag ? ' · rangée dans le sac (touches 4, 5, 6)' : ' · posée au sol (emplacement et sac pleins)'}${m.bonus === 'armor' ? ' · +50 armure' : m.bonus === 'heal' ? ' · +50 PV' : ''}`, '', 2.2);
       SFX.playPromote?.();
       if (m.inSlot && this.local.slot === 3) setTimeout(() => { if (this.me?.wp?.[WEAPONS[m.w].slot]) this.switchSlot(WEAPONS[m.w].slot); }, 150); // prend l'arme trouvée en main
     });
@@ -2155,9 +2166,20 @@ export class Game {
       L.vel[1] = MOVE.jump; L.onGround = false; SFX.playJump();
     }
     L.vel[1] -= MOVE.gravity * (this.opts.lowGrav ? 0.45 : 1) * dt;
+    // Battle Royale (1.44) : saut en parachute au départ, on se dirige avec les touches de déplacement, accroupi pour descendre plus vite
+    if (this.mode === 'br' && !L.onGround && (L.chute || (this.me?.ch && L.pos[1] > 8))) {
+      if (!L.chute) { L.chute = true; SFX.playJump(); }
+      L.vel[1] = Math.max(L.vel[1], -(H.has('crouch') ? BR.drop.fastFall : BR.drop.fall));
+      const kk = Math.min(1, 3 * dt); L.vel[0] += (wx * BR.drop.speed - L.vel[0]) * kk; L.vel[2] += (wz * BR.drop.speed - L.vel[2]) * kk;
+    }
     const prev = L.pos.slice();
     const wasGround = L.onGround, fallV = L.vel[1];
     L.onGround = collideMove(L.pos, L.vel, dt, this.boxes);
+    if (L.chute && L.onGround) {
+      L.chute = false; SFX.playLand(false);
+      // posé sur le haut d'un mur : on redescend sur la case de sol la plus proche
+      if (L.pos[1] > 3) { let b = null, bd = 1e9; for (const [i, j] of this.map.floor) { const x = (i + 0.5) * CELL, z = (j + 0.5) * CELL, d = Math.hypot(x - L.pos[0], z - L.pos[2]); if (d < bd) { bd = d; b = [x, z]; } } if (b) L.pos = [b[0], 0, b[1]]; }
+    }
     if (L.onGround && !wasGround && fallV < -3) SFX.playLand(fallV < -11);
     if (ph === 'buy' && !isFfa(this.mode)) {
       const allowed = this.me.side === 'atk' ? 'T' : 'D';
@@ -2207,7 +2229,7 @@ export class Game {
   }
 
   openChestMesh(c) {
-    c.userData.open = true; c.userData.lid.rotation.x = -1.9; c.userData.glow.intensity = 0;
+    c.userData.open = true; c.userData.lid.rotation.x = -1.9; c.userData.glow.visible = false;
     c.userData.band.material = c.userData.band.material.clone(); c.userData.band.material.emissiveIntensity = 0.05;
   }
   nearChest() {
@@ -2270,6 +2292,17 @@ export class Game {
       if (!Number.isFinite(o.bodyYaw)) o.bodyYaw = null;
       ch.root.visible = true;
       this.setOtherWeapon(o, st.w);
+      if (this.mode === 'br') {
+        const flying = st.p[1] > 3 && st.al;
+        if (flying && !o.chute) {
+          const g = new THREE.Group(), col = this.isEnemyId(o.id) ? ST().enemyColor : ALLY;
+          const canopy = new THREE.Mesh(new THREE.SphereGeometry(1.6, 16, 6, 0, Math.PI * 2, 0, Math.PI / 2.4), new THREE.MeshStandardMaterial({ color: col, side: THREE.DoubleSide, roughness: 0.7 }));
+          canopy.scale.y = 0.55; canopy.position.y = 3.6; g.add(canopy);
+          for (const [x, z] of [[-1.1, -0.6], [1.1, -0.6], [-1.1, 0.6], [1.1, 0.6]]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 2.2, 3), new THREE.MeshBasicMaterial({ color: '#dddddd' })); l.position.set(x * 0.55, 2.6, z * 0.55); l.rotation.z = -x * 0.25; l.rotation.x = z * 0.25; g.add(l); }
+          ch.root.add(g); o.chute = g;
+        }
+        if (o.chute) o.chute.visible = flying;
+      }
       ch.root.position.set(st.p[0], st.p[1], st.p[2]);
       // 1.30 : la tête et le buste tournent d'abord vers le regard, le bas du corps rattrape (plus vite en marchant)
       if (ST().dynMove !== 'off') {
@@ -2636,7 +2669,8 @@ export class Game {
       }
     }
     // emplacements
-    $('slots').innerHTML = [1, 2, 3].filter(i => me.wp[i]).map(i => `<span class="${i === this.local.slot ? 'on' : ''}">${i}·${WEAPONS[me.wp[i][0]].name}</span>`).join('');
+    $('slots').innerHTML = [1, 2, 3].filter(i => me.wp[i]).map(i => `<span class="${i === this.local.slot ? 'on' : ''}">${i}·${WEAPONS[me.wp[i][0]].name}</span>`).join('')
+      + (me.bg ? [0, 1, 2].map(k => `<span class="bag ${me.bg[k] ? '' : 'empty'}" title="Sac à dos">${4 + k}·${me.bg[k] ? WEAPONS[me.bg[k][0]].name : '—'}</span>`).join('') : '');
     // menu d'achat
     if (this.buyOpen) {
       const canBuy = isFfa(this.mode) || s.ph === 'buy';
@@ -2660,7 +2694,8 @@ export class Game {
       else if (s.ph === 'buy') hint = `${KB('buy')} — MENU D'ACHAT`;
     }
     if (this.mode === 'br' && me.al) {
-      if (this.nearChest() >= 0) hint = `${KB('interact')} — OUVRIR LE COFFRE`;
+      if (this.local.chute) hint = `PARACHUTE · ${KB('forward')}${KB('left')}${KB('back')}${KB('right')} POUR TE DIRIGER · ${KB('crouch')} POUR DESCENDRE PLUS VITE · ${Math.round(this.local.pos[1])} m`;
+      else if (this.nearChest() >= 0) hint = `${KB('interact')} — OUVRIR LE COFFRE`;
       const z = s.zone;
       if (z) {
         const out = Math.hypot(this.local.pos[0] - z.c[0], this.local.pos[2] - z.c[1]) > z.r;

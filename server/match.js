@@ -459,7 +459,7 @@ export class Match {
     p.alive = true; p.hp = 100; p.armor = 50; p.money = 9000; p.reloadEnd = 0; p.knifeOut = false;
     this.projectiles = this.projectiles.filter(pr => !(pr.kind === 'knife' && pr.owner === p.id));
     if (this.mode === 'gungame') { this.gunLoadout(p); p.armor = 0; } // pas d'armure : le couteau final reste jouable
-    else if (this.mode === 'br') { p.weapons = { 1: null, 2: null, 3: { id: 'knife' } }; p.slot = 3; p.armor = 0; p.money = 0; }
+    else if (this.mode === 'br') { p.weapons = { 1: null, 2: null, 3: { id: 'knife' } }; p.slot = 3; p.armor = 0; p.money = 0; p.bag = []; }
     else {
       const prim = p.weapons?.[1]?.id || 'lancer';
       p.weapons = { 1: prim ? this.newWeapon(prim) : null, 2: this.newWeapon(p.weapons?.[2]?.id || 'spark'), 3: { id: 'knife' } };
@@ -469,7 +469,10 @@ export class Match {
     p.reloadEnd = 0; p.damagedBy = new Map(); p.hitsBy = new Map(); p.invisEnd = 0; p.buffEnd = 0; p.buffSpeed = 1; p.hasteEnd = 0; p.slowEnd = 0; p.speedMul = 1; p.rateMul = 1; p.blindEnd = 0;
     p.protEnd = this.time + 1.5; // protection de réapparition : annulée dès que le joueur tire ou utilise une capacité
     const [mw, mh] = this.map.size;
+    if (this.mode === 'br' && !p.isBot) { best = [best[0], BR.drop.height, best[2]]; p.chuteEnd = this.time + 40; p.fallTop = null; }
+    if (this.mode === 'br' && p.isBot) p.dropUntil = this.time + BR.drop.botWait + Math.random() * 4;
     this.teleport(p, best, Math.atan2(-(mw / 2 - best[0]), -(mh / 2 - best[2])));
+    if (this.mode === 'br' && !p.isBot) p.tpGrace = this.time + 0.6;
     if (p.brain) p.brain.onRoundStart();
   }
 
@@ -512,6 +515,15 @@ export class Match {
       if (Math.hypot(p.pos[0] - z.c[0], p.pos[2] - z.c[1]) > z.r) this.damage(p, dps * dt, null, 'zone', false, true);
     }
   }
+  // sac à dos : l'arme rangée prend la place de celle de même type (principale ou pistolet), qui part dans le sac
+  bagSwap(p, k) {
+    if (!p.alive || !p.bag || !Number.isInteger(k) || !p.bag[k]) return;
+    const w = p.bag[k], slot = WEAPONS[w.id]?.slot; if (!slot || slot === 3) return;
+    const cur = p.weapons[slot];
+    p.weapons[slot] = w;
+    if (cur) p.bag[k] = cur; else p.bag.splice(k, 1);
+    p.slot = slot; p.reloadEnd = 0;
+  }
   openChest(p, i) {
     const c = this.chests?.[i];
     if (!c || c.open || !p.alive || this.phase !== 'live') return;
@@ -524,12 +536,13 @@ export class Match {
     if (w.reserve != null) w.reserve += Math.round((WEAPONS[id].mag || 10) * 1.5);
     let got = '';
     if (!p.weapons[slot]) { p.weapons[slot] = w; got = 'arme'; this.send(p, { type: 'picked', item: id, slot }); }
+    else if (p.bag && p.bag.length < BR.bagSize) { p.bag.push(w); got = 'sac'; }
     else this.drops.push({ id: this.nextId++, w, pos: [c.pos[0] + 0.6, 0, c.pos[2]], from: null, noPick: 0 });
     const bonus = Math.random();
     if (bonus < 0.4) p.armor = Math.min(100, (p.armor || 0) + 50);
     else if (bonus < 0.8) p.hp = Math.min(100, p.hp + 50);
     this.broadcast({ type: 'chestOpen', i, by: p.id });
-    this.send(p, { type: 'chestLoot', w: id, rar, bonus: bonus < 0.4 ? 'armor' : bonus < 0.8 ? 'heal' : null, inSlot: !!got });
+    this.send(p, { type: 'chestLoot', w: id, rar, bonus: bonus < 0.4 ? 'armor' : bonus < 0.8 ? 'heal' : null, inSlot: got === 'arme', inBag: got === 'sac' });
   }
 
   // ---------- Gun Game ----------
@@ -564,6 +577,7 @@ export class Match {
       case 'wallJump': return this.handleWallJump(p);
       case 'chest': return this.openChest(p, msg.i);
       case 'spec': return this.setSpec(p, msg.id);
+      case 'bagSwap': return this.bagSwap(p, msg.k);
       case 'shoot': return this.handleShoot(p, msg);
       case 'reload': return this.handleReload(p);
       case 'bash': return this.handleBash(p, msg);
@@ -626,7 +640,8 @@ export class Match {
     const maxSpeed = MOVE.run * 1.3 * Math.max(1, p.speedMul, p.speedPeakEnd > T ? p.speedPeak : 1) + 0.5;
     const base = maxSpeed * elapsed + 1;
     const d = Math.hypot(np[0] - last.pos[0], np[2] - last.pos[2]);
-    const flying = np[1] > (this.opts.lowGrav ? 9 : p.wallJumpEnd > T ? 6.6 : 4.8); // plus haut que caisse haute + saut (+ sauts muraux)
+    if (p.chuteEnd > T && np[1] < 0.15) p.chuteEnd = Math.min(p.chuteEnd, T + 1); // posé : fin du parachute
+    const flying = np[1] > (p.chuteEnd > T ? BR.drop.height + 2 : this.opts.lowGrav ? 9 : p.wallJumpEnd > T ? 6.6 : 4.8); // plus haut que caisse haute + saut (+ sauts muraux)
     const ac = this.io.anticheat ? this.io.anticheat() : { on: true, strikes: 5 };
     if (ac.on !== false && (d > base + (p.moveBonus || 0) || flying)) {
       p.cheatStrikes = (p.cheatStrikes || 0) + 1;
@@ -721,7 +736,7 @@ export class Match {
 
   // dégâts de chute (1.28) : hauteur entre le point le plus haut du saut et l'atterrissage
   fallStep(p, np) {
-    if (!p.alive || this.opts.lowGrav || p.tpGrace > this.time) { p.fallTop = null; return; }
+    if (!p.alive || this.opts.lowGrav || p.tpGrace > this.time || p.chuteEnd > this.time) { p.fallTop = null; return; }
     const g = groundHeight(np[0], np[2], np[1], this.map.boxes);
     if (np[1] - g > 0.08) { p.fallTop = Math.max(p.fallTop ?? np[1], np[1]); return; }
     const drop = p.fallTop == null ? 0 : p.fallTop - np[1];
@@ -870,7 +885,7 @@ export class Match {
   }
 
   // ---------- armes au sol ----------
-  dropsOn() { return !isFfa(this.mode); }
+  dropsOn() { return !isFfa(this.mode) || this.mode === 'br'; } // 1.44 : en Battle Royale aussi, on peut jeter son arme
   spawnDrop(p, w, throwIt) {
     if (!w || w.id === 'knife' || !this.dropsOn()) return;
     let pos = [p.pos[0], 0, p.pos[2]];
@@ -882,7 +897,7 @@ export class Match {
     }
     pos[1] = groundHeight(pos[0], pos[2], p.pos[1] + 0.5, this.map.boxes);
     this.drops.push({ id: this.nextId++, w: { ...w }, pos, from: p.id, noPick: this.time + (throwIt ? 3 : 0) });
-    if (this.drops.length > 24) this.drops.shift();
+    if (this.drops.length > (this.mode === 'br' ? 80 : 24)) this.drops.shift();
   }
   handleDrop(p) {
     if (!p.alive || !this.dropsOn() || this.phase === 'over') return;
@@ -903,8 +918,10 @@ export class Match {
       for (let i = 0; i < this.drops.length; i++) {
         const d = this.drops[i];
         const slot = WEAPONS[d.w.id]?.slot;
-        if (!slot || p.weapons[slot] || (d.from === p.id && T < d.noPick) || !this.weaponAllowed(d.w.id)) continue;
+        const toBag = slot && p.weapons[slot] && p.bag && p.bag.length < BR.bagSize;
+        if (!slot || (p.weapons[slot] && !toBag) || (d.from === p.id && T < d.noPick) || !this.weaponAllowed(d.w.id)) continue;
         if (Math.hypot(p.pos[0] - d.pos[0], p.pos[2] - d.pos[2]) > 1.4 || Math.abs(p.pos[1] - d.pos[1]) > 1.8) continue;
+        if (toBag) { p.bag.push(d.w); this.drops.splice(i, 1); i--; this.send(p, { type: 'notice', text: `${WEAPONS[d.w.id].name.toUpperCase()} RANGÉE DANS LE SAC` }); continue; }
         p.weapons[slot] = d.w;
         this.drops.splice(i, 1); i--;
         this.send(p, { type: 'picked', item: d.w.id, slot });
@@ -1051,7 +1068,9 @@ export class Match {
     this.statsDirty = true;
     if (this.core.carrier === v.id) this.dropCore(v);
     // l'arme principale (sinon le pistolet acheté) tombe au sol et peut être ramassée
-    if (this.dropsOn()) { const s = v.weapons[1] ? 1 : v.weapons[2] && v.weapons[2].id !== 'spark' ? 2 : 0; if (s) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = s === 2 ? this.newWeapon('spark') : null; } }
+    if (this.mode === 'br') { for (const s of [1, 2]) if (v.weapons[s]) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = null; } } // Battle Royale : tout tombe
+    else if (this.dropsOn()) { const s = v.weapons[1] ? 1 : v.weapons[2] && v.weapons[2].id !== 'spark' ? 2 : 0; if (s) { this.spawnDrop(v, v.weapons[s], false); v.weapons[s] = s === 2 ? this.newWeapon('spark') : null; } }
+    if (v.bag?.length) { v.bag.forEach((w, k) => this.drops.push({ id: this.nextId++, w, pos: [v.pos[0] + Math.cos(k * 2.1) * 0.9, 0, v.pos[2] + Math.sin(k * 2.1) * 0.9], from: null, noPick: 0 })); v.bag = []; }
     const vStreak = v.streak; v.streak = 0; v.kit = false;
     if (a && a !== v && !this.isEnemy(a, v)) {
       a.score = Math.max(0, a.score - 100);
@@ -1671,6 +1690,7 @@ export class Match {
         sm: p.speedMul, rm: p.rateMul, rs: p.respawnAt ? r2(Math.max(0, p.respawnAt - T)) : 0,
         rc: { q: p.recharge.q ? r2(p.recharge.q - T) : 0, e: p.recharge.e ? r2(p.recharge.e - T) : 0 },
         iv: p.invisEnd > T ? 1 : 0, bf: p.buffEnd > T ? 1 : 0, bt: this.buffTimers(p, T),
+        ...(p.bag ? { bg: p.bag.map(w => [w.id, w.mag, w.reserve]) } : {}), ...(p.chuteEnd > T ? { ch: 1 } : {}),
       };
       const meStr = JSON.stringify(me);
       meCache.set(p.id, { meStr, core: JSON.stringify(core) });

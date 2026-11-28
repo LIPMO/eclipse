@@ -242,6 +242,7 @@ export class BotBrain {
   update(dt) {
     const m = this.m, p = this.p, T = m.time, cfg = this.cfg;
     if (!p.alive) { this.vel = [0, 0, 0]; return; }
+    if (p.dropUntil && T < p.dropUntil) { this.vel = [0, 0, 0]; return; } // Battle Royale : attend la fin de la descente des joueurs
     let wishX = 0, wishZ = 0, speed = MOVE.run * 0.88 * (WEAPONS[p.weapons[p.slot]?.id]?.speed || 1) * p.speedMul;
     const canMove = m.phase !== 'buy' && m.phase !== 'warmup' && m.phase !== 'over';
     p.interact = false;

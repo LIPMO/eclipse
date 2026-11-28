@@ -1441,3 +1441,6 @@ body.theme-light { color-scheme: light; }
 #br-zone .warn { color: #ff6b7d; }
 body.br-out #hud::before { content: ''; position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 30px rgba(150,40,255,.55); animation: brPulse 1s ease-in-out infinite; }
 @keyframes brPulse { 50% { opacity: .55; } }
+
+#slots .bag { border-color: rgba(178,107,255,.55) !important; color: #e3d2ff; }
+#slots .bag.empty { opacity: .45; }

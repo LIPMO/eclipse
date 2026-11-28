@@ -61,6 +61,8 @@ export const isLastStand = mode => mode === 'lives' || mode === 'br';
 // Battle Royale (1.42) : zone qui se resserre par étapes, coffres à ouvrir (touche d'interaction), une seule vie
 export const BR = {
   timeLimit: 900, startRadius: 118, chestRange: 2.4,
+  // V2 (1.44) : saut en parachute au départ, sac à dos de 3 emplacements (touches 4, 5, 6)
+  drop: { height: 55, fall: 6, fastFall: 15, speed: 8.5, botWait: 9 }, bagSize: 3,
   // attente avant de se resserrer (s), durée du resserrement (s), rayon visé (m), dégâts par seconde hors zone pendant l'étape
   stages: [[50, 30, 58, 1], [40, 25, 36, 2], [35, 20, 20, 4], [25, 15, 9, 7], [20, 15, 0, 10]],
   loot: { common: ['spark', 'viper'], rare: ['hornet', 'brute'], epic: ['tempest', 'lancer'], legendary: ['longbow'] },
