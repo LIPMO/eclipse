@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.53.0",
+    "date": "2026-11-28",
+    "title": "Battle Royale V3 (3/4) : nouvelle carte VALLÉE",
+    "items": [
+      "Nouvelle carte de Battle Royale : VALLÉE (176 m de côté). Champs, ferme et granges, hameau, chapelle au centre, grand entrepôt à plusieurs portes, haies, silos et rochers pour se cacher. 28 coffres et 6 distributeurs. Elle alterne avec BOURG (choix dans le menu des cartes).",
+      "Corrigé : le dirigeable volait à reculons.",
+      "Les bots ne tirent plus sur un joueur encore en parachute, et la zone de départ couvre toute la carte, quelle que soit sa taille."
+    ]
+  },
+  {
     "version": "1.52.0",
     "date": "2026-11-28",
     "title": "Battle Royale V3 (2/4) : le dirigeable",

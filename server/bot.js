@@ -73,6 +73,7 @@ export class BotBrain {
       const dx = q.pos[0] - p.pos[0], dz = q.pos[2] - p.pos[2];
       const dist = Math.hypot(dx, dz);
       if (q.invisEnd > T && dist > 4) continue;
+      if (q.inBus || (q.chuteEnd > T && q.pos[1] > 2.5)) continue; // Battle Royale : pas de tir sur un joueur dans le dirigeable ou encore en parachute
       const yawTo = Math.atan2(-dx, -dz);
       const inFov = Math.abs(angDiff(yawTo, p.yaw)) < this.cfg.fov || dist < 5 ||
         (p.lastDamagedBy === q.id && T - p.lastDamagedAt < 2.5) || this.target === q;

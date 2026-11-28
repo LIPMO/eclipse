@@ -7,6 +7,58 @@ export const CRATE_LOW = 1.2;
 export const CRATE_HIGH = 2.6;
 
 const RAW = {
+  // Battle Royale (1.53) : vallée agricole, 176 m de côté, ferme, hameau, chapelle, entrepôt, haies et silos, 28 coffres
+  vallee: {
+    name: 'VALLÉE', subtitle: 'Champs et fermes (Battle Royale)',
+    theme: { sky: '#a9cbe0', fog: '#b9d2c0', fogNear: 70, fogFar: 260, wall: 'temple', floor: 'moss', crate: 'stonecrate', sun: '#fff1cf', sunInt: 2.4, hemiSky: '#e4f3d6', hemiGround: '#4d6a3a', hemiInt: 1.05, accent: '#ffd36b', night: false },
+    disp: [[10, 10], [33, 10], [10, 33], [33, 25], [22, 16], [24, 40]],
+    grid: [
+      '############################################',
+      '#..........................................#',
+      '#.......................................H..#',
+      '#...........#######........................#',
+      '#...######..#.....#...CC......#####........#',
+      '#...#c...#...Hc.......CC......#..c#..#####.#',
+      '#...#.......#...c.#...........#...#....c...#',
+      '#...#..Hc#..#.H...#...........#cH.#...c.H#.#',
+      '#...##.###..###.###...........##.##..#...#.#',
+      '#....................................#####.#',
+      '#...................H.....##.............#.#',
+      '#..........................................#',
+      '#....##.##.....................##.###......#',
+      '#....#...#.....................#....#......#',
+      '#....#.........c.........H.....#.cHc.......#',
+      '#....#..c#.....c...............#....#......#',
+      '#....#cH.#...H.................######......#',
+      '#....#####.....c............H..............#',
+      '#..............c...######..................#',
+      '#..............c...#.cH.#...............#..#',
+      '#......................c#...............#..#',
+      '#.......#......c...#....#..................#',
+      '#.H............c...#..............CC.......#',
+      '#..............c...#H...#..........C.......#',
+      '#..........CC......##.###..................#',
+      '#..............c.........cc.cc.cc.cc.cH....#',
+      '#...cc.cc.cc...c...........................#',
+      '#..........................................#',
+      '#.........H................######.######...#',
+      '#..........................#.........H.#...#',
+      '#...##.###........#..H.....#...H....c..#...#',
+      '#...#..c.#............c.......C..c..C..#...#',
+      '#...#c................c....#...........#...#',
+      '#...#..HH#.................#..C.....C......#',
+      '#...#....#............c.............H.H#...#',
+      '#...######...##.##....c....#...........#...#',
+      '#............#..H#.........######.######...#',
+      '#............#.c.#....c....................#',
+      '#............#..c#....c....................#',
+      '#............#####.......#...............H.#',
+      '#..#.........................H.............#',
+      '#................H...................#.....#',
+      '#..........................................#',
+      '############################################'
+    ],
+  },
   // Battle Royale (1.42) : petite ville, 160 m de côté, rues, maisons ouvertes, place centrale, 32 coffres
   ville: {
     name: 'BOURG', subtitle: 'Petite ville au crépuscule (Battle Royale)',
@@ -227,7 +279,7 @@ const RAW = {
 export const MAP_ORDER = ['dune', 'neon', 'glacier', 'temple', 'fosse', 'cube', 'igloo'];
 export const LARGE_MAPS = ['dune', 'neon', 'glacier', 'temple'];
 export const SMALL_MAPS = ['fosse', 'cube', 'igloo'];
-export const BR_MAPS = ['ville'];
+export const BR_MAPS = ['ville', 'vallee'];
 export const mapsForMode = mode => mode === 'br' ? BR_MAPS : mode === 'duel' ? SMALL_MAPS : mode === 'assault' ? LARGE_MAPS : MAP_ORDER;
 export const MAP_INFO = Object.fromEntries([...MAP_ORDER, ...BR_MAPS].map(id => [id, { id, name: RAW[id].name, subtitle: RAW[id].subtitle, theme: RAW[id].theme, small: !!RAW[id].small }]));
 
@@ -293,7 +345,7 @@ export function parseMap(id) {
     return [x / cells.length, z / cells.length];
   };
   const map = {
-    id, name: raw.name, subtitle: raw.subtitle, theme: raw.theme, small: !!raw.small, w, h, grid, boxes, crates, spawns, floor, chests,
+    id, name: raw.name, subtitle: raw.subtitle, theme: raw.theme, small: !!raw.small, w, h, grid, boxes, crates, spawns, floor, chests, disp: raw.disp || null,
     sites: { A: { cells: sites.A, center: center(sites.A) }, B: { cells: sites.B, center: center(sites.B) } },
     size: [w * CELL, h * CELL],
     cellAt(x, z) { return ch(Math.floor(x / CELL), Math.floor(z / CELL)); },

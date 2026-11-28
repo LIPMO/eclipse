@@ -459,7 +459,7 @@ export class Game {
       // distributeurs de soin (1.48) : borne blanche avec une croix verte lumineuse
       this.dispMeshes = [];
       const body = new THREE.MeshStandardMaterial({ color: '#e8edf2', roughness: 0.4, metalness: 0.3 }), cross = new THREE.MeshBasicMaterial({ color: '#3dffa8', toneMapped: false });
-      for (const [ci, cj] of BR.dispensers) {
+      for (const [ci, cj] of (m.disp || BR.dispensers)) {
         let b = null, bd = 1e9; for (const [fi, fj] of m.floor) { if (m.grid[fj][fi] !== '.') continue; const d = Math.hypot(fi - ci, fj - cj); if (d < bd) { bd = d; b = [fi, fj]; } }
         const g = new THREE.Group(); g.position.set((b[0] + 0.5) * CELL, 0, (b[1] + 0.5) * CELL);
         const k = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2, 0.6), body); k.position.y = 1; g.add(k);
@@ -474,7 +474,7 @@ export class Game {
         const bal = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), env); bal.scale.set(3.2, 3.2, 9); bal.position.y = 3.4; g.add(bal);
         const c = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.6, 5), cab); c.position.y = -0.6; g.add(c);
         for (const x of [-1.31, 1.31]) for (let k = 0; k < 4; k++) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.5, 0.7), glow); w.position.set(x, -0.4, -1.8 + k * 1.2); g.add(w); }
-        for (const [x, y] of [[0, 6.6], [3.2, 3.4], [-3.2, 3.4]]) { const f = new THREE.Mesh(new THREE.BoxGeometry(x ? 0.15 : 2.4, x ? 2.4 : 0.15, 2), env); f.position.set(x, y, 8.4); g.add(f); }
+        for (const [x, y] of [[0, 6.6], [3.2, 3.4], [-3.2, 3.4]]) { const f = new THREE.Mesh(new THREE.BoxGeometry(x ? 0.15 : 2.4, x ? 2.4 : 0.15, 2), env); f.position.set(x, y, -8.4); g.add(f); } // ailerons à l'arrière (l'avant du dirigeable est vers +Z)
         g.visible = false; S.add(g); this.busMesh = g; }
       const zm = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 60, 96, 1, true), new THREE.MeshBasicMaterial({ color: '#b26bff', transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
       zm.position.y = 30; zm.renderOrder = 3; S.add(zm); this.zoneMesh = zm;

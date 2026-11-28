@@ -509,12 +509,12 @@ export class Match {
     const [mw, mh] = this.map.size;
     this.chests = this.map.chests.map(([x, z], i) => ({ id: i, pos: [x, 0, z], open: false }));
     // distributeurs : sur la case de sol la plus proche de chaque emplacement prévu
-    this.dispensers = BR.dispensers.map(([ci, cj], i) => {
+    this.dispensers = (this.map.disp || BR.dispensers).map(([ci, cj], i) => {
       let b = null, bd = 1e9;
       for (const [fi, fj] of this.map.floor) { if (this.map.grid[fj][fi] !== '.') continue; const d = Math.hypot(fi - ci, fj - cj); if (d < bd) { bd = d; b = [fi, fj]; } }
       return { id: i, pos: [(b[0] + 0.5) * CELL, 0, (b[1] + 0.5) * CELL], readyAt: 0 };
     });
-    this.zone = { c: [mw / 2, mh / 2], r: BR.startRadius, stage: 0, shrinking: false, until: this.time + BR.stages[0][0] + (this.bus ? BR.bus.delay + BR.bus.duration : 0) };
+    this.zone = { c: [mw / 2, mh / 2], r: Math.max(BR.startRadius, Math.hypot(mw, mh) / 2 + 4), stage: 0, shrinking: false, until: this.time + BR.stages[0][0] + (this.bus ? BR.bus.delay + BR.bus.duration : 0) };
     this.pickNextZone();
   }
   pickNextZone() {
