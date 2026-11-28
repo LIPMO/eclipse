@@ -647,6 +647,8 @@ export class Match {
   handle(id, msg) {
     const p = this.players.get(id);
     if (!p) return;
+    // dans le dirigeable : seulement regarder, sauter, et les messages sans effet sur le jeu (1.55 : on pouvait frapper au couteau)
+    if (p.inBus && !['input', 'busJump', 'ping', 'emote', 'emoteStop', 'spec', 'mark'].includes(msg.type)) return;
     switch (msg.type) {
       case 'input': return this.handleInput(p, msg);
       case 'slide': return this.handleSlide(p);
@@ -1137,6 +1139,7 @@ export class Match {
 
   damage(q, amount, attacker, wpn, head, silent = false) {
     if (!q.alive || amount <= 0) return;
+    if (q.inBus || attacker?.inBus) return; // personne n'est touché dans le dirigeable, et on ne frappe pas depuis le dirigeable
     amount *= this.dmgMul; // règle « dégâts reçus » (partie personnalisée)
     if (attacker && attacker !== q && q.protEnd > this.time) return; // protection de réapparition
     if (attacker && attacker !== q) {

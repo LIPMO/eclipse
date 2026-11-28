@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.55.0",
+    "date": "2026-11-28",
+    "title": "Correctif du dirigeable",
+    "items": [
+      "Corrigé : dans le dirigeable, on pouvait enchaîner les coups de couteau et éliminer tout le monde. Dans le dirigeable, on peut seulement regarder et sauter, et personne ne peut être touché."
+    ]
+  },
+  {
     "version": "1.54.0",
     "date": "2026-11-28",
     "title": "Battle Royale V3 (4/4) : duos et escouades",

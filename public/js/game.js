@@ -1156,7 +1156,7 @@ export class Game {
       case 'lastWeapon': if (this.prevSlot && this.me?.wp?.[this.prevSlot]) this.switchSlot(this.prevSlot); break;
       case 'bigMap': $('minimap').classList.add('big'); break;
       case 'ready': this.sendReady(); break;
-      case 'melee': this.quickMelee(); break;
+      case 'melee': if (!this.me?.ib) this.quickMelee(); break;
       case 'rebuy': this.rebuy(); break;
       case 'mark': if (this.me?.al && !this.ended) this.net.send('mark', { d: this.aimDir() }); break;
       case 'emote': this.toggleEmote(); break;
@@ -2315,7 +2315,7 @@ export class Game {
     // « chargeur vide, pas de recharge en cours » et relançait une recharge qui effaçait la précédente (boucle)
     this.finishReload(now);
     // tir
-    if (H.has('fire') && !this.me?.dk && !this.me?.dn) this.tryFire(now);
+    if (H.has('fire') && !this.me?.dk && !this.me?.dn && !this.me?.ib) this.tryFire(now);
     else L.triggerHeld = false;
     // rechargement automatique quand le chargeur est vide
     if (ST().autoReload && def.mag && L.mag <= 0 && L.reserve > 0 && !(L.reloadEnd > now) && now - L.lastShot > 0.12 && this.snap?.ph !== 'buy') this.reload();
